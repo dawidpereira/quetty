@@ -1,0 +1,24 @@
+*target/
+
+**/*.rs.bk
+
+# Log files
+*log.*
+
+# Temp files
+*.tmp
+*.temp
+
+# Env file
+.env
+
+# Cache files
+.*cache.*
+
+# Note/draft files
+NOTES*
+
+# Generated html files for live previewing markdown
+*.html
+
+.idea
