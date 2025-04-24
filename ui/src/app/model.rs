@@ -9,6 +9,7 @@ use tuirealm::{
 
 use crate::components::common::{ComponentId, Msg};
 use crate::components::label::Label;
+use crate::components::messages::Messages;
 
 pub struct Model<T>
 where
@@ -48,14 +49,17 @@ where
                     .margin(1)
                     .constraints(
                         [
-                            Constraint::Length(3),
+                            Constraint::Length(1),
                             Constraint::Length(1), // Label
+                            Constraint::Length(2),
+                            Constraint::Length(16),// Messages
                             Constraint::Length(3),
                         ]
                         .as_ref(),
                     )
                     .split(f.area());
                 self.app.view(&ComponentId::Label, f, chunks[1]);
+                self.app.view(&ComponentId::Messages, f, chunks[3]);
             })
             .is_ok());
     }
@@ -68,6 +72,7 @@ where
                 .poll_timeout(Duration::from_millis(10))
                 .tick_interval(Duration::from_secs(1)),
         );
+
         // Mount components
         assert!(app
             .mount(
@@ -83,12 +88,18 @@ where
                 Vec::default(),
             )
             .is_ok());
-        assert!(app.active(&ComponentId::Label).is_ok());
+
+        assert!(app
+            .mount(
+                ComponentId::Messages,
+                Box::new(Messages::new()),
+                Vec::default(),
+            )
+            .is_ok());
+        assert!(app.active(&ComponentId::Messages).is_ok());
         app
     }
 }
-
-// Let's implement Update for model
 
 impl<T> Update<Msg> for Model<T>
 where
@@ -104,6 +115,7 @@ where
                     self.quit = true; // Terminate
                     None
                 }
+                _ => None
            }
         } else {
             None
