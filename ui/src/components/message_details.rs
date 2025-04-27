@@ -13,6 +13,7 @@ pub struct MessageDetails {
     component: TextArea<'static>,
 }
 
+//TODO: Add search
 impl MessageDetails {
     pub fn new() -> Self {
         // JSON message as &'static str (string literal)
