@@ -1,4 +1,5 @@
 use std::time::Duration;
+use copypasta::{ClipboardContext, ClipboardProvider};
 use tuirealm::event::NoUserEvent;
 use tuirealm::props::{Alignment, Color, TextModifiers};
 use tuirealm::ratatui::layout::{Constraint, Direction, Layout};
@@ -10,6 +11,7 @@ use tuirealm::{
 use crate::components::common::{ComponentId, Msg};
 use crate::components::label::Label;
 use crate::components::messages::Messages;
+use crate::components::message_details::MessageDetails;
 
 pub struct Model<T>
 where
@@ -53,13 +55,27 @@ where
                             Constraint::Length(1), // Label
                             Constraint::Length(2),
                             Constraint::Length(16),// Messages
-                            Constraint::Length(3),
                         ]
                         .as_ref(),
                     )
                     .split(f.area());
+
                 self.app.view(&ComponentId::Label, f, chunks[1]);
-                self.app.view(&ComponentId::Messages, f, chunks[3]);
+
+                let main_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .margin(1)
+                    .constraints(
+                        [
+                            Constraint::Length(49),// Messages
+                            Constraint::Length(49),
+                        ]
+                        .as_ref(),
+                    )
+                    .split(chunks[3]);
+
+                self.app.view(&ComponentId::Messages, f, main_chunks[0]);
+                self.app.view(&ComponentId::MessageDetails, f, main_chunks[1]);
             })
             .is_ok());
     }
@@ -96,7 +112,14 @@ where
                 Vec::default(),
             )
             .is_ok());
-        assert!(app.active(&ComponentId::Messages).is_ok());
+        assert!(app
+            .mount(
+                ComponentId::MessageDetails,
+                Box::new(MessageDetails::new()),
+                Vec::default(),
+            )
+            .is_ok());
+        assert!(app.active(&ComponentId::MessageDetails).is_ok());
         app
     }
 }
@@ -114,7 +137,23 @@ where
                 Msg::AppClose => {
                     self.quit = true; // Terminate
                     None
-                }
+                },
+                Msg::Submit(lines) => {
+                    match ClipboardContext::new() {
+                        Ok(mut ctx) => {
+                            if let Err(e) = ctx.set_contents(lines.join("\n")) {
+                                //TODO: Move to global error handler
+                                println!("Error during copying data to clipboard: {}", e);
+                            }
+                        }
+                        Err(e) => {
+                            //TODO: Move to global error handler
+                            println!("Failed to initialize clipboard context: {}", e);
+                        }
+                    }
+                    None
+                },
+
                 _ => None
            }
         } else {

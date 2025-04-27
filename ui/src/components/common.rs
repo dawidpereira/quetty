@@ -2,7 +2,8 @@
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum ComponentId {
     Label,
-    Messages
+    Messages,
+    MessageDetails
 }
 
 
@@ -10,6 +11,7 @@ pub enum ComponentId {
 pub enum Msg {
     AppClose,
     ForceRedraw,
+    Submit(Vec<String>),
 }
 
 

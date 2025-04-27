@@ -6,3 +6,5 @@ edition = "2024"
 [dependencies]
 tuirealm = "2.1.0"
 tui-realm-stdlib = "2.0.1"
+tui-realm-textarea = { version = "2.1.0", features = ["clipboard", "search"] }
+copypasta = "0.10.2"
