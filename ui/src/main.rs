@@ -5,6 +5,7 @@ use tuirealm::{AttrValue, Attribute, Update};
 
 mod app;
 mod components;
+mod models;
 
 fn main() {
     // Setup model

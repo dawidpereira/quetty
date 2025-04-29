@@ -1,9 +1,11 @@
-use tui_realm_textarea::{TextArea, TEXTAREA_CMD_NEWLINE, TEXTAREA_CMD_PASTE, TEXTAREA_CMD_REDO, TEXTAREA_CMD_UNDO};
+use tui_realm_textarea::{
+    TEXTAREA_CMD_NEWLINE, TEXTAREA_CMD_PASTE, TEXTAREA_CMD_REDO, TEXTAREA_CMD_UNDO, TextArea,
+};
 use tuirealm::{
+    Component, MockComponent, NoUserEvent,
     command::{Cmd, CmdResult, Direction},
     event::{Event, Key, KeyEvent, KeyModifiers},
     props::{Alignment, BorderType, Borders, Color, Style, TextModifiers},
-    Component, MockComponent, NoUserEvent,
 };
 
 use super::common::Msg;
@@ -15,39 +17,11 @@ pub struct MessageDetails {
 
 //TODO: Add search
 impl MessageDetails {
-    pub fn new() -> Self {
-        // JSON message as &'static str (string literal)
-        let json_body = r#"{
-  "event": "OrderPlaced",
-  "timestamp": "2025-04-26T14:30:00+02:00",
-  "user": {
-    "id": "user_12345",
-    "name": "John Doe",
-    "email": "john.doe@example.com"
-  },
-  "order": {
-    "order_id": "order_98765",
-    "items": [
-      {
-        "product_id": "prod_001",
-        "name": "Wireless Mouse",
-        "quantity": 2,
-        "price": 79.99
-      },
-      {
-        "product_id": "prod_002",
-        "name": "Mechanical Keyboard",
-        "quantity": 1,
-        "price": 349.50
-      }
-    ],
-    "total": 509.48,
-    "currency": "PLN",
-    "status": "placed"
-  }
-}"#;
-
-        let lines: Vec<String> = json_body.lines().map(|l| l.to_string()).collect();
+    pub fn new(data: Option<Vec<String>>) -> Self {
+        let lines = match data {
+            Some(lines) => lines,
+            None => vec!["No message selected".to_string()],
+        };
         let mut textarea = TextArea::new(lines);
 
         textarea = textarea
@@ -73,16 +47,20 @@ impl MessageDetails {
             )
             .tab_length(4);
 
-        Self { component: textarea }
+        Self {
+            component: textarea,
+        }
     }
 }
 
 impl Component<Msg, NoUserEvent> for MessageDetails {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
         let _ = match ev {
-
             // Handle modifiers actions
-            Event::Keyboard(KeyEvent { code: Key::Char(c), modifiers: KeyModifiers::CONTROL }) => match c {
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(c),
+                modifiers: KeyModifiers::CONTROL,
+            }) => match c {
                 'v' => self.component.perform(Cmd::Custom(TEXTAREA_CMD_PASTE)),
                 'z' => self.component.perform(Cmd::Custom(TEXTAREA_CMD_UNDO)),
                 'y' => self.component.perform(Cmd::Custom(TEXTAREA_CMD_REDO)),
@@ -98,22 +76,25 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
                 code: Key::Enter,
                 modifiers: KeyModifiers::ALT,
             }) => {
-                match self.component.perform(Cmd::Submit){
+                match self.component.perform(Cmd::Submit) {
                     CmdResult::Submit(state) => {
                         let state = state.unwrap_vec();
-                         let lines: Vec<String> = state.into_iter()
+                        let lines: Vec<String> = state
+                            .into_iter()
                             .map(|sv| sv.unwrap_string()) //TODO: Unwrap_string panics if not a String variant
                             .collect();
 
-                        return Some(Msg::Submit(lines))
+                        return Some(Msg::Submit(lines));
                     }
-                    _ => return None
+                    _ => return None,
                 }
-
-            },
+            }
 
             // Handle keys with no modifiers
-            Event::Keyboard(KeyEvent { code, modifiers: KeyModifiers::NONE }) => match code {
+            Event::Keyboard(KeyEvent {
+                code,
+                modifiers: KeyModifiers::NONE,
+            }) => match code {
                 Key::PageDown => self.component.perform(Cmd::Scroll(Direction::Down)),
                 Key::PageUp => self.component.perform(Cmd::Scroll(Direction::Up)),
                 Key::Left => self.component.perform(Cmd::Move(Direction::Left)),
@@ -140,4 +121,3 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
         Some(Msg::ForceRedraw)
     }
 }
-
