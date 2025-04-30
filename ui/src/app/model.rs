@@ -7,7 +7,7 @@ use tuirealm::ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBridge};
 use tuirealm::{Application, EventListenerCfg, Update};
 
-use crate::components::common::{ComponentId, Msg};
+use crate::components::common::{ComponentId, MessageActivitMsg, Msg};
 use crate::components::label::Label;
 use crate::components::message_details::MessageDetails;
 use crate::components::messages::Messages;
@@ -163,7 +163,7 @@ where
                     }
                     None
                 }
-                Msg::SelectedMessageChanged(index) => {
+                Msg::MessageActivity(MessageActivitMsg::RefreshMessageDetails(index)) => {
                     if let Some(message_details) = self.messages.get(index) {
                         let message = mock_message_details()
                             .iter()

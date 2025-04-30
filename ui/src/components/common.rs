@@ -2,18 +2,21 @@
 pub enum ComponentId {
     Label,
     Messages,
-    MessageDetails
+    MessageDetails,
 }
-
 
 #[derive(Debug, PartialEq)]
 pub enum Msg {
     AppClose,
     ForceRedraw,
     Submit(Vec<String>),
-    SelectedMessageChanged(usize),
+    MessageActivity(MessageActivitMsg),
 }
 
+#[derive(Debug, PartialEq)]
+pub enum MessageActivitMsg {
+    RefreshMessageDetails(usize),
+}
 
 impl Default for Msg {
     fn default() -> Self {
