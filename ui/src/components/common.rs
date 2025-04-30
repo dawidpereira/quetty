@@ -16,6 +16,8 @@ pub enum Msg {
 #[derive(Debug, PartialEq)]
 pub enum MessageActivitMsg {
     RefreshMessageDetails(usize),
+    EditMessage(usize),
+    CancelEditMessage,
 }
 
 impl Default for Msg {

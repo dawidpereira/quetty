@@ -8,12 +8,14 @@ use tuirealm::{
     props::{Alignment, BorderType, Borders, Color, Style, TextModifiers},
 };
 
-use super::common::Msg;
+use super::common::{MessageActivitMsg, Msg};
 
 #[derive(MockComponent)]
 pub struct MessageDetails {
     component: TextArea<'static>,
 }
+
+const CANCEL_EDIT_MESSAGE: &str = "CancelEditMessage";
 
 //TODO: Add search
 impl MessageDetails {
@@ -55,7 +57,7 @@ impl MessageDetails {
 
 impl Component<Msg, NoUserEvent> for MessageDetails {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
-        let _ = match ev {
+        let cmd_result = match ev {
             // Handle modifiers actions
             Event::Keyboard(KeyEvent {
                 code: Key::Char(c),
@@ -104,7 +106,7 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
                 Key::Backspace => self.component.perform(Cmd::Delete),
                 Key::Enter => self.component.perform(Cmd::Custom(TEXTAREA_CMD_NEWLINE)),
                 Key::Tab => self.component.perform(Cmd::Type('\t')),
-                Key::Esc => return Some(Msg::AppClose),
+                Key::Esc => CmdResult::Custom(CANCEL_EDIT_MESSAGE, self.state()),
 
                 // Handle typing
                 Key::Char(ch) => {
@@ -118,6 +120,12 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
             _ => CmdResult::None,
         };
 
-        Some(Msg::ForceRedraw)
+        match cmd_result {
+            CmdResult::Custom(CANCEL_EDIT_MESSAGE, _) => {
+                Some(Msg::MessageActivity(MessageActivitMsg::CancelEditMessage))
+            }
+            CmdResult::None => None,
+            _ => Some(Msg::ForceRedraw),
+        }
     }
 }

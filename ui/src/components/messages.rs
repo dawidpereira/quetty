@@ -13,6 +13,8 @@ pub struct Messages {
     component: Table,
 }
 
+const CMD_RESULT_MESSAGE_SELECTED: &str = "MessageSelected";
+
 impl Messages {
     pub fn new(messages: &Vec<MessageModel>) -> Self {
         let component = {
@@ -86,6 +88,10 @@ impl Component<Msg, NoUserEvent> for Messages {
                 modifiers: KeyModifiers::NONE,
             }) => self.perform(Cmd::Scroll(Direction::Up)),
             Event::Keyboard(KeyEvent {
+                code: Key::Enter,
+                modifiers: KeyModifiers::NONE,
+            }) => CmdResult::Custom(CMD_RESULT_MESSAGE_SELECTED, self.state()),
+            Event::Keyboard(KeyEvent {
                 code: Key::Esc,
                 modifiers: KeyModifiers::NONE,
             }) => return Some(Msg::AppClose),
@@ -96,6 +102,15 @@ impl Component<Msg, NoUserEvent> for Messages {
                 StateValue::Usize(index) => Some(Msg::MessageActivity(
                     MessageActivitMsg::RefreshMessageDetails(index),
                 )),
+                _ => {
+                    println!("Incorrect state in message table");
+                    None
+                }
+            },
+            CmdResult::Custom(CMD_RESULT_MESSAGE_SELECTED, state) => match state.unwrap_one() {
+                StateValue::Usize(index) => {
+                    Some(Msg::MessageActivity(MessageActivitMsg::EditMessage(index)))
+                }
                 _ => {
                     println!("Incorrect state in message table");
                     None

@@ -185,7 +185,20 @@ where
                     }
                     None
                 }
-
+                Msg::MessageActivity(MessageActivitMsg::EditMessage(_)) => {
+                    if self.app.active(&ComponentId::MessageDetails).is_err() {
+                        println!("Error: MessageDetails component not active");
+                        return None;
+                    }
+                    None
+                }
+                Msg::MessageActivity(MessageActivitMsg::CancelEditMessage) => {
+                    if self.app.active(&ComponentId::Messages).is_err() {
+                        println!("Error: Messages component not active");
+                        return None;
+                    }
+                    None
+                }
                 _ => None,
             }
         } else {
