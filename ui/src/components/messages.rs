@@ -93,10 +93,10 @@ impl Component<Msg, NoUserEvent> for Messages {
         };
         match cmd_result {
             CmdResult::Changed(state) => match state.unwrap_one() {
-                StateValue::Usize(index) => return Some(Msg::SelectedMessageChanged(index)),
+                StateValue::Usize(index) => Some(Msg::SelectedMessageChanged(index)),
                 _ => {
                     println!("Incorrect state in message table");
-                    return None;
+                    None
                 }
             },
             CmdResult::None => None,
