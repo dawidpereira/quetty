@@ -11,7 +11,7 @@ use crate::components::common::{ComponentId, MessageActivitMsg, Msg};
 use crate::components::label::Label;
 use crate::components::message_details::MessageDetails;
 use crate::components::messages::Messages;
-use crate::models::models::MessageModel;
+use crate::models::messages::MessageModel;
 
 use super::dev_mocks::{self, mock_message_details};
 

@@ -4,9 +4,9 @@ use tuirealm::event::{Key, KeyEvent, KeyModifiers};
 use tuirealm::props::{Alignment, BorderType, Borders, Color, TableBuilder, TextSpan};
 use tuirealm::{Component, Event, MockComponent, NoUserEvent, StateValue};
 
-use crate::models::models::MessageModel;
+use crate::models::messages::MessageModel;
 
-use super::common::Msg;
+use super::common::{MessageActivitMsg, Msg};
 
 #[derive(MockComponent)]
 pub struct Messages {

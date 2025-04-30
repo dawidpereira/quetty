@@ -1,7 +1,7 @@
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use uuid::Uuid;
 
-use crate::models::models::{MessageDetailsModel, MessageModel};
+use crate::models::messages::{MessageDetailsModel, MessageModel};
 pub fn mock_messages() -> Result<Vec<MessageModel>, Box<dyn std::error::Error>> {
     let raw_data = vec![
         (

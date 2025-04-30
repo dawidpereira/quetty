@@ -1,4 +1,4 @@
 pub mod common;
 pub mod label;
-pub mod messages;
 pub mod message_details;
+pub mod messages;
