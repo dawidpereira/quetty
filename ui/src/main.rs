@@ -18,16 +18,18 @@ fn main() {
         // Tick
         match model.app.tick(PollStrategy::Once) {
             Err(err) => {
-                assert!(model
-                    .app
-                    .attr(
-                        &ComponentId::Label,
-                        Attribute::Text,
-                        AttrValue::String(format!("Application error: {}", err)),
-                    )
-                    .is_ok());
+                assert!(
+                    model
+                        .app
+                        .attr(
+                            &ComponentId::Label,
+                            Attribute::Text,
+                            AttrValue::String(format!("Application error: {}", err)),
+                        )
+                        .is_ok()
+                );
             }
-            Ok(messages) if messages.len() > 0 => {
+            Ok(messages) if !messages.is_empty() => {
                 // NOTE: redraw if at least one msg has been processed
                 model.redraw = true;
                 for msg in messages.into_iter() {

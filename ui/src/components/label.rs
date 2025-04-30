@@ -9,20 +9,12 @@ use tuirealm::{
 
 use crate::components::common::Msg;
 
-
 /// Simple label component; just renders a text
 /// NOTE: since I need just one label, I'm not going to use different object; I will directly implement Component for Label.
 /// This is not ideal actually and in a real app you should differentiate Mock Components from Application Components.
+#[derive(Default)]
 pub struct Label {
     props: Props,
-}
-
-impl Default for Label {
-    fn default() -> Self {
-        Self {
-            props: Props::default(),
-        }
-    }
 }
 
 impl Label {
@@ -118,7 +110,7 @@ impl MockComponent for Label {
 impl Component<Msg, NoUserEvent> for Label {
     fn on(&mut self, event: Event<NoUserEvent>) -> Option<Msg> {
         // Does nothing
-        let cmd = match event{
+        let cmd = match event {
             Event::Keyboard(KeyEvent {
                 code: Key::Esc,
                 modifiers: KeyModifiers::NONE,
@@ -126,8 +118,7 @@ impl Component<Msg, NoUserEvent> for Label {
             _ => Cmd::None,
         };
 
-        match self.perform(cmd) {
-            _ => None,
-        }
+        self.perform(cmd);
+        None
     }
 }
