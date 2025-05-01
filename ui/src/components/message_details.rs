@@ -114,6 +114,14 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
                 _ => CmdResult::None,
             },
 
+            Event::Keyboard(KeyEvent { code, modifiers: _ }) => {
+                if let Key::Char(ch) = code {
+                    self.component.perform(Cmd::Type(ch))
+                } else {
+                    CmdResult::None
+                }
+            }
+
             _ => CmdResult::None,
         };
 
