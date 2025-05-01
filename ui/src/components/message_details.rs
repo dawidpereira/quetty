@@ -109,10 +109,7 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
                 Key::Esc => CmdResult::Custom(CANCEL_EDIT_MESSAGE, self.state()),
 
                 // Handle typing
-                Key::Char(ch) => {
-                    self.component.perform(Cmd::Type(ch));
-                    return None;
-                }
+                Key::Char(ch) => self.component.perform(Cmd::Type(ch)),
 
                 _ => CmdResult::None,
             },
@@ -124,7 +121,6 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
             CmdResult::Custom(CANCEL_EDIT_MESSAGE, _) => {
                 Some(Msg::MessageActivity(MessageActivitMsg::CancelEditMessage))
             }
-            CmdResult::None => None,
             _ => Some(Msg::ForceRedraw),
         }
     }
