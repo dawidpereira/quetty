@@ -1,4 +1,5 @@
 use copypasta::{ClipboardContext, ClipboardProvider};
+use server::model::MessageModel;
 use tuirealm::event::NoUserEvent;
 use tuirealm::props::TextModifiers;
 use tuirealm::props::{Alignment, Color};
@@ -10,9 +11,6 @@ use crate::components::common::{ComponentId, MessageActivitMsg, Msg};
 use crate::components::label::Label;
 use crate::components::message_details::MessageDetails;
 use crate::components::messages::Messages;
-use crate::models::messages::MessageModel;
-
-use super::dev_mocks::{self, mock_message_details};
 use crate::config;
 
 pub struct Model<T>
@@ -28,17 +26,29 @@ where
     /// Used to draw to terminal
     pub terminal: TerminalBridge<T>,
 
-    pub messages: Vec<MessageModel>,
+    pub messages: Option<Vec<MessageModel>>,
 }
 
 impl Default for Model<CrosstermTerminalAdapter> {
     fn default() -> Self {
         Self {
-            app: Self::init_app(&dev_mocks::mock_messages().unwrap()),
+            app: Self::init_app(None),
             quit: false,
             redraw: true,
             terminal: TerminalBridge::init_crossterm().expect("Cannot initialize terminal"),
-            messages: dev_mocks::mock_messages().unwrap(), //TODO: Get data from server
+            messages: None,
+        }
+    }
+}
+
+impl Model<CrosstermTerminalAdapter> {
+    pub fn new_crossterm(messages: Option<Vec<MessageModel>>) -> Self {
+        Self {
+            app: Self::init_app(messages.as_ref()),
+            quit: false,
+            redraw: true,
+            terminal: TerminalBridge::init_crossterm().expect("Cannot initialize terminal"),
+            messages,
         }
     }
 }
@@ -87,7 +97,9 @@ where
         );
     }
 
-    fn init_app(messages: &Vec<MessageModel>) -> Application<ComponentId, Msg, NoUserEvent> {
+    fn init_app(
+        messages: Option<&Vec<MessageModel>>, //NOTE: Not needed in final scope. Will be removed after early development phase.
+    ) -> Application<ComponentId, Msg, NoUserEvent> {
         // Setup application
         let mut app: Application<ComponentId, Msg, NoUserEvent> = Application::init(
             EventListenerCfg::default()
@@ -167,25 +179,19 @@ where
                     None
                 }
                 Msg::MessageActivity(MessageActivitMsg::RefreshMessageDetails(index)) => {
-                    if let Some(message_details) = self.messages.get(index) {
-                        let message = mock_message_details()
-                            .iter()
-                            .find(|m| m.id == message_details.id)
-                            .map(|m| m.message.clone());
-                        if let Some(data) = message {
-                            let lines: Vec<String> = data.lines().map(|l| l.to_string()).collect();
-
-                            assert!(
-                                self.app
-                                    .remount(
-                                        ComponentId::MessageDetails,
-                                        Box::new(MessageDetails::new(Some(lines))),
-                                        Vec::default(),
-                                    )
-                                    .is_ok()
-                            );
-                        }
+                    let mut message: Option<MessageModel> = None;
+                    if self.messages.is_some() {
+                        message = self.messages.as_ref().unwrap().get(index).cloned();
                     }
+                    assert!(
+                        self.app
+                            .remount(
+                                ComponentId::MessageDetails,
+                                Box::new(MessageDetails::new(message)),
+                                Vec::default(),
+                            )
+                            .is_ok()
+                    );
                     None
                 }
                 Msg::MessageActivity(MessageActivitMsg::EditMessage(_)) => {

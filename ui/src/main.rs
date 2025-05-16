@@ -1,18 +1,43 @@
 use app::model::Model;
+//NOTE: Consider whether it is worth removing the reference to AzureServiceBus from the UI model
+use azservicebus::{ServiceBusClient, ServiceBusClientOptions, ServiceBusReceiverOptions};
 use components::common::ComponentId;
+use server::consumer::ServiceBusClientExt;
 use tuirealm::application::PollStrategy;
 use tuirealm::{AttrValue, Attribute, Update};
 
 mod app;
 mod components;
-mod models;
+mod config;
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup model
-    let mut model = Model::default();
+    let mut client = ServiceBusClient::new_from_connection_string(
+        config::CONFIG.servicebus().connection_string(),
+        ServiceBusClientOptions::default(),
+    )
+    .await?;
+
+    //TODO: Get messages after messages view loading. Blocked until queu switcher
+    let mut receiver = client
+        .create_consumer_for_queue(
+            config::CONFIG.servicebus().queue_name(),
+            ServiceBusReceiverOptions::default(),
+        )
+        .await?;
+
+    let messages = receiver
+        .peek_messages(config::CONFIG.max_messages(), None)
+        .await
+        .unwrap();
+
+    let mut model = Model::new_crossterm(Some(messages));
+
     // Enter alternate screen
     let _ = model.terminal.enter_alternate_screen();
     let _ = model.terminal.enable_raw_mode();
+
     // Main loop
     while !model.quit {
         // Tick
@@ -51,4 +76,5 @@ fn main() {
     let _ = model.terminal.leave_alternate_screen();
     let _ = model.terminal.disable_raw_mode();
     let _ = model.terminal.clear_screen();
+    Ok(())
 }

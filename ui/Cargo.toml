@@ -4,9 +4,18 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+server = { path = "../server" }
+tokio = { version = "1.45.0", features = ["rt-multi-thread", "macros"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+time = { version = "0.3", features = ["serde"] }
 tuirealm = "2.1.0"
 tui-realm-stdlib = "2.0.1"
 tui-realm-textarea = { version = "2.1.0", features = ["clipboard", "search"] }
 copypasta = "0.10.2"
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
+azservicebus = "0.20.4"
+config = "0.15.11"
+lazy_static = "1.4.0"
+dotenv = "0.15.0"

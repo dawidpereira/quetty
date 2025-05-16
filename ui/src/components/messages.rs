@@ -1,10 +1,9 @@
+use server::model::MessageModel;
 use tui_realm_stdlib::Table;
 use tuirealm::command::{Cmd, CmdResult, Direction};
 use tuirealm::event::{Key, KeyEvent, KeyModifiers};
 use tuirealm::props::{Alignment, BorderType, Borders, Color, TableBuilder, TextSpan};
 use tuirealm::{Component, Event, MockComponent, NoUserEvent, StateValue};
-
-use crate::models::messages::MessageModel;
 
 use super::common::{MessageActivitMsg, Msg};
 
@@ -16,7 +15,7 @@ pub struct Messages {
 const CMD_RESULT_MESSAGE_SELECTED: &str = "MessageSelected";
 
 impl Messages {
-    pub fn new(messages: &Vec<MessageModel>) -> Self {
+    pub fn new(messages: Option<&Vec<MessageModel>>) -> Self {
         let component = {
             Table::default()
                 .borders(
@@ -42,20 +41,21 @@ impl Messages {
         Self { component }
     }
 
-    fn build_table_from_messages(messages: &Vec<MessageModel>) -> Vec<Vec<TextSpan>> {
-        let mut builder = TableBuilder::default();
+    fn build_table_from_messages(messages: Option<&Vec<MessageModel>>) -> Vec<Vec<TextSpan>> {
+        if let Some(messages) = messages {
+            let mut builder = TableBuilder::default();
 
-        for msg in messages {
-            builder
-                .add_col(TextSpan::from(msg.sequence.to_string()))
-                .add_col(TextSpan::from(msg.id.to_string()))
-                .add_col(TextSpan::from(
-                    msg.enqueued_at.format("%Y-%m-%d %H:%M:%S").to_string(),
-                ))
-                .add_col(TextSpan::from(msg.delivery_count.to_string()))
-                .add_row();
+            for msg in messages {
+                builder
+                    .add_col(TextSpan::from(msg.sequence.to_string()))
+                    .add_col(TextSpan::from(msg.id.to_string()))
+                    .add_col(TextSpan::from(msg.enqueued_at.to_string()))
+                    .add_col(TextSpan::from(msg.delivery_count.to_string()))
+                    .add_row();
+            }
+            return builder.build();
         }
-        builder.build()
+        Vec::new()
     }
 }
 

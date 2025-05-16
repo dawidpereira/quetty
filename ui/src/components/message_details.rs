@@ -1,3 +1,4 @@
+use server::model::MessageModel;
 use tui_realm_textarea::{
     TEXTAREA_CMD_NEWLINE, TEXTAREA_CMD_PASTE, TEXTAREA_CMD_REDO, TEXTAREA_CMD_UNDO, TextArea,
 };
@@ -19,12 +20,14 @@ const CANCEL_EDIT_MESSAGE: &str = "CancelEditMessage";
 
 //TODO: Add search
 impl MessageDetails {
-    pub fn new(data: Option<Vec<String>>) -> Self {
-        let lines = match data {
-            Some(lines) => lines,
-            None => vec!["No message selected".to_string()],
+    pub fn new(message: Option<MessageModel>) -> Self {
+        let mut textarea = match message {
+            Some(data) => match serde_json::to_string_pretty(&data) {
+                Ok(json_str) => TextArea::new(vec![json_str]),
+                Err(e) => TextArea::new(vec![format!("Serialization error: {}", e)]),
+            },
+            None => TextArea::new(vec!["No message selected".to_string()]),
         };
-        let mut textarea = TextArea::new(lines);
 
         textarea = textarea
             .borders(

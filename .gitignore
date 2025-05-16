@@ -12,6 +12,10 @@
 # Env file
 .env
 
+# Config files
+config.toml
+config.json
+
 # Cache files
 .*cache.*
 
@@ -21,4 +25,6 @@ NOTES*
 # Generated html files for live previewing markdown
 *.html
 
+.DS_Store 
 .idea
+
