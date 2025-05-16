@@ -1,0 +1,70 @@
+use lazy_static::lazy_static;
+use std::time::Duration;
+
+use config::{Config, Environment};
+use serde::Deserialize;
+
+lazy_static! {
+    pub static ref CONFIG: AppConfig = {
+        dotenv::dotenv().ok();
+        let env_source = Environment::default().separator("__");
+        let file_source = config::File::with_name("config.toml");
+
+        let config = Config::builder()
+            .add_source(file_source)
+            .add_source(env_source)
+            .build()
+            .expect("Failed to load configuration");
+
+        config
+            .try_deserialize::<AppConfig>()
+            .expect("Failed to deserialize configuration")
+    };
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AppConfig {
+    max_messages: u32,
+    crossterm_input_listener_interval_ms: u64,
+    crossterm_input_listener_retries: usize,
+    poll_timeout_ms: u64,
+    tick_interval_secs: u64,
+    servicebus: ServicebusConfig,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ServicebusConfig {
+    connection_string: String,
+    //TODO: Queue, topic, subscription should be dynamicaly loaded from servicebus
+    queue_name: String,
+}
+
+impl AppConfig {
+    pub fn max_messages(&self) -> u32 {
+        self.max_messages
+    }
+    pub fn crossterm_input_listener_interval(&self) -> Duration {
+        Duration::from_millis(self.crossterm_input_listener_interval_ms)
+    }
+    pub fn crossterm_input_listener_retries(&self) -> usize {
+        self.crossterm_input_listener_retries
+    }
+    pub fn poll_timeout(&self) -> Duration {
+        Duration::from_millis(self.poll_timeout_ms)
+    }
+    pub fn tick_interval(&self) -> Duration {
+        Duration::from_secs(self.tick_interval_secs)
+    }
+    pub fn servicebus(&self) -> &ServicebusConfig {
+        &self.servicebus
+    }
+}
+
+impl ServicebusConfig {
+    pub fn connection_string(&self) -> &str {
+        &self.connection_string
+    }
+    pub fn queue_name(&self) -> &str {
+        &self.queue_name
+    }
+}

@@ -1,5 +1,4 @@
 use copypasta::{ClipboardContext, ClipboardProvider};
-use std::time::Duration;
 use tuirealm::event::NoUserEvent;
 use tuirealm::props::TextModifiers;
 use tuirealm::props::{Alignment, Color};
@@ -14,6 +13,7 @@ use crate::components::messages::Messages;
 use crate::models::messages::MessageModel;
 
 use super::dev_mocks::{self, mock_message_details};
+use crate::config;
 
 pub struct Model<T>
 where
@@ -91,9 +91,12 @@ where
         // Setup application
         let mut app: Application<ComponentId, Msg, NoUserEvent> = Application::init(
             EventListenerCfg::default()
-                .crossterm_input_listener(Duration::from_millis(20), 3)
-                .poll_timeout(Duration::from_millis(10))
-                .tick_interval(Duration::from_secs(1)),
+                .crossterm_input_listener(
+                    config::CONFIG.crossterm_input_listener_interval(),
+                    config::CONFIG.crossterm_input_listener_retries(),
+                )
+                .poll_timeout(config::CONFIG.poll_timeout())
+                .tick_interval(config::CONFIG.tick_interval()),
         );
 
         // Mount components
