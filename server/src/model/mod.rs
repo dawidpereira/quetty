@@ -1,0 +1,110 @@
+use azservicebus::prelude::ServiceBusPeekedMessage;
+use azure_core::date::OffsetDateTime;
+use serde::Serialize;
+use serde::ser::Serializer;
+use serde_json::Value;
+use std::convert::TryFrom;
+
+#[derive(Serialize, Clone)]
+pub struct MessageModel {
+    pub sequence: i64,
+    pub id: String,
+    #[serde(with = "azure_core::date::iso8601")]
+    pub enqueued_at: OffsetDateTime,
+    pub delivery_count: usize,
+    pub body: BodyData,
+}
+
+impl MessageModel {
+    pub fn new(
+        sequence: i64,
+        id: String,
+        enqueued_at: OffsetDateTime,
+        delivery_count: usize,
+        body: BodyData,
+    ) -> Self {
+        Self {
+            sequence,
+            id,
+            enqueued_at,
+            delivery_count,
+            body,
+        }
+    }
+
+    pub fn try_convert_messages_collect(
+        messages: Vec<ServiceBusPeekedMessage>,
+    ) -> Vec<MessageModel> {
+        let mut valid_models = Vec::new();
+
+        for msg in messages {
+            match MessageModel::try_from(msg) {
+                Ok(model) => valid_models.push(model),
+                Err(e) => {
+                    //TODO: Better haldning of errors
+                    eprint!("Error converting message: {:?}", e);
+                }
+            }
+        }
+
+        valid_models
+    }
+
+    fn parse_message_body(msg: &ServiceBusPeekedMessage) -> BodyData {
+        let bytes = msg.body().unwrap_or_default();
+
+        match serde_json::from_slice::<Value>(bytes) {
+            Ok(val) => BodyData::ValidJson(val),
+            Err(_) => {
+                //TODO: Error handling
+                eprint!("Error parsing JSON, falling back to raw string");
+                BodyData::RawString(String::from_utf8_lossy(bytes).into_owned())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum BodyData {
+    ValidJson(Value),
+    RawString(String),
+}
+
+impl Serialize for BodyData {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            BodyData::ValidJson(val) => val.serialize(serializer),
+            BodyData::RawString(s) => serializer.serialize_str(s),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum MessageModelError {
+    MissingMessageId,
+    JsonError(serde_json::Error),
+}
+
+impl TryFrom<ServiceBusPeekedMessage> for MessageModel {
+    type Error = MessageModelError;
+
+    fn try_from(msg: ServiceBusPeekedMessage) -> Result<Self, Self::Error> {
+        let id = msg
+            .message_id()
+            .ok_or(MessageModelError::MissingMessageId)?
+            .to_string();
+
+        let body = MessageModel::parse_message_body(&msg);
+
+        Ok(Self {
+            sequence: msg.sequence_number(),
+            id,
+            enqueued_at: msg.enqueued_time(),
+            delivery_count: msg.delivery_count().unwrap_or_default() as usize,
+            body,
+        })
+    }
+}
