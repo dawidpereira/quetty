@@ -22,10 +22,43 @@ const CANCEL_EDIT_MESSAGE: &str = "CancelEditMessage";
 impl MessageDetails {
     pub fn new(message: Option<MessageModel>) -> Self {
         let mut textarea = match message {
-            Some(data) => match serde_json::to_string_pretty(&data) {
-                Ok(json_str) => TextArea::new(vec![json_str]),
-                Err(e) => TextArea::new(vec![format!("Serialization error: {}", e)]),
-            },
+            Some(data) => {
+                match serde_json::to_value(&data) {
+                    Ok(mut value) => {
+                        // If body is a string, try to parse it as JSON for pretty display
+                        if let Some(body_value) = value.get_mut("body") {
+                            if let Some(body_str) = body_value.as_str() {
+                                if let Ok(json_body) =
+                                    serde_json::from_str::<serde_json::Value>(body_str)
+                                {
+                                    *body_value = json_body;
+                                } else {
+                                    // Not valid JSON, format as multi-line string
+                                    let lines: Vec<&str> = body_str.lines().collect();
+                                    if lines.len() > 1 {
+                                        // Represent as array of lines for better display
+                                        *body_value = serde_json::Value::Array(
+                                            lines
+                                                .iter()
+                                                .map(|l| serde_json::Value::String(l.to_string()))
+                                                .collect(),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        match serde_json::to_string_pretty(&value) {
+                            Ok(json_str) => {
+                                let lines: Vec<String> =
+                                    json_str.lines().map(String::from).collect();
+                                TextArea::new(lines)
+                            }
+                            Err(e) => TextArea::new(vec![format!("Serialization error: {}", e)]),
+                        }
+                    }
+                    Err(e) => TextArea::new(vec![format!("Serialization error: {}", e)]),
+                }
+            }
             None => TextArea::new(vec!["No message selected".to_string()]),
         };
 
