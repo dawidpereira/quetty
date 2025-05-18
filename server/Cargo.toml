@@ -15,3 +15,6 @@ azservicebus = "0.20.4"
 azure_core = "0.24.0"
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+futures-util = "0.3"
