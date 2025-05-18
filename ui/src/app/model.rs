@@ -1,5 +1,12 @@
+use azservicebus::core::BasicRetryPolicy;
+use azservicebus::{ServiceBusClient, ServiceBusClientOptions};
 use copypasta::{ClipboardContext, ClipboardProvider};
+use server::consumer::Consumer;
 use server::model::MessageModel;
+use server::taskpool::TaskPool;
+use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::Mutex;
 use tuirealm::event::NoUserEvent;
 use tuirealm::props::TextModifiers;
 use tuirealm::props::{Alignment, Color};
@@ -7,7 +14,6 @@ use tuirealm::ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBridge};
 use tuirealm::{Application, EventListenerCfg, Update};
 
-use crate::components::common::{ComponentId, MessageActivitMsg, Msg};
 use crate::components::common::{ComponentId, MessageActivityMsg, Msg, QueueActivityMsg};
 use crate::components::label::Label;
 use crate::components::message_details::MessageDetails;
@@ -19,12 +25,14 @@ pub enum AppState {
     QueuePicker,
     Main,
 }
+
 pub struct Model<T>
 where
     T: TerminalAdapter,
 {
     /// Application
     pub app: Application<ComponentId, Msg, NoUserEvent>,
+    pub app_state: AppState,
     /// Indicates that the application must quit
     pub quit: bool,
     /// Tells whether to redraw interface
@@ -32,34 +40,44 @@ where
     /// Used to draw to terminal
     pub terminal: TerminalBridge<T>,
 
-    pub messages: Option<Vec<MessageModel>>,
-    pub app_state: AppState,
-    pub pending_queue: Option<String>,
-}
+    pub taskpool: TaskPool,
+    pub tx_to_main: Sender<Msg>,
+    pub rx_to_main: Receiver<Msg>,
 
-impl Default for Model<CrosstermTerminalAdapter> {
-    fn default() -> Self {
-        Self {
-            app: Self::init_app(None),
-            quit: false,
-            redraw: true,
-            terminal: TerminalBridge::init_crossterm().expect("Cannot initialize terminal"),
-            messages: None,
-            app_state: AppState::Main,
-        }
-    }
+    pub service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+    pub pending_queue: Option<String>,
+    pub consumer: Option<Arc<Mutex<Consumer>>>,
+    pub messages: Option<Vec<MessageModel>>,
 }
 
 impl Model<CrosstermTerminalAdapter> {
-    pub fn new_crossterm(messages: Option<Vec<MessageModel>>) -> Self {
-        Self {
-            app: Self::init_app(messages.as_ref()),
-            quit: false,
-            redraw: true,
-            terminal: TerminalBridge::init_crossterm().expect("Cannot initialize terminal"),
-            messages,
-            app_state: AppState::Main,
-            pending_queue: None,
+    pub async fn new() -> Self {
+        let service_bus_client_result = ServiceBusClient::new_from_connection_string(
+            config::CONFIG.servicebus().connection_string(),
+            ServiceBusClientOptions::default(),
+        )
+        .await;
+        let (tx_to_main, rx_to_main) = mpsc::channel();
+        let taskpool = TaskPool::new(10);
+
+        match service_bus_client_result {
+            Ok(service_bus_client) => Self {
+                app: Self::init_app(None),
+                quit: false,
+                redraw: true,
+                terminal: TerminalBridge::init_crossterm().expect("Cannot initialize terminal"),
+                app_state: AppState::QueuePicker,
+                tx_to_main,
+                rx_to_main,
+                taskpool,
+                service_bus_client: Arc::new(Mutex::new(service_bus_client)),
+                pending_queue: None,
+                consumer: None,
+                messages: None,
+            },
+            Err(e) => {
+                panic!("Error creating ServiceBusClient: {}", e);
+            }
         }
     }
 }
@@ -68,6 +86,12 @@ impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
+    pub fn update_outside_msg(&mut self) {
+        if let Ok(msg) = self.rx_to_main.try_recv() {
+            self.update(Some(msg));
+        }
+    }
+
     pub fn view(&mut self) {
         assert!(
             self.terminal
@@ -254,10 +278,28 @@ where
                     }
                     None
                 }
+                Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(messages)) => {
+                    self.messages = Some(messages);
+                    assert!(
+                        self.app
+                            .remount(
+                                ComponentId::Messages,
+                                Box::new(Messages::new(self.messages.as_ref())),
+                                Vec::default(),
+                            )
+                            .is_ok()
+                    );
+                    self.app_state = AppState::Main;
+                    None
+                }
+                Msg::MessageActivity(MessageActivityMsg::ConsumerCreated(consumer)) => {
+                    self.consumer = Some(Arc::new(Mutex::new(consumer)));
+                    self.load_messages();
+                    None
+                }
                 Msg::QueueActivity(QueueActivityMsg::QueueSelected(queue)) => {
                     self.pending_queue = Some(queue);
-                    self.get_messages();
-                    self.redraw = true;
+                    self.new_consumer_for_queue();
                     None
                 }
                 _ => None,
