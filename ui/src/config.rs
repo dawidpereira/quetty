@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use config::{Config, Environment};
 use serde::Deserialize;
+use server::service_bus_manager::AzureAdConfig;
 
 lazy_static! {
     pub static ref CONFIG: AppConfig = {
@@ -30,13 +31,12 @@ pub struct AppConfig {
     poll_timeout_ms: u64,
     tick_interval_secs: u64,
     servicebus: ServicebusConfig,
+    azure_ad: AzureAdConfig,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct ServicebusConfig {
     connection_string: String,
-    //TODO: Queue, topic, subscription should be dynamicaly loaded from servicebus
-    queue_name: String,
 }
 
 impl AppConfig {
@@ -58,13 +58,13 @@ impl AppConfig {
     pub fn servicebus(&self) -> &ServicebusConfig {
         &self.servicebus
     }
+    pub fn azure_ad(&self) -> &AzureAdConfig {
+        &self.azure_ad
+    }
 }
 
 impl ServicebusConfig {
     pub fn connection_string(&self) -> &str {
         &self.connection_string
-    }
-    pub fn queue_name(&self) -> &str {
-        &self.queue_name
     }
 }

@@ -9,7 +9,7 @@ use tuirealm::{
     props::{Alignment, BorderType, Borders, Color, Style, TextModifiers},
 };
 
-use super::common::{MessageActivitMsg, Msg};
+use super::common::{MessageActivityMsg, Msg};
 
 #[derive(MockComponent)]
 pub struct MessageDetails {
@@ -163,7 +163,7 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
 
         match cmd_result {
             CmdResult::Custom(CANCEL_EDIT_MESSAGE, _) => {
-                Some(Msg::MessageActivity(MessageActivitMsg::CancelEditMessage))
+                Some(Msg::MessageActivity(MessageActivityMsg::CancelEditMessage))
             }
             _ => Some(Msg::ForceRedraw),
         }
