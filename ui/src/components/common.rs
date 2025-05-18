@@ -1,3 +1,4 @@
+use server::consumer::Consumer;
 use server::model::MessageModel;
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
@@ -22,6 +23,8 @@ pub enum MessageActivityMsg {
     RefreshMessageDetails(usize),
     EditMessage(usize),
     CancelEditMessage,
+    MessagesLoaded(Vec<MessageModel>),
+    ConsumerCreated(Consumer),
 }
 
 #[derive(Debug, PartialEq)]

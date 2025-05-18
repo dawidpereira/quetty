@@ -3,9 +3,13 @@ use tui_realm_stdlib::Table;
 use tuirealm::command::{Cmd, CmdResult, Direction};
 use tuirealm::event::{Key, KeyEvent, KeyModifiers};
 use tuirealm::props::{Alignment, BorderType, Borders, Color, TableBuilder, TextSpan};
+use tuirealm::terminal::TerminalAdapter;
 use tuirealm::{Component, Event, MockComponent, NoUserEvent, StateValue};
 
 use super::common::{MessageActivityMsg, Msg};
+
+use crate::app::model::Model;
+use crate::config;
 
 #[derive(MockComponent)]
 pub struct Messages {
@@ -119,5 +123,33 @@ impl Component<Msg, NoUserEvent> for Messages {
             CmdResult::None => None,
             _ => Some(Msg::ForceRedraw),
         }
+    }
+}
+
+impl<T> Model<T>
+where
+    T: TerminalAdapter,
+{
+    pub fn load_messages(&mut self) {
+        let taskpool = &self.taskpool;
+        let tx_to_main = self.tx_to_main.clone();
+
+        // Clone the Arc to pass into async block
+        // TODO: Error handling
+        let consumer = self.consumer.clone().expect("No consumer");
+
+        taskpool.execute(async move {
+            // Create a new consumer using the service bus client
+            let mut consumer = consumer.lock().await;
+            let messages = consumer
+                .peek_messages(config::CONFIG.max_messages(), None)
+                .await
+                .unwrap();
+
+            // Send the consumer back to the main thread
+            let _ = tx_to_main.send(Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(
+                messages,
+            )));
+        });
     }
 }

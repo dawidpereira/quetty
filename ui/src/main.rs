@@ -1,8 +1,5 @@
 use app::model::Model;
-//NOTE: Consider whether it is worth removing the reference to AzureServiceBus from the UI model
-use azservicebus::{ServiceBusClient, ServiceBusClientOptions, ServiceBusReceiverOptions};
 use components::common::ComponentId;
-use server::consumer::ServiceBusClientExt;
 use server::service_bus_manager::ServiceBusManager;
 use tuirealm::application::PollStrategy;
 use tuirealm::{AttrValue, Attribute, Update};
@@ -14,32 +11,16 @@ mod config;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup model
-    let mut client = ServiceBusClient::new_from_connection_string(
-        config::CONFIG.servicebus().connection_string(),
-        ServiceBusClientOptions::default(),
-    )
-    .await?;
-    let mut model = Model::new_crossterm(None);
-    model.app_state = app::model::AppState::QueuePicker;
+    let mut model = Model::new().await;
 
-    //TODO: Get messages after messages view loading. Blocked until queu switcher
-    let mut receiver = client
-        .create_consumer_for_queue(
-            config::CONFIG.servicebus().queue_name(),
-            ServiceBusReceiverOptions::default(),
-        )
-        .await?;
     // Use AzureAdConfig from config
     let azure_config = config::CONFIG.azure_ad().clone();
 
-    let messages = receiver
-        .peek_messages(config::CONFIG.max_messages(), None)
     // Fetch queues
     let queues = ServiceBusManager::list_queues_azure_ad(&azure_config)
         .await
         .unwrap_or_else(|_| vec![]);
 
-    let mut model = Model::new_crossterm(Some(messages));
     model.remount_queue_picker(queues);
 
     // Enter alternate screen
@@ -48,6 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Main loop
     while !model.quit {
+        model.update_outside_msg();
         // Tick
         match model.app.tick(PollStrategy::Once) {
             Err(err) => {

@@ -5,7 +5,7 @@ use serde::ser::Serializer;
 use serde_json::Value;
 use std::convert::TryFrom;
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, PartialEq, Debug)]
 pub struct MessageModel {
     pub sequence: i64,
     pub id: String,
@@ -40,9 +40,8 @@ impl MessageModel {
         for msg in messages {
             match MessageModel::try_from(msg) {
                 Ok(model) => valid_models.push(model),
-                Err(e) => {
-                    //TODO: Better haldning of errors
-                    eprint!("Error converting message: {:?}", e);
+                Err(_) => {
+                    //TODO: Error handling
                 }
             }
         }
@@ -57,14 +56,13 @@ impl MessageModel {
             Ok(val) => BodyData::ValidJson(val),
             Err(_) => {
                 //TODO: Error handling
-                eprint!("Error parsing JSON, falling back to raw string");
                 BodyData::RawString(String::from_utf8_lossy(bytes).into_owned())
             }
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BodyData {
     ValidJson(Value),
     RawString(String),

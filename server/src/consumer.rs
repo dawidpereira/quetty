@@ -4,11 +4,24 @@ use tokio::sync::Mutex;
 
 use crate::model::MessageModel;
 
+#[derive(Debug)]
 pub struct Consumer {
     receiver: Arc<Mutex<ServiceBusReceiver>>,
 }
 
+impl PartialEq for Consumer {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.receiver, &other.receiver)
+    }
+}
+
 impl Consumer {
+    pub fn new(receiver: ServiceBusReceiver) -> Self {
+        Self {
+            receiver: Arc::new(Mutex::new(receiver)),
+        }
+    }
+
     pub async fn peek_messages(
         &mut self,
         max_count: u32,
@@ -22,12 +35,6 @@ impl Consumer {
             .await?;
         let result = MessageModel::try_convert_messages_collect(messages);
         Ok(result)
-    }
-
-    pub fn new(receiver: ServiceBusReceiver) -> Self {
-        Self {
-            receiver: Arc::new(Mutex::new(receiver)),
-        }
     }
 }
 
@@ -61,6 +68,7 @@ where
                     format!("Receiver error: {e}"),
                 )
             })?;
+
         Ok(Consumer::new(receiver))
     }
 }

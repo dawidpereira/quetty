@@ -1,11 +1,16 @@
+use azservicebus::ServiceBusReceiverOptions;
+use server::consumer::ServiceBusClientExt;
 use tuirealm::command::CmdResult;
 use tuirealm::event::{Key, KeyEvent};
 use tuirealm::props::{Alignment, Color, Style, TextModifiers};
 use tuirealm::ratatui::layout::Rect;
 use tuirealm::ratatui::widgets::{List, ListItem};
+use tuirealm::terminal::TerminalAdapter;
 use tuirealm::{Component, Event, Frame, MockComponent, NoUserEvent};
 
-use super::common::{Msg, QueueActivityMsg};
+use crate::app::model::Model;
+
+use super::common::{MessageActivityMsg, Msg, QueueActivityMsg};
 
 const CMD_RESULT_QUEUE_SELECTED: &str = "QueueSelected";
 
@@ -116,5 +121,34 @@ impl Component<Msg, NoUserEvent> for QueuePicker {
             CmdResult::Changed(_) => Some(Msg::ForceRedraw),
             _ => Some(Msg::ForceRedraw),
         }
+    }
+}
+
+impl<T> Model<T>
+where
+    T: TerminalAdapter,
+{
+    pub fn new_consumer_for_queue(&mut self) {
+        //TODO: Error handling
+        let queue = self.pending_queue.take().expect("No queue selected");
+        let taskpool = &self.taskpool;
+        let tx_to_main = self.tx_to_main.clone();
+
+        // Clone the Arc to pass into async block
+        let service_bus_client = self.service_bus_client.clone();
+
+        taskpool.execute(async move {
+            // Create a new consumer using the service bus client
+            let mut client = service_bus_client.lock().await;
+            let consumer = client
+                .create_consumer_for_queue(queue, ServiceBusReceiverOptions::default())
+                .await
+                .unwrap();
+
+            // Send the consumer back to the main thread
+            let _ = tx_to_main.send(Msg::MessageActivity(MessageActivityMsg::ConsumerCreated(
+                consumer,
+            )));
+        });
     }
 }
