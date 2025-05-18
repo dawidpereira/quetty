@@ -1,3 +1,4 @@
+use server::model::BodyData;
 use server::model::MessageModel;
 use tui_realm_textarea::{
     TEXTAREA_CMD_NEWLINE, TEXTAREA_CMD_PASTE, TEXTAREA_CMD_REDO, TEXTAREA_CMD_UNDO, TextArea,
@@ -23,40 +24,23 @@ impl MessageDetails {
     pub fn new(message: Option<MessageModel>) -> Self {
         let mut textarea = match message {
             Some(data) => {
-                match serde_json::to_value(&data) {
-                    Ok(mut value) => {
-                        // If body is a string, try to parse it as JSON for pretty display
-                        if let Some(body_value) = value.get_mut("body") {
-                            if let Some(body_str) = body_value.as_str() {
-                                if let Ok(json_body) =
-                                    serde_json::from_str::<serde_json::Value>(body_str)
-                                {
-                                    *body_value = json_body;
-                                } else {
-                                    // Not valid JSON, format as multi-line string
-                                    let lines: Vec<&str> = body_str.lines().collect();
-                                    if lines.len() > 1 {
-                                        // Represent as array of lines for better display
-                                        *body_value = serde_json::Value::Array(
-                                            lines
-                                                .iter()
-                                                .map(|l| serde_json::Value::String(l.to_string()))
-                                                .collect(),
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        match serde_json::to_string_pretty(&value) {
+                match &data.body {
+                    BodyData::ValidJson(json) => {
+                        // If it's valid JSON, show it pretty-printed
+                        match serde_json::to_string_pretty(json) {
                             Ok(json_str) => {
                                 let lines: Vec<String> =
                                     json_str.lines().map(String::from).collect();
                                 TextArea::new(lines)
                             }
-                            Err(e) => TextArea::new(vec![format!("Serialization error: {}", e)]),
+                            Err(e) => TextArea::new(vec![format!("JSON formatting error: {}", e)]),
                         }
                     }
-                    Err(e) => TextArea::new(vec![format!("Serialization error: {}", e)]),
+                    BodyData::RawString(body_str) => {
+                        // Show raw string with line breaks
+                        let lines: Vec<String> = body_str.lines().map(String::from).collect();
+                        TextArea::new(lines)
+                    }
                 }
             }
             None => TextArea::new(vec!["No message selected".to_string()]),
