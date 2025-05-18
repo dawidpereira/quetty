@@ -8,11 +8,17 @@ use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBrid
 use tuirealm::{Application, EventListenerCfg, Update};
 
 use crate::components::common::{ComponentId, MessageActivitMsg, Msg};
+use crate::components::common::{ComponentId, MessageActivityMsg, Msg, QueueActivityMsg};
 use crate::components::label::Label;
 use crate::components::message_details::MessageDetails;
 use crate::components::messages::Messages;
+use crate::components::queue_picker::QueuePicker;
 use crate::config;
 
+pub enum AppState {
+    QueuePicker,
+    Main,
+}
 pub struct Model<T>
 where
     T: TerminalAdapter,
@@ -27,6 +33,8 @@ where
     pub terminal: TerminalBridge<T>,
 
     pub messages: Option<Vec<MessageModel>>,
+    pub app_state: AppState,
+    pub pending_queue: Option<String>,
 }
 
 impl Default for Model<CrosstermTerminalAdapter> {
@@ -37,6 +45,7 @@ impl Default for Model<CrosstermTerminalAdapter> {
             redraw: true,
             terminal: TerminalBridge::init_crossterm().expect("Cannot initialize terminal"),
             messages: None,
+            app_state: AppState::Main,
         }
     }
 }
@@ -49,6 +58,8 @@ impl Model<CrosstermTerminalAdapter> {
             redraw: true,
             terminal: TerminalBridge::init_crossterm().expect("Cannot initialize terminal"),
             messages,
+            app_state: AppState::Main,
+            pending_queue: None,
         }
     }
 }
@@ -69,7 +80,7 @@ where
                                 Constraint::Length(1),
                                 Constraint::Length(1), // Label
                                 Constraint::Length(2),
-                                Constraint::Min(16), // Messages
+                                Constraint::Min(16), // Main area
                             ]
                             .as_ref(),
                         )
@@ -77,21 +88,36 @@ where
 
                     self.app.view(&ComponentId::Label, f, chunks[1]);
 
-                    let main_chunks = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .margin(1)
-                        .constraints(
-                            [
-                                Constraint::Min(49), // Messages
-                                Constraint::Min(49),
-                            ]
-                            .as_ref(),
-                        )
-                        .split(chunks[3]);
+                    match self.app_state {
+                        AppState::QueuePicker => {
+                            self.app.view(&ComponentId::QueuePicker, f, chunks[3]);
 
-                    self.app.view(&ComponentId::Messages, f, main_chunks[0]);
-                    self.app
-                        .view(&ComponentId::MessageDetails, f, main_chunks[1]);
+                            if self.app.active(&ComponentId::QueuePicker).is_err() {
+                                println!("Error: Messages component not active");
+                            }
+                        }
+                        AppState::Main => {
+                            let main_chunks = Layout::default()
+                                .direction(Direction::Horizontal)
+                                .margin(1)
+                                .constraints(
+                                    [
+                                        Constraint::Min(49), // Messages
+                                        Constraint::Min(49),
+                                    ]
+                                    .as_ref(),
+                                )
+                                .split(chunks[3]);
+
+                            self.app.view(&ComponentId::Messages, f, main_chunks[0]);
+                            self.app
+                                .view(&ComponentId::MessageDetails, f, main_chunks[1]);
+
+                            if self.app.active(&ComponentId::Messages).is_err() {
+                                println!("Error: Messages component not active");
+                            }
+                        }
+                    }
                 })
                 .is_ok()
         );
@@ -144,8 +170,28 @@ where
             )
             .is_ok()
         );
+        assert!(
+            app.mount(
+                ComponentId::QueuePicker,
+                Box::new(QueuePicker::new(None)), // Will be remounted with real queues later
+                Vec::default(),
+            )
+            .is_ok()
+        );
         assert!(app.active(&ComponentId::Messages).is_ok());
         app
+    }
+
+    pub fn remount_queue_picker(&mut self, queues: Vec<String>) {
+        assert!(
+            self.app
+                .remount(
+                    ComponentId::QueuePicker,
+                    Box::new(QueuePicker::new(Some(queues))),
+                    Vec::default(),
+                )
+                .is_ok()
+        );
     }
 }
 
@@ -178,7 +224,7 @@ where
                     }
                     None
                 }
-                Msg::MessageActivity(MessageActivitMsg::RefreshMessageDetails(index)) => {
+                Msg::MessageActivity(MessageActivityMsg::RefreshMessageDetails(index)) => {
                     let mut message: Option<MessageModel> = None;
                     if self.messages.is_some() {
                         message = self.messages.as_ref().unwrap().get(index).cloned();
@@ -194,18 +240,24 @@ where
                     );
                     None
                 }
-                Msg::MessageActivity(MessageActivitMsg::EditMessage(_)) => {
+                Msg::MessageActivity(MessageActivityMsg::EditMessage(_)) => {
                     if self.app.active(&ComponentId::MessageDetails).is_err() {
                         println!("Error: MessageDetails component not active");
                         return None;
                     }
                     None
                 }
-                Msg::MessageActivity(MessageActivitMsg::CancelEditMessage) => {
+                Msg::MessageActivity(MessageActivityMsg::CancelEditMessage) => {
                     if self.app.active(&ComponentId::Messages).is_err() {
                         println!("Error: Messages component not active");
                         return None;
                     }
+                    None
+                }
+                Msg::QueueActivity(QueueActivityMsg::QueueSelected(queue)) => {
+                    self.pending_queue = Some(queue);
+                    self.get_messages();
+                    self.redraw = true;
                     None
                 }
                 _ => None,

@@ -5,7 +5,7 @@ use tuirealm::event::{Key, KeyEvent, KeyModifiers};
 use tuirealm::props::{Alignment, BorderType, Borders, Color, TableBuilder, TextSpan};
 use tuirealm::{Component, Event, MockComponent, NoUserEvent, StateValue};
 
-use super::common::{MessageActivitMsg, Msg};
+use super::common::{MessageActivityMsg, Msg};
 
 #[derive(MockComponent)]
 pub struct Messages {
@@ -100,7 +100,7 @@ impl Component<Msg, NoUserEvent> for Messages {
         match cmd_result {
             CmdResult::Changed(state) => match state.unwrap_one() {
                 StateValue::Usize(index) => Some(Msg::MessageActivity(
-                    MessageActivitMsg::RefreshMessageDetails(index),
+                    MessageActivityMsg::RefreshMessageDetails(index),
                 )),
                 _ => {
                     println!("Incorrect state in message table");
@@ -109,7 +109,7 @@ impl Component<Msg, NoUserEvent> for Messages {
             },
             CmdResult::Custom(CMD_RESULT_MESSAGE_SELECTED, state) => match state.unwrap_one() {
                 StateValue::Usize(index) => {
-                    Some(Msg::MessageActivity(MessageActivitMsg::EditMessage(index)))
+                    Some(Msg::MessageActivity(MessageActivityMsg::EditMessage(index)))
                 }
                 _ => {
                     println!("Incorrect state in message table");
