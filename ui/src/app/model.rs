@@ -24,7 +24,8 @@ use crate::config;
 
 pub enum AppState {
     QueuePicker,
-    Main,
+    MessagePicker,
+    MessageDetails,
 }
 
 pub struct Model<T>
@@ -121,7 +122,7 @@ where
                                 println!("Error: Messages component not active");
                             }
                         }
-                        AppState::Main => {
+                        AppState::MessagePicker => {
                             let main_chunks = Layout::default()
                                 .direction(Direction::Horizontal)
                                 .margin(1)
@@ -139,6 +140,27 @@ where
                                 .view(&ComponentId::MessageDetails, f, main_chunks[1]);
 
                             if self.app.active(&ComponentId::Messages).is_err() {
+                                println!("Error: Messages component not active");
+                            }
+                        }
+                        AppState::MessageDetails => {
+                            let main_chunks = Layout::default()
+                                .direction(Direction::Horizontal)
+                                .margin(1)
+                                .constraints(
+                                    [
+                                        Constraint::Min(49), // Messages
+                                        Constraint::Min(49),
+                                    ]
+                                    .as_ref(),
+                                )
+                                .split(chunks[3]);
+
+                            self.app.view(&ComponentId::Messages, f, main_chunks[0]);
+                            self.app
+                                .view(&ComponentId::MessageDetails, f, main_chunks[1]);
+
+                            if self.app.active(&ComponentId::MessageDetails).is_err() {
                                 println!("Error: Messages component not active");
                             }
                         }
@@ -257,7 +279,7 @@ where
                     }
                     None
                 }
-                Msg::MessageActivity(MessageActivityMsg::RefreshMessageDetails(index)) => {
+                Msg::MessageActivity(MessageActivityMsg::EditMessage(index)) => {
                     let mut message: Option<MessageModel> = None;
                     if self.messages.is_some() {
                         message = self.messages.as_ref().unwrap().get(index).cloned();
@@ -271,20 +293,11 @@ where
                             )
                             .is_ok()
                     );
-                    None
-                }
-                Msg::MessageActivity(MessageActivityMsg::EditMessage(_)) => {
-                    if self.app.active(&ComponentId::MessageDetails).is_err() {
-                        println!("Error: MessageDetails component not active");
-                        return None;
-                    }
-                    None
+                    self.app_state = AppState::MessageDetails;
+                    Some(Msg::ForceRedraw)
                 }
                 Msg::MessageActivity(MessageActivityMsg::CancelEditMessage) => {
-                    if self.app.active(&ComponentId::Messages).is_err() {
-                        println!("Error: Messages component not active");
-                        return None;
-                    }
+                    self.app_state = AppState::MessagePicker;
                     None
                 }
                 Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(messages)) => {
@@ -298,7 +311,8 @@ where
                             )
                             .is_ok()
                     );
-                    self.app_state = AppState::Main;
+
+                    self.app_state = AppState::MessagePicker;
                     None
                 }
                 Msg::MessageActivity(MessageActivityMsg::ConsumerCreated(consumer)) => {

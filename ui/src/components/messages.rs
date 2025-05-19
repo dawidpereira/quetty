@@ -103,15 +103,6 @@ impl Component<Msg, NoUserEvent> for Messages {
             _ => CmdResult::None,
         };
         match cmd_result {
-            CmdResult::Changed(state) => match state.unwrap_one() {
-                StateValue::Usize(index) => Some(Msg::MessageActivity(
-                    MessageActivityMsg::RefreshMessageDetails(index),
-                )),
-                _ => {
-                    println!("Incorrect state in message table");
-                    None
-                }
-            },
             CmdResult::Custom(CMD_RESULT_MESSAGE_SELECTED, state) => match state.unwrap_one() {
                 StateValue::Usize(index) => {
                     Some(Msg::MessageActivity(MessageActivityMsg::EditMessage(index)))
@@ -124,7 +115,6 @@ impl Component<Msg, NoUserEvent> for Messages {
             CmdResult::Custom(CMD_RESULT_QUEUE_UNFOCUSED, _) => {
                 Some(Msg::QueueActivity(QueueActivityMsg::QueueUnfocused))
             }
-            CmdResult::None => None,
             _ => Some(Msg::ForceRedraw),
         }
     }

@@ -21,7 +21,6 @@ pub enum Msg {
 
 #[derive(Debug, PartialEq)]
 pub enum MessageActivityMsg {
-    RefreshMessageDetails(usize),
     EditMessage(usize),
     CancelEditMessage,
     MessagesLoaded(Vec<MessageModel>),
