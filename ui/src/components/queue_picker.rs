@@ -136,9 +136,14 @@ where
 
         // Clone the Arc to pass into async block
         let service_bus_client = self.service_bus_client.clone();
+        let consumer = self.consumer.clone();
 
         taskpool.execute(async move {
             // Create a new consumer using the service bus client
+            if let Some(consumer) = consumer {
+                consumer.lock().await.dispose().await.unwrap();
+            }
+
             let mut client = service_bus_client.lock().await;
             let consumer = client
                 .create_consumer_for_queue(queue, ServiceBusReceiverOptions::default())

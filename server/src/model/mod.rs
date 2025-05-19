@@ -4,7 +4,6 @@ use serde::Serialize;
 use serde::ser::Serializer;
 use serde_json::Value;
 use std::convert::TryFrom;
-
 #[derive(Serialize, Clone, PartialEq, Debug)]
 pub struct MessageModel {
     pub sequence: i64,

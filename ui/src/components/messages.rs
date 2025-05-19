@@ -6,7 +6,7 @@ use tuirealm::props::{Alignment, BorderType, Borders, Color, TableBuilder, TextS
 use tuirealm::terminal::TerminalAdapter;
 use tuirealm::{Component, Event, MockComponent, NoUserEvent, StateValue};
 
-use super::common::{MessageActivityMsg, Msg};
+use super::common::{MessageActivityMsg, Msg, QueueActivityMsg};
 
 use crate::app::model::Model;
 use crate::config;
@@ -17,6 +17,7 @@ pub struct Messages {
 }
 
 const CMD_RESULT_MESSAGE_SELECTED: &str = "MessageSelected";
+const CMD_RESULT_QUEUE_UNFOCUSED: &str = "QueueUnfocused";
 
 impl Messages {
     pub fn new(messages: Option<&Vec<MessageModel>>) -> Self {
@@ -98,7 +99,7 @@ impl Component<Msg, NoUserEvent> for Messages {
             Event::Keyboard(KeyEvent {
                 code: Key::Esc,
                 modifiers: KeyModifiers::NONE,
-            }) => return Some(Msg::AppClose),
+            }) => CmdResult::Custom(CMD_RESULT_QUEUE_UNFOCUSED, self.state()),
             _ => CmdResult::None,
         };
         match cmd_result {
@@ -120,6 +121,9 @@ impl Component<Msg, NoUserEvent> for Messages {
                     None
                 }
             },
+            CmdResult::Custom(CMD_RESULT_QUEUE_UNFOCUSED, _) => {
+                Some(Msg::QueueActivity(QueueActivityMsg::QueueUnfocused))
+            }
             CmdResult::None => None,
             _ => Some(Msg::ForceRedraw),
         }

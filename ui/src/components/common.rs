@@ -7,6 +7,7 @@ pub enum ComponentId {
     Messages,
     MessageDetails,
     QueuePicker,
+    GlobalKeyWatcher,
 }
 
 #[derive(Debug, PartialEq)]
@@ -30,6 +31,7 @@ pub enum MessageActivityMsg {
 #[derive(Debug, PartialEq)]
 pub enum QueueActivityMsg {
     QueueSelected(String),
+    QueueUnfocused,
 }
 
 impl Default for Msg {
