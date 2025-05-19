@@ -6,7 +6,7 @@ use crate::model::MessageModel;
 
 #[derive(Debug)]
 pub struct Consumer {
-    receiver: Arc<Mutex<ServiceBusReceiver>>,
+    receiver: Arc<Mutex<Option<ServiceBusReceiver>>>,
 }
 
 impl PartialEq for Consumer {
@@ -18,7 +18,7 @@ impl PartialEq for Consumer {
 impl Consumer {
     pub fn new(receiver: ServiceBusReceiver) -> Self {
         Self {
-            receiver: Arc::new(Mutex::new(receiver)),
+            receiver: Arc::new(Mutex::new(Some(receiver))),
         }
     }
 
@@ -27,14 +27,24 @@ impl Consumer {
         max_count: u32,
         from_sequence_number: Option<i64>,
     ) -> Result<Vec<MessageModel>, Box<dyn std::error::Error>> {
-        let messages = self
-            .receiver
-            .lock()
-            .await
-            .peek_messages(max_count, from_sequence_number)
-            .await?;
-        let result = MessageModel::try_convert_messages_collect(messages);
-        Ok(result)
+        let mut guard = self.receiver.lock().await;
+        if let Some(receiver) = guard.as_mut() {
+            let messages = receiver
+                .peek_messages(max_count, from_sequence_number)
+                .await?;
+            let result = MessageModel::try_convert_messages_collect(messages);
+            Ok(result)
+        } else {
+            Err("Receiver already disposed".into())
+        }
+    }
+
+    pub async fn dispose(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut guard = self.receiver.lock().await;
+        if let Some(receiver) = guard.take() {
+            receiver.dispose().await?;
+        }
+        Ok(())
     }
 }
 

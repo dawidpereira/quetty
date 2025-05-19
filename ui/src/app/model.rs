@@ -12,9 +12,10 @@ use tuirealm::props::TextModifiers;
 use tuirealm::props::{Alignment, Color};
 use tuirealm::ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBridge};
-use tuirealm::{Application, EventListenerCfg, Update};
+use tuirealm::{Application, EventListenerCfg, Sub, SubClause, SubEventClause, Update};
 
 use crate::components::common::{ComponentId, MessageActivityMsg, Msg, QueueActivityMsg};
+use crate::components::global_key_watcher::GlobalKeyWatcher;
 use crate::components::label::Label;
 use crate::components::message_details::MessageDetails;
 use crate::components::messages::Messages;
@@ -202,6 +203,14 @@ where
             )
             .is_ok()
         );
+        assert!(
+            app.mount(
+                ComponentId::GlobalKeyWatcher,
+                Box::new(GlobalKeyWatcher::default()),
+                vec![Sub::new(SubEventClause::Any, SubClause::Always)]
+            )
+            .is_ok()
+        );
         assert!(app.active(&ComponentId::Messages).is_ok());
         app
     }
@@ -300,6 +309,10 @@ where
                 Msg::QueueActivity(QueueActivityMsg::QueueSelected(queue)) => {
                     self.pending_queue = Some(queue);
                     self.new_consumer_for_queue();
+                    None
+                }
+                Msg::QueueActivity(QueueActivityMsg::QueueUnfocused) => {
+                    self.app_state = AppState::QueuePicker;
                     None
                 }
                 _ => None,
