@@ -1,5 +1,4 @@
 use tuirealm::command::{Cmd, CmdResult};
-use tuirealm::event::{Key, KeyEvent, KeyModifiers};
 use tuirealm::props::{Alignment, Color, Style, TextModifiers};
 use tuirealm::ratatui::layout::Rect;
 use tuirealm::ratatui::widgets::Paragraph;
