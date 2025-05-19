@@ -297,6 +297,15 @@ where
                     Some(Msg::ForceRedraw)
                 }
                 Msg::MessageActivity(MessageActivityMsg::CancelEditMessage) => {
+                    assert!(
+                        self.app
+                            .remount(
+                                ComponentId::MessageDetails,
+                                Box::new(MessageDetails::new(None)),
+                                Vec::default(),
+                            )
+                            .is_ok()
+                    );
                     self.app_state = AppState::MessagePicker;
                     None
                 }
