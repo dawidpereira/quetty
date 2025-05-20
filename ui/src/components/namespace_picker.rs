@@ -1,9 +1,16 @@
-use tuirealm::command::CmdResult;
-use tuirealm::event::{Key, KeyEvent, KeyModifiers};
+use server::service_bus_manager::ServiceBusManager;
+use tuirealm::command::{Cmd, CmdResult};
+use tuirealm::event::{Key, KeyEvent};
 use tuirealm::props::{Alignment, Color, Style, TextModifiers};
 use tuirealm::ratatui::layout::Rect;
 use tuirealm::ratatui::widgets::{List, ListItem};
-use tuirealm::{Component, Event, Frame, MockComponent, NoUserEvent};
+use tuirealm::terminal::TerminalAdapter;
+use tuirealm::{
+    AttrValue, Attribute, Component, Event, Frame, MockComponent, NoUserEvent, State, StateValue,
+};
+
+use crate::app::model::Model;
+use crate::config::CONFIG;
 
 use super::common::{Msg, NamespaceActivityMsg};
 
@@ -49,7 +56,9 @@ impl MockComponent for NamespacePicker {
             .highlight_symbol("> ");
         frame.render_widget(list, area);
     }
-    fn query(&self, _attr: tuirealm::Attribute) -> Option<tuirealm::AttrValue> { None }
+    fn query(&self, _attr: Attribute) -> Option<AttrValue> {
+        None
+    }
     fn attr(&mut self, _attr: tuirealm::Attribute, _value: tuirealm::AttrValue) {}
     fn state(&self) -> tuirealm::State {
         if let Some(ns) = self.namespaces.get(self.selected) {
@@ -58,7 +67,7 @@ impl MockComponent for NamespacePicker {
             tuirealm::State::None
         }
     }
-    fn perform(&mut self, _cmd: tuirealm::command::Cmd) -> tuirealm::command::CmdResult {
+    fn perform(&mut self, _cmd: Cmd) -> CmdResult {
         CmdResult::None
     }
 }
@@ -73,7 +82,7 @@ impl Component<Msg, NoUserEvent> for NamespacePicker {
                 if self.selected + 1 < self.namespaces.len() {
                     self.selected += 1;
                 }
-                CmdResult::Changed(tuirealm::State::One(tuirealm::StateValue::Usize(self.selected)))
+                CmdResult::Changed(State::One(StateValue::Usize(self.selected)))
             }
             Event::Keyboard(KeyEvent {
                 code: Key::Up | Key::Char('k'),
@@ -82,41 +91,54 @@ impl Component<Msg, NoUserEvent> for NamespacePicker {
                 if self.selected > 0 {
                     self.selected -= 1;
                 }
-                CmdResult::Changed(tuirealm::State::One(tuirealm::StateValue::Usize(self.selected)))
+                CmdResult::Changed(State::One(StateValue::Usize(self.selected)))
             }
             Event::Keyboard(KeyEvent {
-                code: Key::Enter, ..
+                code: Key::Enter | Key::Char('o'),
+                ..
             }) => {
                 if let Some(ns) = self.namespaces.get(self.selected).cloned() {
                     CmdResult::Custom(
                         CMD_RESULT_NAMESPACE_SELECTED,
-                        tuirealm::State::One(tuirealm::StateValue::String(ns)),
+                        State::One(StateValue::String(ns)),
                     )
                 } else {
                     CmdResult::None
                 }
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Esc, ..
-            }) => {
-                CmdResult::Custom("NamespacePickerBack", tuirealm::State::None)
             }
             _ => CmdResult::None,
         };
 
         match cmd_result {
             CmdResult::Custom(CMD_RESULT_NAMESPACE_SELECTED, state) => {
-                if let tuirealm::State::One(tuirealm::StateValue::String(ns)) = state {
-                    Some(Msg::NamespaceActivity(NamespaceActivityMsg::NamespaceSelected(ns)))
+                if let State::One(StateValue::String(_)) = state {
+                    Some(Msg::NamespaceActivity(
+                        NamespaceActivityMsg::NamespaceSelected,
+                    ))
                 } else {
                     None
                 }
             }
-            CmdResult::Custom("NamespacePickerBack", _) => {
-                Some(Msg::AppClose) // or a custom back message
-            }
-            CmdResult::Changed(_) => Some(Msg::ForceRedraw),
             _ => Some(Msg::ForceRedraw),
         }
     }
-} 
+}
+
+impl<T> Model<T>
+where
+    T: TerminalAdapter,
+{
+    pub fn load_namespaces(&mut self) {
+        //TODO: Error handling
+        let taskpool = &self.taskpool;
+        let tx_to_main = self.tx_to_main.clone();
+
+        // Clone the Arc to pass into async block
+        taskpool.execute(async move {
+            let namespaces = ServiceBusManager::list_namespaces_azure_ad(CONFIG.azure_ad()).await;
+            let _ = tx_to_main.send(Msg::NamespaceActivity(
+                NamespaceActivityMsg::NamespacesLoaded(namespaces.unwrap_or_default()),
+            ));
+        });
+    }
+}

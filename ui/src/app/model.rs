@@ -14,11 +14,14 @@ use tuirealm::ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBridge};
 use tuirealm::{Application, EventListenerCfg, Sub, SubClause, SubEventClause, Update};
 
-use crate::components::common::{ComponentId, MessageActivityMsg, Msg, QueueActivityMsg};
+use crate::components::common::{
+    ComponentId, MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg,
+};
 use crate::components::global_key_watcher::GlobalKeyWatcher;
 use crate::components::label::Label;
 use crate::components::message_details::MessageDetails;
 use crate::components::messages::Messages;
+use crate::components::namespace_picker::NamespacePicker;
 use crate::components::queue_picker::QueuePicker;
 use crate::config;
 
@@ -43,12 +46,14 @@ where
     /// Used to draw to terminal
     pub terminal: TerminalBridge<T>,
 
+    pub pending_queue: Option<String>,
+    pub selected_namespace: Option<String>,
+
     pub taskpool: TaskPool,
     pub tx_to_main: Sender<Msg>,
     pub rx_to_main: Receiver<Msg>,
 
     pub service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
-    pub pending_queue: Option<String>,
     pub consumer: Option<Arc<Mutex<Consumer>>>,
     pub messages: Option<Vec<MessageModel>>,
 }
@@ -63,13 +68,13 @@ impl Model<CrosstermTerminalAdapter> {
         let (tx_to_main, rx_to_main) = mpsc::channel();
         let taskpool = TaskPool::new(10);
 
-        match service_bus_client_result {
+        let mut app = match service_bus_client_result {
             Ok(service_bus_client) => Self {
                 app: Self::init_app(None),
                 quit: false,
                 redraw: true,
                 terminal: TerminalBridge::init_crossterm().expect("Cannot initialize terminal"),
-                app_state: AppState::QueuePicker,
+                app_state: AppState::NamespacePicker,
                 tx_to_main,
                 rx_to_main,
                 taskpool,
@@ -77,11 +82,14 @@ impl Model<CrosstermTerminalAdapter> {
                 pending_queue: None,
                 consumer: None,
                 messages: None,
+                selected_namespace: None,
             },
             Err(e) => {
                 panic!("Error creating ServiceBusClient: {}", e);
             }
-        }
+        };
+        app.load_namespaces();
+        app
     }
 }
 
@@ -118,6 +126,9 @@ where
                     match self.app_state {
                         AppState::NamespacePicker => {
                             self.app.view(&ComponentId::NamespacePicker, f, chunks[3]);
+                            if self.app.active(&ComponentId::NamespacePicker).is_err() {
+                                println!("Error: NamespacePicker component not active");
+                            }
                         }
                         AppState::QueuePicker => {
                             self.app.view(&ComponentId::QueuePicker, f, chunks[3]);
@@ -204,7 +215,7 @@ where
         assert!(
             app.mount(
                 ComponentId::NamespacePicker,
-                Box::new(crate::components::namespace_picker::NamespacePicker::new(None)),
+                Box::new(NamespacePicker::new(None)),
                 Vec::default(),
             )
             .is_ok()
@@ -243,18 +254,6 @@ where
         );
         assert!(app.active(&ComponentId::Messages).is_ok());
         app
-    }
-
-    pub fn remount_queue_picker(&mut self, queues: Vec<String>) {
-        assert!(
-            self.app
-                .remount(
-                    ComponentId::QueuePicker,
-                    Box::new(QueuePicker::new(Some(queues))),
-                    Vec::default(),
-                )
-                .is_ok()
-        );
     }
 }
 
@@ -328,7 +327,6 @@ where
                             )
                             .is_ok()
                     );
-
                     self.app_state = AppState::MessagePicker;
                     None
                 }
@@ -342,8 +340,42 @@ where
                     self.new_consumer_for_queue();
                     None
                 }
-                Msg::QueueActivity(QueueActivityMsg::QueueUnfocused) => {
+                Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(queues)) => {
+                    assert!(
+                        self.app
+                            .remount(
+                                ComponentId::QueuePicker,
+                                Box::new(QueuePicker::new(Some(queues))),
+                                Vec::default(),
+                            )
+                            .is_ok()
+                    );
                     self.app_state = AppState::QueuePicker;
+                    None
+                }
+                Msg::QueueActivity(QueueActivityMsg::QueueUnselected) => {
+                    self.app_state = AppState::QueuePicker;
+                    None
+                }
+                Msg::NamespaceActivity(NamespaceActivityMsg::NamespacesLoaded(namespace)) => {
+                    assert!(
+                        self.app
+                            .remount(
+                                ComponentId::NamespacePicker,
+                                Box::new(NamespacePicker::new(Some(namespace))),
+                                Vec::default(),
+                            )
+                            .is_ok()
+                    );
+                    self.app_state = AppState::NamespacePicker;
+                    None
+                }
+                Msg::NamespaceActivity(NamespaceActivityMsg::NamespaceSelected) => {
+                    self.load_queues();
+                    None
+                }
+                Msg::NamespaceActivity(NamespaceActivityMsg::NamespaceUnselected) => {
+                    self.load_namespaces();
                     None
                 }
                 _ => None,

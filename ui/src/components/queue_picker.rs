@@ -1,5 +1,6 @@
 use azservicebus::ServiceBusReceiverOptions;
 use server::consumer::ServiceBusClientExt;
+use server::service_bus_manager::ServiceBusManager;
 use tuirealm::command::CmdResult;
 use tuirealm::event::{Key, KeyEvent};
 use tuirealm::props::{Alignment, Color, Style, TextModifiers};
@@ -9,10 +10,12 @@ use tuirealm::terminal::TerminalAdapter;
 use tuirealm::{Component, Event, Frame, MockComponent, NoUserEvent};
 
 use crate::app::model::Model;
+use crate::config::CONFIG;
 
-use super::common::{MessageActivityMsg, Msg, QueueActivityMsg};
+use super::common::{MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg};
 
 const CMD_RESULT_QUEUE_SELECTED: &str = "QueueSelected";
+const CMD_RESULT_NAMESPACE_UNSELECTED: &str = "NamespaceUnselected";
 
 pub struct QueuePicker {
     queues: Vec<String>,
@@ -96,7 +99,8 @@ impl Component<Msg, NoUserEvent> for QueuePicker {
                 )))
             }
             Event::Keyboard(KeyEvent {
-                code: Key::Enter, ..
+                code: Key::Enter | Key::Char('o'),
+                ..
             }) => {
                 if let Some(queue) = self.queues.get(self.selected).cloned() {
                     CmdResult::Custom(
@@ -107,6 +111,10 @@ impl Component<Msg, NoUserEvent> for QueuePicker {
                     CmdResult::None
                 }
             }
+            Event::Keyboard(KeyEvent { code: Key::Esc, .. }) => CmdResult::Custom(
+                CMD_RESULT_NAMESPACE_UNSELECTED,
+                tuirealm::State::One(tuirealm::StateValue::String("".to_string())),
+            ),
             _ => CmdResult::None,
         };
 
@@ -118,6 +126,9 @@ impl Component<Msg, NoUserEvent> for QueuePicker {
                     None
                 }
             }
+            CmdResult::Custom(CMD_RESULT_NAMESPACE_UNSELECTED, _) => Some(Msg::NamespaceActivity(
+                NamespaceActivityMsg::NamespaceUnselected,
+            )),
             CmdResult::Changed(_) => Some(Msg::ForceRedraw),
             _ => Some(Msg::ForceRedraw),
         }
@@ -154,6 +165,24 @@ where
             let _ = tx_to_main.send(Msg::MessageActivity(MessageActivityMsg::ConsumerCreated(
                 consumer,
             )));
+        });
+    }
+
+    pub fn load_queues(&mut self) {
+        //TODO: Error handling
+        let taskpool = &self.taskpool;
+        let tx_to_main = self.tx_to_main.clone();
+        let selected_namespace = self.selected_namespace.clone();
+
+        taskpool.execute(async move {
+            let mut config = CONFIG.azure_ad().clone();
+            if let Some(ns) = selected_namespace {
+                config.namespace = ns;
+            }
+            let queues = ServiceBusManager::list_queues_azure_ad(&config)
+                .await
+                .unwrap_or_else(|_| vec![]);
+            let _ = tx_to_main.send(Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(queues)));
         });
     }
 }

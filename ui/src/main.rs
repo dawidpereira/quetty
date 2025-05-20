@@ -1,6 +1,5 @@
 use app::model::Model;
 use components::common::ComponentId;
-use server::service_bus_manager::ServiceBusManager;
 use tuirealm::application::PollStrategy;
 use tuirealm::{AttrValue, Attribute, Update};
 
@@ -12,16 +11,6 @@ mod config;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup model
     let mut model = Model::new().await;
-
-    // Use AzureAdConfig from config
-    let azure_config = config::CONFIG.azure_ad().clone();
-
-    // Fetch queues
-    let queues = ServiceBusManager::list_queues_azure_ad(&azure_config)
-        .await
-        .unwrap_or_else(|_| vec![]);
-
-    model.remount_queue_picker(queues);
 
     // Enter alternate screen
     let _ = model.terminal.enter_alternate_screen();

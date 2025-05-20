@@ -17,7 +17,7 @@ pub struct Messages {
 }
 
 const CMD_RESULT_MESSAGE_SELECTED: &str = "MessageSelected";
-const CMD_RESULT_QUEUE_UNFOCUSED: &str = "QueueUnfocused";
+const CMD_RESULT_QUEUE_UNSELECTED: &str = "QueueUnSelected";
 
 impl Messages {
     pub fn new(messages: Option<&Vec<MessageModel>>) -> Self {
@@ -99,7 +99,7 @@ impl Component<Msg, NoUserEvent> for Messages {
             Event::Keyboard(KeyEvent {
                 code: Key::Esc,
                 modifiers: KeyModifiers::NONE,
-            }) => CmdResult::Custom(CMD_RESULT_QUEUE_UNFOCUSED, self.state()),
+            }) => CmdResult::Custom(CMD_RESULT_QUEUE_UNSELECTED, self.state()),
             _ => CmdResult::None,
         };
         match cmd_result {
@@ -112,8 +112,8 @@ impl Component<Msg, NoUserEvent> for Messages {
                     None
                 }
             },
-            CmdResult::Custom(CMD_RESULT_QUEUE_UNFOCUSED, _) => {
-                Some(Msg::QueueActivity(QueueActivityMsg::QueueUnfocused))
+            CmdResult::Custom(CMD_RESULT_QUEUE_UNSELECTED, _) => {
+                Some(Msg::QueueActivity(QueueActivityMsg::QueueUnselected))
             }
             _ => Some(Msg::ForceRedraw),
         }
