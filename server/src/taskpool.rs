@@ -4,6 +4,7 @@ use futures_util::Future;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
+#[derive(Clone)]
 pub struct TaskPool {
     semaphore: Arc<Semaphore>,
     cancel_token: CancellationToken,
