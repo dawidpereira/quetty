@@ -45,6 +45,28 @@ impl ServiceBusManager {
         }
         Ok(queues)
     }
+
+    pub async fn list_namespaces_azure_ad(
+        config: &AzureAdConfig,
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let token = Self::get_azure_ad_token(config).await?;
+        let url = format!(
+            "https://management.azure.com/subscriptions/{}/resourceGroups/{}/providers/Microsoft.ServiceBus/namespaces?api-version=2017-04-01",
+            config.subscription_id, config.resource_group
+        );
+        let client = reqwest::Client::new();
+        let resp = client.get(url).bearer_auth(token).send().await?;
+        let json: serde_json::Value = resp.json().await?;
+        let mut namespaces = Vec::new();
+        if let Some(arr) = json["value"].as_array() {
+            for ns in arr {
+                if let Some(name) = ns["name"].as_str() {
+                    namespaces.push(name.to_string());
+                }
+            }
+        }
+        Ok(namespaces)
+    }
 }
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
@@ -54,7 +76,7 @@ pub struct AzureAdConfig {
     client_secret: String,
     subscription_id: String,
     resource_group: String,
-    namespace: String,
+    pub namespace: String,
 }
 
 impl AzureAdConfig {
