@@ -12,12 +12,6 @@ pub enum ComponentId {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum NamespaceActivityMsg {
-    NamespaceSelected(String),
-    NamespacePickerBack,
-}
-
-#[derive(Debug, PartialEq)]
 pub enum Msg {
     AppClose,
     ForceRedraw,
@@ -28,18 +22,25 @@ pub enum Msg {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum MessageActivityMsg {
-    RefreshMessageDetails(usize),
-    EditMessage(usize),
-    CancelEditMessage,
-    MessagesLoaded(Vec<MessageModel>),
-    ConsumerCreated(Consumer),
+pub enum NamespaceActivityMsg {
+    NamespaceSelected,
+    NamespaceUnselected,
+    NamespacesLoaded(Vec<String>),
 }
 
 #[derive(Debug, PartialEq)]
 pub enum QueueActivityMsg {
     QueueSelected(String),
-    QueueUnfocused,
+    QueueUnselected,
+    QueuesLoaded(Vec<String>),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum MessageActivityMsg {
+    EditMessage(usize),
+    CancelEditMessage,
+    MessagesLoaded(Vec<MessageModel>),
+    ConsumerCreated(Consumer),
 }
 
 impl Default for Msg {
