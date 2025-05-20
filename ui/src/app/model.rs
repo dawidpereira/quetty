@@ -23,6 +23,7 @@ use crate::components::queue_picker::QueuePicker;
 use crate::config;
 
 pub enum AppState {
+    NamespacePicker,
     QueuePicker,
     MessagePicker,
     MessageDetails,
@@ -115,11 +116,13 @@ where
                     self.app.view(&ComponentId::Label, f, chunks[1]);
 
                     match self.app_state {
+                        AppState::NamespacePicker => {
+                            self.app.view(&ComponentId::NamespacePicker, f, chunks[3]);
+                        }
                         AppState::QueuePicker => {
                             self.app.view(&ComponentId::QueuePicker, f, chunks[3]);
-
                             if self.app.active(&ComponentId::QueuePicker).is_err() {
-                                println!("Error: Messages component not active");
+                                println!("Error: QueuePicker component not active");
                             }
                         }
                         AppState::MessagePicker => {
@@ -161,7 +164,7 @@ where
                                 .view(&ComponentId::MessageDetails, f, main_chunks[1]);
 
                             if self.app.active(&ComponentId::MessageDetails).is_err() {
-                                println!("Error: Messages component not active");
+                                println!("Error: MessageDetails component not active");
                             }
                         }
                     }
@@ -171,9 +174,8 @@ where
     }
 
     fn init_app(
-        messages: Option<&Vec<MessageModel>>, //NOTE: Not needed in final scope. Will be removed after early development phase.
+        messages: Option<&Vec<MessageModel>>,
     ) -> Application<ComponentId, Msg, NoUserEvent> {
-        // Setup application
         let mut app: Application<ComponentId, Msg, NoUserEvent> = Application::init(
             EventListenerCfg::default()
                 .crossterm_input_listener(
@@ -184,7 +186,6 @@ where
                 .tick_interval(config::CONFIG.tick_interval()),
         );
 
-        // Mount components
         assert!(
             app.mount(
                 ComponentId::Label,
@@ -200,7 +201,22 @@ where
             )
             .is_ok()
         );
-
+        assert!(
+            app.mount(
+                ComponentId::NamespacePicker,
+                Box::new(crate::components::namespace_picker::NamespacePicker::new(None)),
+                Vec::default(),
+            )
+            .is_ok()
+        );
+        assert!(
+            app.mount(
+                ComponentId::QueuePicker,
+                Box::new(QueuePicker::new(None)),
+                Vec::default(),
+            )
+            .is_ok()
+        );
         assert!(
             app.mount(
                 ComponentId::Messages,
@@ -213,14 +229,6 @@ where
             app.mount(
                 ComponentId::MessageDetails,
                 Box::new(MessageDetails::new(None)),
-                Vec::default(),
-            )
-            .is_ok()
-        );
-        assert!(
-            app.mount(
-                ComponentId::QueuePicker,
-                Box::new(QueuePicker::new(None)), // Will be remounted with real queues later
                 Vec::default(),
             )
             .is_ok()

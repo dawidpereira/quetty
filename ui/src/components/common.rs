@@ -7,7 +7,14 @@ pub enum ComponentId {
     Messages,
     MessageDetails,
     QueuePicker,
+    NamespacePicker,
     GlobalKeyWatcher,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum NamespaceActivityMsg {
+    NamespaceSelected(String),
+    NamespacePickerBack,
 }
 
 #[derive(Debug, PartialEq)]
@@ -17,10 +24,12 @@ pub enum Msg {
     Submit(Vec<String>),
     MessageActivity(MessageActivityMsg),
     QueueActivity(QueueActivityMsg),
+    NamespaceActivity(NamespaceActivityMsg),
 }
 
 #[derive(Debug, PartialEq)]
 pub enum MessageActivityMsg {
+    RefreshMessageDetails(usize),
     EditMessage(usize),
     CancelEditMessage,
     MessagesLoaded(Vec<MessageModel>),
