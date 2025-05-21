@@ -17,7 +17,7 @@ pub struct MessageDetails {
     component: TextArea<'static>,
 }
 
-const CANCEL_EDIT_MESSAGE: &str = "CancelEditMessage";
+const CMD_CANCEL_EDIT_MESSAGE: &str = "CancelEditMessage";
 
 //TODO: Add search
 impl MessageDetails {
@@ -126,7 +126,7 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
                 Key::Backspace => self.component.perform(Cmd::Delete),
                 Key::Enter => self.component.perform(Cmd::Custom(TEXTAREA_CMD_NEWLINE)),
                 Key::Tab => self.component.perform(Cmd::Type('\t')),
-                Key::Esc => CmdResult::Custom(CANCEL_EDIT_MESSAGE, self.state()),
+                Key::Esc => CmdResult::Custom(CMD_CANCEL_EDIT_MESSAGE, self.state()),
 
                 // Handle typing
                 Key::Char(ch) => self.component.perform(Cmd::Type(ch)),
@@ -146,7 +146,7 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
         };
 
         match cmd_result {
-            CmdResult::Custom(CANCEL_EDIT_MESSAGE, _) => {
+            CmdResult::Custom(CMD_CANCEL_EDIT_MESSAGE, _) => {
                 Some(Msg::MessageActivity(MessageActivityMsg::CancelEditMessage))
             }
             _ => Some(Msg::ForceRedraw),

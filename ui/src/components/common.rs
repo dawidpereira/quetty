@@ -38,6 +38,7 @@ pub enum QueueActivityMsg {
 #[derive(Debug, PartialEq)]
 pub enum MessageActivityMsg {
     EditMessage(usize),
+    PreviewMessageDetails(usize),
     CancelEditMessage,
     MessagesLoaded(Vec<MessageModel>),
     ConsumerCreated(Consumer),
