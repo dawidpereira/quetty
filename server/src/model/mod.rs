@@ -4,6 +4,7 @@ use serde::Serialize;
 use serde::ser::Serializer;
 use serde_json::Value;
 use std::convert::TryFrom;
+
 #[derive(Serialize, Clone, PartialEq, Debug)]
 pub struct MessageModel {
     pub sequence: i64,
@@ -37,26 +38,23 @@ impl MessageModel {
         let mut valid_models = Vec::new();
 
         for msg in messages {
-            match MessageModel::try_from(msg) {
-                Ok(model) => valid_models.push(model),
-                Err(_) => {
-                    //TODO: Error handling
-                }
+            if let Ok(model) = MessageModel::try_from(msg) {
+                valid_models.push(model);
             }
         }
 
         valid_models
     }
 
-    fn parse_message_body(msg: &ServiceBusPeekedMessage) -> BodyData {
-        let bytes = msg.body().unwrap_or_default();
+    fn parse_message_body(msg: &ServiceBusPeekedMessage) -> Result<BodyData, MessageModelError> {
+        let bytes = match msg.body() {
+            Ok(body) => body,
+            Err(_) => return Err(MessageModelError::MissingMessageBody),
+        };
 
         match serde_json::from_slice::<Value>(bytes) {
-            Ok(val) => BodyData::ValidJson(val),
-            Err(_) => {
-                //TODO: Error handling
-                BodyData::RawString(String::from_utf8_lossy(bytes).into_owned())
-            }
+            Ok(val) => Ok(BodyData::ValidJson(val)),
+            Err(_) => Ok(BodyData::RawString(String::from_utf8_lossy(bytes).into_owned())),
         }
     }
 }
@@ -82,6 +80,8 @@ impl Serialize for BodyData {
 #[derive(Debug)]
 pub enum MessageModelError {
     MissingMessageId,
+    MissingMessageBody,
+    MissingDeliveryCount,
     JsonError(serde_json::Error),
 }
 
@@ -94,13 +94,17 @@ impl TryFrom<ServiceBusPeekedMessage> for MessageModel {
             .ok_or(MessageModelError::MissingMessageId)?
             .to_string();
 
-        let body = MessageModel::parse_message_body(&msg);
+        let body = MessageModel::parse_message_body(&msg)?;
+        
+        let delivery_count = msg
+            .delivery_count()
+            .ok_or(MessageModelError::MissingDeliveryCount)? as usize;
 
         Ok(Self {
             sequence: msg.sequence_number(),
             id,
             enqueued_at: msg.enqueued_time(),
-            delivery_count: msg.delivery_count().unwrap_or_default() as usize,
+            delivery_count,
             body,
         })
     }
