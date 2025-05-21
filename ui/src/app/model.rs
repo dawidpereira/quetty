@@ -9,6 +9,7 @@ use crate::components::messages::Messages;
 use crate::components::namespace_picker::NamespacePicker;
 use crate::components::queue_picker::QueuePicker;
 use crate::config;
+use crate::error::{AppError, AppResult};
 use azservicebus::core::BasicRetryPolicy;
 use azservicebus::{ServiceBusClient, ServiceBusClientOptions};
 use copypasta::{ClipboardContext, ClipboardProvider};
@@ -59,37 +60,35 @@ where
 }
 
 impl Model<CrosstermTerminalAdapter> {
-    pub async fn new() -> Self {
-        let service_bus_client_result = ServiceBusClient::new_from_connection_string(
+    pub async fn new() -> AppResult<Self> {
+        let service_bus_client = ServiceBusClient::new_from_connection_string(
             config::CONFIG.servicebus().connection_string(),
             ServiceBusClientOptions::default(),
         )
-        .await;
+        .await
+        .map_err(|e| AppError::ServiceBus(e.to_string()))?;
+
         let (tx_to_main, rx_to_main) = mpsc::channel();
         let taskpool = TaskPool::new(10);
 
-        let mut app = match service_bus_client_result {
-            Ok(service_bus_client) => Self {
-                app: Self::init_app(None),
-                quit: false,
-                redraw: true,
-                terminal: TerminalBridge::init_crossterm().expect("Cannot initialize terminal"),
-                app_state: AppState::NamespacePicker,
-                tx_to_main,
-                rx_to_main,
-                taskpool,
-                service_bus_client: Arc::new(Mutex::new(service_bus_client)),
-                pending_queue: None,
-                consumer: None,
-                messages: None,
-                selected_namespace: None,
-            },
-            Err(e) => {
-                panic!("Error creating ServiceBusClient: {}", e);
-            }
+        let mut app = Self {
+            app: Self::init_app(None)?,
+            quit: false,
+            redraw: true,
+            terminal: TerminalBridge::init_crossterm()
+                .map_err(|e| AppError::Component(e.to_string()))?,
+            app_state: AppState::NamespacePicker,
+            tx_to_main,
+            rx_to_main,
+            taskpool,
+            service_bus_client: Arc::new(Mutex::new(service_bus_client)),
+            pending_queue: None,
+            consumer: None,
+            messages: None,
+            selected_namespace: None,
         };
         app.load_namespaces();
-        app
+        Ok(app)
     }
 }
 
@@ -103,48 +102,39 @@ where
         }
     }
 
-    pub fn view(&mut self) {
-        assert!(
-            self.terminal
-                .draw(|f| {
-                    let chunks = Layout::default()
-                        .direction(Direction::Vertical)
-                        .margin(1)
-                        .constraints(
-                            [
-                                Constraint::Length(1),
-                                Constraint::Length(1), // Label
-                                Constraint::Length(2),
-                                Constraint::Min(16), // Main area
-                            ]
-                            .as_ref(),
-                        )
-                        .split(f.area());
+    pub fn view(&mut self) -> AppResult<()> {
+        let mut view_result: AppResult<()> = Ok(());
+        let _ = self.terminal.draw(|f| {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(1)
+                .constraints(
+                    [
+                        Constraint::Length(1),
+                        Constraint::Length(1), // Label
+                        Constraint::Length(2),
+                        Constraint::Min(16), // Main area
+                    ]
+                    .as_ref(),
+                )
+                .split(f.area());
 
-                    self.app.view(&ComponentId::Label, f, chunks[1]);
+            self.app.view(&ComponentId::Label, f, chunks[1]);
 
-                    match self.app_state {
-                        AppState::NamespacePicker => {
-                            view_namespace_picker(&mut self.app, f, &chunks);
-                        }
-                        AppState::QueuePicker => {
-                            view_queue_picker(&mut self.app, f, &chunks);
-                        }
-                        AppState::MessagePicker => {
-                            view_message_picker(&mut self.app, f, &chunks);
-                        }
-                        AppState::MessageDetails => {
-                            view_message_details(&mut self.app, f, &chunks);
-                        }
-                    }
-                })
-                .is_ok()
-        );
+            view_result = match self.app_state {
+                AppState::NamespacePicker => view_namespace_picker(&mut self.app, f, &chunks),
+                AppState::QueuePicker => view_queue_picker(&mut self.app, f, &chunks),
+                AppState::MessagePicker => view_message_picker(&mut self.app, f, &chunks),
+                AppState::MessageDetails => view_message_details(&mut self.app, f, &chunks),
+            };
+        });
+
+        view_result
     }
 
     fn init_app(
         messages: Option<&Vec<MessageModel>>,
-    ) -> Application<ComponentId, Msg, NoUserEvent> {
+    ) -> AppResult<Application<ComponentId, Msg, NoUserEvent>> {
         let mut app: Application<ComponentId, Msg, NoUserEvent> = Application::init(
             EventListenerCfg::default()
                 .crossterm_input_listener(
@@ -155,63 +145,59 @@ where
                 .tick_interval(config::CONFIG.tick_interval()),
         );
 
-        assert!(
-            app.mount(
-                ComponentId::Label,
-                Box::new(
-                    Label::default()
-                        .text("Quetty, the cutest queue manager <3")
-                        .alignment(Alignment::Center)
-                        .background(Color::Reset)
-                        .foreground(Color::Green)
-                        .modifiers(TextModifiers::BOLD),
-                ),
-                Vec::default(),
-            )
-            .is_ok()
-        );
-        assert!(
-            app.mount(
-                ComponentId::NamespacePicker,
-                Box::new(NamespacePicker::new(None)),
-                Vec::default(),
-            )
-            .is_ok()
-        );
-        assert!(
-            app.mount(
-                ComponentId::QueuePicker,
-                Box::new(QueuePicker::new(None)),
-                Vec::default(),
-            )
-            .is_ok()
-        );
-        assert!(
-            app.mount(
-                ComponentId::Messages,
-                Box::new(Messages::new(messages)),
-                Vec::default(),
-            )
-            .is_ok()
-        );
-        assert!(
-            app.mount(
-                ComponentId::MessageDetails,
-                Box::new(MessageDetails::new(None)),
-                Vec::default(),
-            )
-            .is_ok()
-        );
-        assert!(
-            app.mount(
-                ComponentId::GlobalKeyWatcher,
-                Box::new(GlobalKeyWatcher::default()),
-                vec![Sub::new(SubEventClause::Any, SubClause::Always)]
-            )
-            .is_ok()
-        );
-        assert!(app.active(&ComponentId::Messages).is_ok());
-        app
+        app.mount(
+            ComponentId::Label,
+            Box::new(
+                Label::default()
+                    .text("Quetty, the cutest queue manager <3")
+                    .alignment(Alignment::Center)
+                    .background(Color::Reset)
+                    .foreground(Color::Green)
+                    .modifiers(TextModifiers::BOLD),
+            ),
+            Vec::default(),
+        )
+        .map_err(|e| AppError::Component(e.to_string()))?;
+
+        app.mount(
+            ComponentId::NamespacePicker,
+            Box::new(NamespacePicker::new(None)),
+            Vec::default(),
+        )
+        .map_err(|e| AppError::Component(e.to_string()))?;
+
+        app.mount(
+            ComponentId::QueuePicker,
+            Box::new(QueuePicker::new(None)),
+            Vec::default(),
+        )
+        .map_err(|e| AppError::Component(e.to_string()))?;
+
+        app.mount(
+            ComponentId::Messages,
+            Box::new(Messages::new(messages)),
+            Vec::default(),
+        )
+        .map_err(|e| AppError::Component(e.to_string()))?;
+
+        app.mount(
+            ComponentId::MessageDetails,
+            Box::new(MessageDetails::new(None)),
+            Vec::default(),
+        )
+        .map_err(|e| AppError::Component(e.to_string()))?;
+
+        app.mount(
+            ComponentId::GlobalKeyWatcher,
+            Box::new(GlobalKeyWatcher::default()),
+            vec![Sub::new(SubEventClause::Any, SubClause::Always)],
+        )
+        .map_err(|e| AppError::Component(e.to_string()))?;
+
+        app.active(&ComponentId::Messages)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        Ok(app)
     }
 }
 
