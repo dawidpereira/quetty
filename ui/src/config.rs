@@ -32,6 +32,22 @@ pub struct AppConfig {
     tick_interval_secs: u64,
     servicebus: ServicebusConfig,
     azure_ad: AzureAdConfig,
+    logging: LoggingConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LoggingConfig {
+    level: Option<String>,
+    file: Option<String>,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            level: Some("info".to_string()),
+            file: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -61,10 +77,23 @@ impl AppConfig {
     pub fn azure_ad(&self) -> &AzureAdConfig {
         &self.azure_ad
     }
+    pub fn logging(&self) -> &LoggingConfig {
+        &self.logging
+    }
 }
 
 impl ServicebusConfig {
     pub fn connection_string(&self) -> &str {
         &self.connection_string
+    }
+}
+
+impl LoggingConfig {
+    pub fn level(&self) -> &str {
+        self.level.as_deref().unwrap_or("info")
+    }
+    
+    pub fn file(&self) -> Option<&str> {
+        self.file.as_deref()
     }
 }

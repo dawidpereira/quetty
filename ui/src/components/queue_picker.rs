@@ -141,7 +141,10 @@ where
     T: TerminalAdapter,
 {
     pub fn new_consumer_for_queue(&mut self) -> crate::error::AppResult<()> {
+        log::debug!("Creating new consumer for queue");
         let queue = self.pending_queue.take().expect("No queue selected");
+        log::info!("Creating consumer for queue: {}", queue);
+        
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
 
@@ -153,27 +156,39 @@ where
         taskpool.execute(async move {
             let result = async {
                 if let Some(consumer) = consumer {
+                    log::debug!("Disposing existing consumer");
                     if let Err(e) = consumer.lock().await.dispose().await {
+                        log::error!("Failed to dispose consumer: {}", e);
                         return Err(AppError::ServiceBus(e.to_string()));
                     }
                 }
 
+                log::debug!("Acquiring service bus client lock");
                 let mut client = service_bus_client.lock().await;
+                log::debug!("Creating receiver for queue: {}", queue);
                 let consumer = client
-                    .create_consumer_for_queue(queue, ServiceBusReceiverOptions::default())
+                    .create_consumer_for_queue(queue.clone(), ServiceBusReceiverOptions::default())
                     .await
-                    .map_err(|e| AppError::ServiceBus(e.to_string()))?;
+                    .map_err(|e| {
+                        log::error!("Failed to create consumer for queue {}: {}", queue, e);
+                        AppError::ServiceBus(e.to_string())
+                    })?;
 
+                log::info!("Successfully created consumer for queue: {}", queue);
                 tx_to_main
                     .send(Msg::MessageActivity(MessageActivityMsg::ConsumerCreated(
                         consumer,
                     )))
-                    .map_err(|e| AppError::Component(e.to_string()))?;
+                    .map_err(|e| {
+                        log::error!("Failed to send consumer created message: {}", e);
+                        AppError::Component(e.to_string())
+                    })?;
 
                 Ok::<(), AppError>(())
             }
             .await;
             if let Err(e) = result {
+                log::error!("Error in consumer creation task: {}", e);
                 let _ = tx_to_main_err.send(Msg::Error(e));
             }
         });
@@ -182,6 +197,7 @@ where
     }
 
     pub fn load_queues(&mut self) -> crate::error::AppResult<()> {
+        log::debug!("Loading queues");
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
         let selected_namespace = self.selected_namespace.clone();
@@ -190,21 +206,34 @@ where
         taskpool.execute(async move {
             let result = async {
                 let mut config = CONFIG.azure_ad().clone();
-                if let Some(ns) = selected_namespace {
+                if let Some(ns) = selected_namespace.clone() {
+                    log::debug!("Using namespace: {}", ns);
                     config.namespace = ns;
+                } else {
+                    log::warn!("No namespace selected, using default namespace");
                 }
+                
+                log::debug!("Requesting queues from Azure AD");
                 let queues = ServiceBusManager::list_queues_azure_ad(&config)
                     .await
-                    .map_err(|e| AppError::ServiceBus(e.to_string()))?;
+                    .map_err(|e| {
+                        log::error!("Failed to list queues: {}", e);
+                        AppError::ServiceBus(e.to_string())
+                    })?;
 
+                log::info!("Loaded {} queues from namespace {}", queues.len(), selected_namespace.unwrap_or_else(|| "default".to_string()));
                 tx_to_main
                     .send(Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(queues)))
-                    .map_err(|e| AppError::Component(e.to_string()))?;
+                    .map_err(|e| {
+                        log::error!("Failed to send queues loaded message: {}", e);
+                        AppError::Component(e.to_string())
+                    })?;
 
                 Ok::<(), AppError>(())
             }
             .await;
             if let Err(e) = result {
+                log::error!("Error in queue loading task: {}", e);
                 let _ = tx_to_main_err.send(Msg::Error(e));
             }
         });

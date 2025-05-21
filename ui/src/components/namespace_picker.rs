@@ -130,25 +130,35 @@ where
     T: TerminalAdapter,
 {
     pub fn load_namespaces(&mut self) -> AppResult<()> {
+        log::debug!("Loading namespaces");
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
         let tx_to_main_err = tx_to_main.clone();
         taskpool.execute(async move {
             let result = async {
+                log::debug!("Requesting namespaces from Azure AD");
                 let namespaces = ServiceBusManager::list_namespaces_azure_ad(CONFIG.azure_ad())
                     .await
-                    .map_err(|e| AppError::ServiceBus(e.to_string()))?;
+                    .map_err(|e| {
+                        log::error!("Failed to list namespaces: {}", e);
+                        AppError::ServiceBus(e.to_string())
+                    })?;
 
+                log::info!("Loaded {} namespaces", namespaces.len());
                 tx_to_main
                     .send(Msg::NamespaceActivity(
                         NamespaceActivityMsg::NamespacesLoaded(namespaces),
                     ))
-                    .map_err(|e| AppError::Component(e.to_string()))?;
+                    .map_err(|e| {
+                        log::error!("Failed to send namespaces loaded message: {}", e);
+                        AppError::Component(e.to_string())
+                    })?;
 
                 Ok::<(), AppError>(())
             }
             .await;
             if let Err(e) = result {
+                log::error!("Error in namespace loading task: {}", e);
                 let _ = tx_to_main_err.send(Msg::Error(e));
             }
         });
