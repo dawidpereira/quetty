@@ -303,16 +303,23 @@ where
                     self.app_state = AppState::MessageDetails;
                     Some(Msg::ForceRedraw)
                 }
-                Msg::MessageActivity(MessageActivityMsg::CancelEditMessage) => {
+                Msg::MessageActivity(MessageActivityMsg::PreviewMessageDetails(index)) => {
+                    let mut message: Option<MessageModel> = None;
+                    if self.messages.is_some() {
+                        message = self.messages.as_ref().unwrap().get(index).cloned();
+                    }
                     assert!(
                         self.app
                             .remount(
                                 ComponentId::MessageDetails,
-                                Box::new(MessageDetails::new(None)),
+                                Box::new(MessageDetails::new(message)),
                                 Vec::default(),
                             )
                             .is_ok()
                     );
+                    Some(Msg::ForceRedraw)
+                }
+                Msg::MessageActivity(MessageActivityMsg::CancelEditMessage) => {
                     self.app_state = AppState::MessagePicker;
                     None
                 }
@@ -323,6 +330,20 @@ where
                             .remount(
                                 ComponentId::Messages,
                                 Box::new(Messages::new(self.messages.as_ref())),
+                                Vec::default(),
+                            )
+                            .is_ok()
+                    );
+
+                    let mut message: Option<MessageModel> = None;
+                    if self.messages.is_some() {
+                        message = self.messages.as_ref().unwrap().first().cloned();
+                    }
+                    assert!(
+                        self.app
+                            .remount(
+                                ComponentId::MessageDetails,
+                                Box::new(MessageDetails::new(message)),
                                 Vec::default(),
                             )
                             .is_ok()

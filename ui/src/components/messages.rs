@@ -17,6 +17,7 @@ pub struct Messages {
 }
 
 const CMD_RESULT_MESSAGE_SELECTED: &str = "MessageSelected";
+const CMD_RESULT_MESSAGE_PREVIEW: &str = "MessagePreview";
 const CMD_RESULT_QUEUE_UNSELECTED: &str = "QueueUnSelected";
 
 impl Messages {
@@ -71,27 +72,45 @@ impl Component<Msg, NoUserEvent> for Messages {
             Event::Keyboard(KeyEvent {
                 code: Key::Down,
                 modifiers: KeyModifiers::NONE,
-            }) => self.component.perform(Cmd::Move(Direction::Down)),
+            }) => {
+                self.component.perform(Cmd::Move(Direction::Down));
+                CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
+            }
             Event::Keyboard(KeyEvent {
                 code: Key::Char('j'),
                 modifiers: KeyModifiers::NONE,
-            }) => self.component.perform(Cmd::Move(Direction::Down)),
+            }) => {
+                self.component.perform(Cmd::Move(Direction::Down));
+                CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
+            }
             Event::Keyboard(KeyEvent {
                 code: Key::Up,
                 modifiers: KeyModifiers::NONE,
-            }) => self.component.perform(Cmd::Move(Direction::Up)),
+            }) => {
+                self.component.perform(Cmd::Move(Direction::Up));
+                CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
+            }
             Event::Keyboard(KeyEvent {
                 code: Key::Char('k'),
                 modifiers: KeyModifiers::NONE,
-            }) => self.component.perform(Cmd::Move(Direction::Up)),
+            }) => {
+                self.component.perform(Cmd::Move(Direction::Up));
+                CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
+            }
             Event::Keyboard(KeyEvent {
                 code: Key::PageDown,
                 modifiers: KeyModifiers::NONE,
-            }) => self.component.perform(Cmd::Scroll(Direction::Down)),
+            }) => {
+                self.component.perform(Cmd::Scroll(Direction::Down));
+                CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
+            }
             Event::Keyboard(KeyEvent {
                 code: Key::PageUp,
                 modifiers: KeyModifiers::NONE,
-            }) => self.perform(Cmd::Scroll(Direction::Up)),
+            }) => {
+                self.component.perform(Cmd::Scroll(Direction::Up));
+                CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
+            }
             Event::Keyboard(KeyEvent {
                 code: Key::Enter,
                 modifiers: KeyModifiers::NONE,
@@ -107,6 +126,15 @@ impl Component<Msg, NoUserEvent> for Messages {
                 StateValue::Usize(index) => {
                     Some(Msg::MessageActivity(MessageActivityMsg::EditMessage(index)))
                 }
+                _ => {
+                    println!("Incorrect state in message table");
+                    None
+                }
+            },
+            CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, state) => match state.unwrap_one() {
+                StateValue::Usize(index) => Some(Msg::MessageActivity(
+                    MessageActivityMsg::PreviewMessageDetails(index),
+                )),
                 _ => {
                     println!("Incorrect state in message table");
                     None
