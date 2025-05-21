@@ -3,11 +3,11 @@ use crate::app::view::{
 };
 use crate::components::common::{ComponentId, Msg};
 use crate::components::global_key_watcher::GlobalKeyWatcher;
-use crate::components::label::Label;
 use crate::components::message_details::MessageDetails;
 use crate::components::messages::Messages;
 use crate::components::namespace_picker::NamespacePicker;
 use crate::components::queue_picker::QueuePicker;
+use crate::components::text_label::TextLabel;
 use crate::config;
 use crate::error::{AppError, AppResult};
 use azservicebus::core::BasicRetryPolicy;
@@ -20,8 +20,6 @@ use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::Mutex;
 use tuirealm::event::NoUserEvent;
-use tuirealm::props::TextModifiers;
-use tuirealm::props::{Alignment, Color};
 use tuirealm::ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBridge};
 use tuirealm::{Application, EventListenerCfg, Sub, SubClause, SubEventClause, Update};
@@ -150,17 +148,11 @@ where
                 .poll_timeout(config::CONFIG.poll_timeout())
                 .tick_interval(config::CONFIG.tick_interval()),
         );
-
         app.mount(
             ComponentId::Label,
-            Box::new(
-                Label::default()
-                    .text("Quetty, the cutest queue manager <3")
-                    .alignment(Alignment::Center)
-                    .background(Color::Reset)
-                    .foreground(Color::Green)
-                    .modifiers(TextModifiers::BOLD),
-            ),
+            Box::new(TextLabel::new(
+                "Quetty, the cutest queue manager <3".to_string(),
+            )),
             Vec::default(),
         )
         .map_err(|e| AppError::Component(e.to_string()))?;
