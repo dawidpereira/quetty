@@ -87,7 +87,13 @@ impl Model<CrosstermTerminalAdapter> {
             messages: None,
             selected_namespace: None,
         };
-        app.load_namespaces();
+        if let Err(e) = app.load_namespaces() {
+            // Send the error through the channel to be handled in the main event loop
+            if app.tx_to_main.send(Msg::Error(e.clone())).is_err() {
+                // If the channel send fails, handle the error directly
+                crate::error::handle_error(e);
+            }
+        }
         Ok(app)
     }
 }
@@ -233,6 +239,10 @@ where
                 Msg::MessageActivity(msg) => self.update_messages(msg),
                 Msg::QueueActivity(msg) => self.update_queue(msg),
                 Msg::NamespaceActivity(msg) => self.update_namespace(msg),
+                Msg::Error(e) => {
+                    crate::error::handle_error(e);
+                    None
+                }
                 _ => None,
             }
         } else {

@@ -38,7 +38,9 @@ where
             }
             MessageActivityMsg::ConsumerCreated(consumer) => {
                 self.consumer = Some(Arc::new(Mutex::new(consumer)));
-                self.load_messages();
+                if let Err(e) = self.load_messages() {
+                    handle_error(e);
+                }
                 None
             }
             MessageActivityMsg::PreviewMessageDetails(index) => {
@@ -54,7 +56,9 @@ where
         match msg {
             QueueActivityMsg::QueueSelected(queue) => {
                 self.pending_queue = Some(queue);
-                self.new_consumer_for_queue();
+                if let Err(e) = self.new_consumer_for_queue() {
+                    handle_error(e);
+                }
                 None
             }
             QueueActivityMsg::QueuesLoaded(queues) => {
@@ -83,11 +87,15 @@ where
                 None
             }
             NamespaceActivityMsg::NamespaceSelected => {
-                self.load_queues();
+                if let Err(e) = self.load_queues() {
+                    handle_error(e);
+                }
                 None
             }
             NamespaceActivityMsg::NamespaceUnselected => {
-                self.load_namespaces();
+                if let Err(e) = self.load_namespaces() {
+                    handle_error(e);
+                }
                 None
             }
         }

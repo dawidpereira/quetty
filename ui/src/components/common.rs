@@ -1,6 +1,8 @@
 use server::consumer::Consumer;
 use server::model::MessageModel;
 
+use crate::error::AppError;
+
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum ComponentId {
     Label,
@@ -19,6 +21,7 @@ pub enum Msg {
     MessageActivity(MessageActivityMsg),
     QueueActivity(QueueActivityMsg),
     NamespaceActivity(NamespaceActivityMsg),
+    Error(AppError),
 }
 
 #[derive(Debug, PartialEq)]

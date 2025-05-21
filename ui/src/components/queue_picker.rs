@@ -11,6 +11,7 @@ use tuirealm::{Component, Event, Frame, MockComponent, NoUserEvent};
 
 use crate::app::model::Model;
 use crate::config::CONFIG;
+use crate::error::AppError;
 
 use super::common::{MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg};
 
@@ -139,8 +140,7 @@ impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
-    pub fn new_consumer_for_queue(&mut self) {
-        //TODO: Error handling
+    pub fn new_consumer_for_queue(&mut self) -> crate::error::AppResult<()> {
         let queue = self.pending_queue.take().expect("No queue selected");
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
@@ -149,40 +149,66 @@ where
         let service_bus_client = self.service_bus_client.clone();
         let consumer = self.consumer.clone();
 
+        let tx_to_main_err = tx_to_main.clone();
         taskpool.execute(async move {
-            // Create a new consumer using the service bus client
-            if let Some(consumer) = consumer {
-                consumer.lock().await.dispose().await.unwrap();
+            let result = async {
+                if let Some(consumer) = consumer {
+                    if let Err(e) = consumer.lock().await.dispose().await {
+                        return Err(AppError::ServiceBus(e.to_string()));
+                    }
+                }
+
+                let mut client = service_bus_client.lock().await;
+                let consumer = client
+                    .create_consumer_for_queue(queue, ServiceBusReceiverOptions::default())
+                    .await
+                    .map_err(|e| AppError::ServiceBus(e.to_string()))?;
+
+                tx_to_main
+                    .send(Msg::MessageActivity(MessageActivityMsg::ConsumerCreated(
+                        consumer,
+                    )))
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+
+                Ok::<(), AppError>(())
             }
-
-            let mut client = service_bus_client.lock().await;
-            let consumer = client
-                .create_consumer_for_queue(queue, ServiceBusReceiverOptions::default())
-                .await
-                .unwrap();
-
-            // Send the consumer back to the main thread
-            let _ = tx_to_main.send(Msg::MessageActivity(MessageActivityMsg::ConsumerCreated(
-                consumer,
-            )));
+            .await;
+            if let Err(e) = result {
+                let _ = tx_to_main_err.send(Msg::Error(e));
+            }
         });
+
+        Ok(())
     }
 
-    pub fn load_queues(&mut self) {
-        //TODO: Error handling
+    pub fn load_queues(&mut self) -> crate::error::AppResult<()> {
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
         let selected_namespace = self.selected_namespace.clone();
 
+        let tx_to_main_err = tx_to_main.clone();
         taskpool.execute(async move {
-            let mut config = CONFIG.azure_ad().clone();
-            if let Some(ns) = selected_namespace {
-                config.namespace = ns;
+            let result = async {
+                let mut config = CONFIG.azure_ad().clone();
+                if let Some(ns) = selected_namespace {
+                    config.namespace = ns;
+                }
+                let queues = ServiceBusManager::list_queues_azure_ad(&config)
+                    .await
+                    .map_err(|e| AppError::ServiceBus(e.to_string()))?;
+
+                tx_to_main
+                    .send(Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(queues)))
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+
+                Ok::<(), AppError>(())
             }
-            let queues = ServiceBusManager::list_queues_azure_ad(&config)
-                .await
-                .unwrap_or_else(|_| vec![]);
-            let _ = tx_to_main.send(Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(queues)));
+            .await;
+            if let Err(e) = result {
+                let _ = tx_to_main_err.send(Msg::Error(e));
+            }
         });
+
+        Ok(())
     }
 }
