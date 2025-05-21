@@ -2,28 +2,42 @@ mod error;
 use app::model::Model;
 use components::common::ComponentId;
 use error::handle_error;
+use log::{debug, error, info};
+use std::error::Error as StdError;
 use tuirealm::application::PollStrategy;
 use tuirealm::{AttrValue, Attribute, Update};
 
 mod app;
 mod components;
 mod config;
+mod logger;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn StdError>> {
+    // Initialize logger
+    if let Err(e) = logger::setup_logger() {
+        eprintln!("Failed to initialize logger: {}", e);
+    }
+
+    info!("Starting Quetty application");
+
     // Setup model
     let mut model = Model::new().await.expect("Failed to initialize model");
+    info!("Model initialized successfully");
 
     // Enter alternate screen
+    debug!("Entering alternate screen");
     let _ = model.terminal.enter_alternate_screen();
     let _ = model.terminal.enable_raw_mode();
 
+    info!("Entering main application loop");
     // Main loop
     while !model.quit {
         model.update_outside_msg();
         // Tick
         match model.app.tick(PollStrategy::Once) {
             Err(err) => {
+                error!("Application tick error: {}", err);
                 assert!(
                     model
                         .app
@@ -37,6 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Ok(messages) if !messages.is_empty() => {
                 // NOTE: redraw if at least one msg has been processed
+                debug!("Processing {} messages", messages.len());
                 model.redraw = true;
                 for msg in messages.into_iter() {
                     let mut msg = Some(msg);
@@ -50,14 +65,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Redraw
         if model.redraw {
             if let Err(e) = model.view() {
+                error!("Error during view rendering: {}", e);
                 handle_error(e);
             }
             model.redraw = false;
         }
     }
+
     // Terminate terminal
+    info!("Application shutdown initiated");
+    debug!("Leaving alternate screen");
     let _ = model.terminal.leave_alternate_screen();
     let _ = model.terminal.disable_raw_mode();
     let _ = model.terminal.clear_screen();
+
+    info!("Application terminated successfully");
     Ok(())
 }

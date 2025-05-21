@@ -148,33 +148,45 @@ where
     T: TerminalAdapter,
 {
     pub fn load_messages(&mut self) -> AppResult<()> {
+        log::debug!("Loading messages");
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
 
         let consumer = self
             .consumer
             .clone()
-            .ok_or_else(|| AppError::State("No consumer available".to_string()))?;
+            .ok_or_else(|| {
+                log::error!("No consumer available");
+                AppError::State("No consumer available".to_string())
+            })?;
 
         let tx_to_main_err = tx_to_main.clone();
         taskpool.execute(async move {
             let result = async {
+                log::debug!("Acquiring consumer lock");
                 let mut consumer = consumer.lock().await;
+                log::debug!("Peeking messages");
                 let messages = consumer
                     .peek_messages(config::CONFIG.max_messages(), None)
                     .await
-                    .map_err(|e| AppError::ServiceBus(e.to_string()))?;
+                    .map_err(|e| {
+                        log::error!("Failed to peek messages: {}", e);
+                        AppError::ServiceBus(e.to_string())
+                    })?;
 
+                log::info!("Loaded {} messages", messages.len());
                 tx_to_main
-                    .send(Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(
-                        messages,
-                    )))
-                    .map_err(|e| AppError::Component(e.to_string()))?;
+                    .send(Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(messages)))
+                    .map_err(|e| {
+                        log::error!("Failed to send messages loaded message: {}", e);
+                        AppError::Component(e.to_string())
+                    })?;
 
                 Ok::<(), AppError>(())
             }
             .await;
             if let Err(e) = result {
+                log::error!("Error in message loading task: {}", e);
                 let _ = tx_to_main_err.send(Msg::Error(e));
             }
         });

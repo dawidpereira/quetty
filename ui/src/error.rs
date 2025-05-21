@@ -37,6 +37,15 @@ impl PartialEq for AppError {
 pub type AppResult<T> = Result<T, AppError>;
 
 pub fn handle_error(error: AppError) {
-    // TODO: Implement proper error handling UI
+    // Log the error with appropriate level based on error type
+    match &error {
+        AppError::Io(msg) => log::error!("IO Error: {}", msg),
+        AppError::ServiceBus(msg) => log::error!("Service Bus Error: {}", msg),
+        AppError::Component(msg) => log::warn!("Component Error: {}", msg),
+        AppError::State(msg) => log::warn!("State Error: {}", msg),
+    }
+
+    // Print to stderr (this will be redundant with logging, but we'll keep it for now)
+    // TODO: Display error in UI
     eprintln!("Error: {:?}", error);
 }

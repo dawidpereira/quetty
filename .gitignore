@@ -28,3 +28,5 @@ NOTES*
 .DS_Store 
 .idea
 
+ui/quetty.log
+*.log
