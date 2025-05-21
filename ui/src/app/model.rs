@@ -14,6 +14,9 @@ use tuirealm::ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBridge};
 use tuirealm::{Application, EventListenerCfg, Sub, SubClause, SubEventClause, Update};
 
+use crate::app::views::{
+    view_message_details, view_message_picker, view_namespace_picker, view_queue_picker,
+};
 use crate::components::common::{
     ComponentId, MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg,
 };
@@ -125,58 +128,16 @@ where
 
                     match self.app_state {
                         AppState::NamespacePicker => {
-                            self.app.view(&ComponentId::NamespacePicker, f, chunks[3]);
-                            if self.app.active(&ComponentId::NamespacePicker).is_err() {
-                                println!("Error: NamespacePicker component not active");
-                            }
+                            view_namespace_picker(&mut self.app, f, &chunks);
                         }
                         AppState::QueuePicker => {
-                            self.app.view(&ComponentId::QueuePicker, f, chunks[3]);
-                            if self.app.active(&ComponentId::QueuePicker).is_err() {
-                                println!("Error: QueuePicker component not active");
-                            }
+                            view_queue_picker(&mut self.app, f, &chunks);
                         }
                         AppState::MessagePicker => {
-                            let main_chunks = Layout::default()
-                                .direction(Direction::Horizontal)
-                                .margin(1)
-                                .constraints(
-                                    [
-                                        Constraint::Min(49), // Messages
-                                        Constraint::Min(49),
-                                    ]
-                                    .as_ref(),
-                                )
-                                .split(chunks[3]);
-
-                            self.app.view(&ComponentId::Messages, f, main_chunks[0]);
-                            self.app
-                                .view(&ComponentId::MessageDetails, f, main_chunks[1]);
-
-                            if self.app.active(&ComponentId::Messages).is_err() {
-                                println!("Error: Messages component not active");
-                            }
+                            view_message_picker(&mut self.app, f, &chunks);
                         }
                         AppState::MessageDetails => {
-                            let main_chunks = Layout::default()
-                                .direction(Direction::Horizontal)
-                                .margin(1)
-                                .constraints(
-                                    [
-                                        Constraint::Min(49), // Messages
-                                        Constraint::Min(49),
-                                    ]
-                                    .as_ref(),
-                                )
-                                .split(chunks[3]);
-
-                            self.app.view(&ComponentId::Messages, f, main_chunks[0]);
-                            self.app
-                                .view(&ComponentId::MessageDetails, f, main_chunks[1]);
-
-                            if self.app.active(&ComponentId::MessageDetails).is_err() {
-                                println!("Error: MessageDetails component not active");
-                            }
+                            view_message_details(&mut self.app, f, &chunks);
                         }
                     }
                 })

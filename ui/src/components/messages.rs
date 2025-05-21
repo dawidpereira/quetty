@@ -9,7 +9,6 @@ use tuirealm::{Component, Event, MockComponent, NoUserEvent, StateValue};
 use super::common::{MessageActivityMsg, Msg, QueueActivityMsg};
 
 use crate::app::model::Model;
-use crate::components::common::ComponentId;
 use crate::config;
 
 #[derive(MockComponent)]
