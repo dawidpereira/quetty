@@ -287,36 +287,12 @@ where
                     None
                 }
                 Msg::MessageActivity(MessageActivityMsg::EditMessage(index)) => {
-                    let mut message: Option<MessageModel> = None;
-                    if self.messages.is_some() {
-                        message = self.messages.as_ref().unwrap().get(index).cloned();
-                    }
-                    assert!(
-                        self.app
-                            .remount(
-                                ComponentId::MessageDetails,
-                                Box::new(MessageDetails::new(message)),
-                                Vec::default(),
-                            )
-                            .is_ok()
-                    );
+                    self.remount_message_details(index);
                     self.app_state = AppState::MessageDetails;
                     Some(Msg::ForceRedraw)
                 }
                 Msg::MessageActivity(MessageActivityMsg::PreviewMessageDetails(index)) => {
-                    let mut message: Option<MessageModel> = None;
-                    if self.messages.is_some() {
-                        message = self.messages.as_ref().unwrap().get(index).cloned();
-                    }
-                    assert!(
-                        self.app
-                            .remount(
-                                ComponentId::MessageDetails,
-                                Box::new(MessageDetails::new(message)),
-                                Vec::default(),
-                            )
-                            .is_ok()
-                    );
+                    self.remount_message_details(index);
                     Some(Msg::ForceRedraw)
                 }
                 Msg::MessageActivity(MessageActivityMsg::CancelEditMessage) => {
@@ -325,29 +301,8 @@ where
                 }
                 Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(messages)) => {
                     self.messages = Some(messages);
-                    assert!(
-                        self.app
-                            .remount(
-                                ComponentId::Messages,
-                                Box::new(Messages::new(self.messages.as_ref())),
-                                Vec::default(),
-                            )
-                            .is_ok()
-                    );
-
-                    let mut message: Option<MessageModel> = None;
-                    if self.messages.is_some() {
-                        message = self.messages.as_ref().unwrap().first().cloned();
-                    }
-                    assert!(
-                        self.app
-                            .remount(
-                                ComponentId::MessageDetails,
-                                Box::new(MessageDetails::new(message)),
-                                Vec::default(),
-                            )
-                            .is_ok()
-                    );
+                    self.remount_messages();
+                    self.remount_message_details(0);
                     self.app_state = AppState::MessagePicker;
                     None
                 }
@@ -362,15 +317,7 @@ where
                     None
                 }
                 Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(queues)) => {
-                    assert!(
-                        self.app
-                            .remount(
-                                ComponentId::QueuePicker,
-                                Box::new(QueuePicker::new(Some(queues))),
-                                Vec::default(),
-                            )
-                            .is_ok()
-                    );
+                    self.remount_queue_picker(Some(queues));
                     self.app_state = AppState::QueuePicker;
                     None
                 }
@@ -379,15 +326,7 @@ where
                     None
                 }
                 Msg::NamespaceActivity(NamespaceActivityMsg::NamespacesLoaded(namespace)) => {
-                    assert!(
-                        self.app
-                            .remount(
-                                ComponentId::NamespacePicker,
-                                Box::new(NamespacePicker::new(Some(namespace))),
-                                Vec::default(),
-                            )
-                            .is_ok()
-                    );
+                    self.remount_namespace_picker(Some(namespace));
                     self.app_state = AppState::NamespacePicker;
                     None
                 }
