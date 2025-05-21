@@ -1,3 +1,4 @@
 pub mod model;
 pub mod remount;
-pub mod views;
+pub mod update;
+pub mod view;
