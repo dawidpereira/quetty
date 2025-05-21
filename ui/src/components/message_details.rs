@@ -100,13 +100,30 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
             }) => {
                 match self.component.perform(Cmd::Submit) {
                     CmdResult::Submit(state) => {
-                        let state = state.unwrap_vec();
-                        let lines: Vec<String> = state
-                            .into_iter()
-                            .map(|sv| sv.unwrap_string()) //TODO: Unwrap_string panics if not a String variant
-                            .collect();
-
-                        return Some(Msg::Submit(lines));
+                        // Safely convert state to vec without unwrap
+                        match state {
+                            tuirealm::State::Vec(items) => {
+                                // Safely convert each item to string without unwrap
+                                let mut lines = Vec::new();
+                                for item in items {
+                                    match item {
+                                        tuirealm::StateValue::String(s) => lines.push(s),
+                                        _ => {
+                                            // For non-string values, provide a fallback
+                                            eprintln!(
+                                                "Unexpected state value type in message details"
+                                            );
+                                            lines.push(String::from("[Non-string content]"));
+                                        }
+                                    }
+                                }
+                                return Some(Msg::Submit(lines));
+                            }
+                            _ => {
+                                eprintln!("Unexpected state type in message details");
+                                return None;
+                            }
+                        }
                     }
                     _ => return None,
                 }
