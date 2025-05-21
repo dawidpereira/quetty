@@ -73,4 +73,3 @@ pub fn view_message_details(
         println!("Error: MessageDetails component not active");
     }
 }
-

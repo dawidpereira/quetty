@@ -1,3 +1,14 @@
+use crate::app::view::{
+    view_message_details, view_message_picker, view_namespace_picker, view_queue_picker,
+};
+use crate::components::common::{ComponentId, Msg};
+use crate::components::global_key_watcher::GlobalKeyWatcher;
+use crate::components::label::Label;
+use crate::components::message_details::MessageDetails;
+use crate::components::messages::Messages;
+use crate::components::namespace_picker::NamespacePicker;
+use crate::components::queue_picker::QueuePicker;
+use crate::config;
 use azservicebus::core::BasicRetryPolicy;
 use azservicebus::{ServiceBusClient, ServiceBusClientOptions};
 use copypasta::{ClipboardContext, ClipboardProvider};
@@ -13,20 +24,6 @@ use tuirealm::props::{Alignment, Color};
 use tuirealm::ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBridge};
 use tuirealm::{Application, EventListenerCfg, Sub, SubClause, SubEventClause, Update};
-
-use crate::app::views::{
-    view_message_details, view_message_picker, view_namespace_picker, view_queue_picker,
-};
-use crate::components::common::{
-    ComponentId, MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg,
-};
-use crate::components::global_key_watcher::GlobalKeyWatcher;
-use crate::components::label::Label;
-use crate::components::message_details::MessageDetails;
-use crate::components::messages::Messages;
-use crate::components::namespace_picker::NamespacePicker;
-use crate::components::queue_picker::QueuePicker;
-use crate::config;
 
 pub enum AppState {
     NamespacePicker,
@@ -247,58 +244,9 @@ where
                     }
                     None
                 }
-                Msg::MessageActivity(MessageActivityMsg::EditMessage(index)) => {
-                    self.remount_message_details(index);
-                    self.app_state = AppState::MessageDetails;
-                    Some(Msg::ForceRedraw)
-                }
-                Msg::MessageActivity(MessageActivityMsg::PreviewMessageDetails(index)) => {
-                    self.remount_message_details(index);
-                    Some(Msg::ForceRedraw)
-                }
-                Msg::MessageActivity(MessageActivityMsg::CancelEditMessage) => {
-                    self.app_state = AppState::MessagePicker;
-                    None
-                }
-                Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(messages)) => {
-                    self.messages = Some(messages);
-                    self.remount_messages();
-                    self.remount_message_details(0);
-                    self.app_state = AppState::MessagePicker;
-                    None
-                }
-                Msg::MessageActivity(MessageActivityMsg::ConsumerCreated(consumer)) => {
-                    self.consumer = Some(Arc::new(Mutex::new(consumer)));
-                    self.load_messages();
-                    None
-                }
-                Msg::QueueActivity(QueueActivityMsg::QueueSelected(queue)) => {
-                    self.pending_queue = Some(queue);
-                    self.new_consumer_for_queue();
-                    None
-                }
-                Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(queues)) => {
-                    self.remount_queue_picker(Some(queues));
-                    self.app_state = AppState::QueuePicker;
-                    None
-                }
-                Msg::QueueActivity(QueueActivityMsg::QueueUnselected) => {
-                    self.app_state = AppState::QueuePicker;
-                    None
-                }
-                Msg::NamespaceActivity(NamespaceActivityMsg::NamespacesLoaded(namespace)) => {
-                    self.remount_namespace_picker(Some(namespace));
-                    self.app_state = AppState::NamespacePicker;
-                    None
-                }
-                Msg::NamespaceActivity(NamespaceActivityMsg::NamespaceSelected) => {
-                    self.load_queues();
-                    None
-                }
-                Msg::NamespaceActivity(NamespaceActivityMsg::NamespaceUnselected) => {
-                    self.load_namespaces();
-                    None
-                }
+                Msg::MessageActivity(msg) => self.update_messages(msg),
+                Msg::QueueActivity(msg) => self.update_queue(msg),
+                Msg::NamespaceActivity(msg) => self.update_namespace(msg),
                 _ => None,
             }
         } else {
