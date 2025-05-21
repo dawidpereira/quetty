@@ -14,15 +14,6 @@ pub enum AppError {
 
     #[error("State error: {0}")]
     State(String),
-
-    #[error("API error: {0}")]
-    Api(String),
-
-    #[error("Configuration error: {0}")]
-    Config(String),
-
-    #[error("Unknown error: {0}")]
-    Unknown(String),
 }
 
 impl From<io::Error> for AppError {
@@ -38,9 +29,6 @@ impl PartialEq for AppError {
             (Self::ServiceBus(a), Self::ServiceBus(b)) => a == b,
             (Self::Component(a), Self::Component(b)) => a == b,
             (Self::State(a), Self::State(b)) => a == b,
-            (Self::Api(a), Self::Api(b)) => a == b,
-            (Self::Config(a), Self::Config(b)) => a == b,
-            (Self::Unknown(a), Self::Unknown(b)) => a == b,
             _ => false,
         }
     }
