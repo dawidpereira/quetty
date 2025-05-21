@@ -2236,6 +2236,7 @@ dependencies = [
 name = "quetty"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "azservicebus",
  "chrono",
  "config",
@@ -2245,6 +2246,7 @@ dependencies = [
  "serde",
  "serde_json",
  "server",
+ "thiserror 2.0.12",
  "time",
  "tokio",
  "tui-realm-stdlib",

@@ -1,5 +1,7 @@
+mod error;
 use app::model::Model;
 use components::common::ComponentId;
+use error::handle_error;
 use tuirealm::application::PollStrategy;
 use tuirealm::{AttrValue, Attribute, Update};
 
@@ -10,7 +12,7 @@ mod config;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup model
-    let mut model = Model::new().await;
+    let mut model = Model::new().await.expect("Failed to initialize model");
 
     // Enter alternate screen
     let _ = model.terminal.enter_alternate_screen();
@@ -47,7 +49,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         // Redraw
         if model.redraw {
-            model.view();
+            if let Err(e) = model.view() {
+                handle_error(e);
+            }
             model.redraw = false;
         }
     }

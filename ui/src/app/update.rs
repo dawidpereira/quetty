@@ -1,5 +1,6 @@
 use crate::app::model::{AppState, Model};
 use crate::components::common::{MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg};
+use crate::error::handle_error;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tuirealm::terminal::TerminalAdapter;
@@ -11,7 +12,10 @@ where
     pub fn update_messages(&mut self, msg: MessageActivityMsg) -> Option<Msg> {
         match msg {
             MessageActivityMsg::EditMessage(index) => {
-                self.remount_message_details(index);
+                if let Err(e) = self.remount_message_details(index) {
+                    handle_error(e);
+                    return None;
+                }
                 self.app_state = AppState::MessageDetails;
                 Some(Msg::ForceRedraw)
             }
@@ -21,8 +25,14 @@ where
             }
             MessageActivityMsg::MessagesLoaded(messages) => {
                 self.messages = Some(messages);
-                self.remount_messages();
-                self.remount_message_details(0);
+                if let Err(e) = self.remount_messages() {
+                    handle_error(e);
+                    return None;
+                }
+                if let Err(e) = self.remount_message_details(0) {
+                    handle_error(e);
+                    return None;
+                }
                 self.app_state = AppState::MessagePicker;
                 None
             }
@@ -32,7 +42,9 @@ where
                 None
             }
             MessageActivityMsg::PreviewMessageDetails(index) => {
-                self.remount_message_details(index);
+                if let Err(e) = self.remount_message_details(index) {
+                    handle_error(e);
+                }
                 None
             }
         }
@@ -46,7 +58,10 @@ where
                 None
             }
             QueueActivityMsg::QueuesLoaded(queues) => {
-                self.remount_queue_picker(Some(queues));
+                if let Err(e) = self.remount_queue_picker(Some(queues)) {
+                    handle_error(e);
+                    return None;
+                }
                 self.app_state = AppState::QueuePicker;
                 None
             }
@@ -60,7 +75,10 @@ where
     pub fn update_namespace(&mut self, msg: NamespaceActivityMsg) -> Option<Msg> {
         match msg {
             NamespaceActivityMsg::NamespacesLoaded(namespace) => {
-                self.remount_namespace_picker(Some(namespace));
+                if let Err(e) = self.remount_namespace_picker(Some(namespace)) {
+                    handle_error(e);
+                    return None;
+                }
                 self.app_state = AppState::NamespacePicker;
                 None
             }
