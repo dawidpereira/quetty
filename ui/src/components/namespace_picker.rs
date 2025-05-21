@@ -11,6 +11,7 @@ use tuirealm::{
 
 use crate::app::model::Model;
 use crate::config::CONFIG;
+use crate::error::{AppError, AppResult};
 
 use super::common::{Msg, NamespaceActivityMsg};
 
@@ -128,17 +129,30 @@ impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
-    pub fn load_namespaces(&mut self) {
-        //TODO: Error handling
+    pub fn load_namespaces(&mut self) -> AppResult<()> {
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
-
-        // Clone the Arc to pass into async block
+        let tx_to_main_err = tx_to_main.clone();
         taskpool.execute(async move {
-            let namespaces = ServiceBusManager::list_namespaces_azure_ad(CONFIG.azure_ad()).await;
-            let _ = tx_to_main.send(Msg::NamespaceActivity(
-                NamespaceActivityMsg::NamespacesLoaded(namespaces.unwrap_or_default()),
-            ));
+            let result = async {
+                let namespaces = ServiceBusManager::list_namespaces_azure_ad(CONFIG.azure_ad())
+                    .await
+                    .map_err(|e| AppError::ServiceBus(e.to_string()))?;
+
+                tx_to_main
+                    .send(Msg::NamespaceActivity(
+                        NamespaceActivityMsg::NamespacesLoaded(namespaces),
+                    ))
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+
+                Ok::<(), AppError>(())
+            }
+            .await;
+            if let Err(e) = result {
+                let _ = tx_to_main_err.send(Msg::Error(e));
+            }
         });
+
+        Ok(())
     }
 }

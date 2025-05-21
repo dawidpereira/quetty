@@ -7,6 +7,7 @@ use tuirealm::terminal::TerminalAdapter;
 use tuirealm::{Component, Event, MockComponent, NoUserEvent, StateValue};
 
 use super::common::{MessageActivityMsg, Msg, QueueActivityMsg};
+use crate::error::{AppError, AppResult};
 
 use crate::app::model::Model;
 use crate::config;
@@ -122,23 +123,17 @@ impl Component<Msg, NoUserEvent> for Messages {
             _ => CmdResult::None,
         };
         match cmd_result {
-            CmdResult::Custom(CMD_RESULT_MESSAGE_SELECTED, state) => match state.unwrap_one() {
-                StateValue::Usize(index) => {
+            CmdResult::Custom(CMD_RESULT_MESSAGE_SELECTED, state) => match state {
+                tuirealm::State::One(StateValue::Usize(index)) => {
                     Some(Msg::MessageActivity(MessageActivityMsg::EditMessage(index)))
                 }
-                _ => {
-                    println!("Incorrect state in message table");
-                    None
-                }
+                _ => None,
             },
-            CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, state) => match state.unwrap_one() {
-                StateValue::Usize(index) => Some(Msg::MessageActivity(
+            CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, state) => match state {
+                tuirealm::State::One(StateValue::Usize(index)) => Some(Msg::MessageActivity(
                     MessageActivityMsg::PreviewMessageDetails(index),
                 )),
-                _ => {
-                    println!("Incorrect state in message table");
-                    None
-                }
+                _ => None,
             },
             CmdResult::Custom(CMD_RESULT_QUEUE_UNSELECTED, _) => {
                 Some(Msg::QueueActivity(QueueActivityMsg::QueueUnselected))
@@ -152,26 +147,38 @@ impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
-    pub fn load_messages(&mut self) {
+    pub fn load_messages(&mut self) -> AppResult<()> {
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
 
-        // Clone the Arc to pass into async block
-        // TODO: Error handling
-        let consumer = self.consumer.clone().expect("No consumer");
+        let consumer = self
+            .consumer
+            .clone()
+            .ok_or_else(|| AppError::State("No consumer available".to_string()))?;
 
+        let tx_to_main_err = tx_to_main.clone();
         taskpool.execute(async move {
-            // Create a new consumer using the service bus client
-            let mut consumer = consumer.lock().await;
-            let messages = consumer
-                .peek_messages(config::CONFIG.max_messages(), None)
-                .await
-                .unwrap();
+            let result = async {
+                let mut consumer = consumer.lock().await;
+                let messages = consumer
+                    .peek_messages(config::CONFIG.max_messages(), None)
+                    .await
+                    .map_err(|e| AppError::ServiceBus(e.to_string()))?;
 
-            // Send the consumer back to the main thread
-            let _ = tx_to_main.send(Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(
-                messages,
-            )));
+                tx_to_main
+                    .send(Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(
+                        messages,
+                    )))
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+
+                Ok::<(), AppError>(())
+            }
+            .await;
+            if let Err(e) = result {
+                let _ = tx_to_main_err.send(Msg::Error(e));
+            }
         });
+
+        Ok(())
     }
 }
