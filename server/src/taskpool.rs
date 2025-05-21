@@ -30,10 +30,14 @@ impl TaskPool {
         let token = self.cancel_token.clone();
         tokio::spawn(async move {
             let main = async {
-                let Ok(_permit) = semaphore.acquire().await else {
-                    return;
-                };
-                func.await;
+                match semaphore.acquire().await {
+                    Ok(_permit) => {
+                        func.await;
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to acquire semaphore: {}", e);
+                    }
+                }
             };
 
             tokio::select! {
