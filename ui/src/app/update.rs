@@ -1,6 +1,5 @@
 use crate::app::model::{AppState, Model};
 use crate::components::common::{MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg};
-use crate::error::handle_error;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tuirealm::terminal::TerminalAdapter;
@@ -13,8 +12,7 @@ where
         match msg {
             MessageActivityMsg::EditMessage(index) => {
                 if let Err(e) = self.remount_message_details(index) {
-                    handle_error(e);
-                    return None;
+                    return Some(Msg::Error(e));
                 }
                 self.app_state = AppState::MessageDetails;
                 Some(Msg::ForceRedraw)
@@ -26,12 +24,10 @@ where
             MessageActivityMsg::MessagesLoaded(messages) => {
                 self.messages = Some(messages);
                 if let Err(e) = self.remount_messages() {
-                    handle_error(e);
-                    return None;
+                    return Some(Msg::Error(e));
                 }
                 if let Err(e) = self.remount_message_details(0) {
-                    handle_error(e);
-                    return None;
+                    return Some(Msg::Error(e));
                 }
                 self.app_state = AppState::MessagePicker;
                 None
@@ -39,13 +35,13 @@ where
             MessageActivityMsg::ConsumerCreated(consumer) => {
                 self.consumer = Some(Arc::new(Mutex::new(consumer)));
                 if let Err(e) = self.load_messages() {
-                    handle_error(e);
+                    return Some(Msg::Error(e));
                 }
                 None
             }
             MessageActivityMsg::PreviewMessageDetails(index) => {
                 if let Err(e) = self.remount_message_details(index) {
-                    handle_error(e);
+                    return Some(Msg::Error(e));
                 }
                 None
             }
@@ -57,14 +53,13 @@ where
             QueueActivityMsg::QueueSelected(queue) => {
                 self.pending_queue = Some(queue);
                 if let Err(e) = self.new_consumer_for_queue() {
-                    handle_error(e);
+                    return Some(Msg::Error(e));
                 }
                 None
             }
             QueueActivityMsg::QueuesLoaded(queues) => {
                 if let Err(e) = self.remount_queue_picker(Some(queues)) {
-                    handle_error(e);
-                    return None;
+                    return Some(Msg::Error(e));
                 }
                 self.app_state = AppState::QueuePicker;
                 None
@@ -80,21 +75,20 @@ where
         match msg {
             NamespaceActivityMsg::NamespacesLoaded(namespace) => {
                 if let Err(e) = self.remount_namespace_picker(Some(namespace)) {
-                    handle_error(e);
-                    return None;
+                    return Some(Msg::Error(e));
                 }
                 self.app_state = AppState::NamespacePicker;
                 None
             }
             NamespaceActivityMsg::NamespaceSelected => {
                 if let Err(e) = self.load_queues() {
-                    handle_error(e);
+                    return Some(Msg::Error(e));
                 }
                 None
             }
             NamespaceActivityMsg::NamespaceUnselected => {
                 if let Err(e) = self.load_namespaces() {
-                    handle_error(e);
+                    return Some(Msg::Error(e));
                 }
                 None
             }

@@ -1,7 +1,7 @@
 mod error;
 use app::model::Model;
 use components::common::ComponentId;
-use error::handle_error;
+use error::AppError;
 use log::{debug, error, info};
 use std::error::Error as StdError;
 use tuirealm::application::PollStrategy;
@@ -38,16 +38,22 @@ async fn main() -> Result<(), Box<dyn StdError>> {
         match model.app.tick(PollStrategy::Once) {
             Err(err) => {
                 error!("Application tick error: {}", err);
-                assert!(
-                    model
-                        .app
-                        .attr(
-                            &ComponentId::Label,
-                            Attribute::Text,
-                            AttrValue::String(format!("Application error: {}", err)),
-                        )
-                        .is_ok()
-                );
+                // Show error in popup
+                if let Err(e) = model.mount_error_popup(&AppError::Component(format!("Application error: {}", err))) {
+                    error!("Failed to mount error popup: {}", e);
+                    // Fallback to simpler error handling
+                    assert!(
+                        model
+                            .app
+                            .attr(
+                                &ComponentId::Label,
+                                Attribute::Text,
+                                AttrValue::String(format!("Application error: {}", err)),
+                            )
+                            .is_ok()
+                    );
+                }
+                model.redraw = true;
             }
             Ok(messages) if !messages.is_empty() => {
                 // NOTE: redraw if at least one msg has been processed
@@ -66,7 +72,12 @@ async fn main() -> Result<(), Box<dyn StdError>> {
         if model.redraw {
             if let Err(e) = model.view() {
                 error!("Error during view rendering: {}", e);
-                handle_error(e);
+                // Show error in popup
+                if let Err(popup_err) = model.mount_error_popup(&e) {
+                    error!("Failed to mount error popup: {}", popup_err);
+                    // Fallback to old error handling
+                    error::handle_error(e);
+                }
             }
             model.redraw = false;
         }

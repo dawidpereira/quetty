@@ -1,4 +1,5 @@
 pub mod common;
+pub mod error_popup;
 pub mod global_key_watcher;
 pub mod message_details;
 pub mod messages;
