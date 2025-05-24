@@ -35,10 +35,10 @@ cargo run
 ## Next Steps
 
 ### Error Handling & Logging:
-- [ ] Implement robust error handling for API calls, file operations, and user interactions.
-- [ ] Add logging to help with debugging and monitoring the application's behavior.
+- [x] Implement robust error handling for API calls, file operations, and user interactions.
+- [x] Add logging to help with debugging and monitoring the application's behavior.
 ### User Experience Enhancements:
-- [ ] Improve the UI/UX with better feedback (e.g., loading indicators, success/error messages).
+- [x] Improve the UI/UX with better feedback (e.g., loading indicators, success/error messages).
 - [ ] Add keyboard shortcuts or tooltips to make navigation more intuitive.
 ### Testing:
 - [ ] Write unit tests for critical components and integration tests for key workflows.
