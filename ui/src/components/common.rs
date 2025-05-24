@@ -12,6 +12,7 @@ pub enum ComponentId {
     NamespacePicker,
     GlobalKeyWatcher,
     ErrorPopup,
+    LoadingIndicator,
 }
 
 #[derive(Debug, PartialEq)]
@@ -22,6 +23,7 @@ pub enum Msg {
     MessageActivity(MessageActivityMsg),
     QueueActivity(QueueActivityMsg),
     NamespaceActivity(NamespaceActivityMsg),
+    LoadingActivity(LoadingActivityMsg),
     Error(AppError),
     CloseErrorPopup,
 }
@@ -47,6 +49,13 @@ pub enum MessageActivityMsg {
     CancelEditMessage,
     MessagesLoaded(Vec<MessageModel>),
     ConsumerCreated(Consumer),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum LoadingActivityMsg {
+    StartLoading(String),
+    UpdateLoading(f64, String),
+    StopLoading,
 }
 
 impl Default for Msg {

@@ -1,5 +1,8 @@
 use crate::app::model::{AppState, Model};
-use crate::components::common::{MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg};
+use crate::components::common::{
+    LoadingActivityMsg, MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg,
+};
+use crate::components::loading_indicator::LoadingIndicator;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tuirealm::terminal::TerminalAdapter;
@@ -8,6 +11,62 @@ impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
+    pub fn update_loading(&mut self, msg: LoadingActivityMsg) -> Option<Msg> {
+        match msg {
+            LoadingActivityMsg::StartLoading(message) => {
+                log::debug!("Starting loading: {}", message);
+                self.loading_message = Some(message.clone());
+
+                // Remount with new message
+                if let Err(e) = self.app.remount(
+                    crate::components::common::ComponentId::LoadingIndicator,
+                    Box::new(LoadingIndicator::new(&message, true)),
+                    Vec::default(),
+                ) {
+                    log::error!("Failed to remount loading indicator: {}", e);
+                }
+
+                self.app_state = AppState::Loading;
+                self.redraw = true;
+                None
+            }
+            LoadingActivityMsg::UpdateLoading(_, message) => {
+                log::debug!("Updating loading: {}", message);
+                self.loading_message = Some(message.clone());
+
+                // Remount with new message
+                if let Err(e) = self.app.remount(
+                    crate::components::common::ComponentId::LoadingIndicator,
+                    Box::new(LoadingIndicator::new(&message, true)),
+                    Vec::default(),
+                ) {
+                    log::error!("Failed to remount loading indicator: {}", e);
+                }
+
+                self.redraw = true;
+                None
+            }
+            LoadingActivityMsg::StopLoading => {
+                log::debug!("Stopping loading");
+                self.loading_message = None;
+
+                // Return to the previous state
+                match self.app_state {
+                    AppState::Loading => {
+                        // Default to NamespacePicker if we were in loading state
+                        self.app_state = AppState::NamespacePicker;
+                    }
+                    _ => {
+                        // Otherwise stay in the current state
+                    }
+                }
+
+                self.redraw = true;
+                None
+            }
+        }
+    }
+
     pub fn update_messages(&mut self, msg: MessageActivityMsg) -> Option<Msg> {
         match msg {
             MessageActivityMsg::EditMessage(index) => {

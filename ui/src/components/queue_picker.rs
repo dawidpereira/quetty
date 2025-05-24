@@ -13,7 +13,9 @@ use crate::app::model::Model;
 use crate::config::CONFIG;
 use crate::error::AppError;
 
-use super::common::{MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg};
+use super::common::{
+    LoadingActivityMsg, MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg,
+};
 
 const CMD_RESULT_QUEUE_SELECTED: &str = "QueueSelected";
 const CMD_RESULT_NAMESPACE_UNSELECTED: &str = "NamespaceUnselected";
@@ -144,7 +146,7 @@ where
         log::debug!("Creating new consumer for queue");
         let queue = self.pending_queue.take().expect("No queue selected");
         log::info!("Creating consumer for queue: {}", queue);
-        
+
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
 
@@ -202,6 +204,18 @@ where
         let tx_to_main = self.tx_to_main.clone();
         let selected_namespace = self.selected_namespace.clone();
 
+        // Show loading indicator
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::StartLoading(
+            format!(
+                "Loading queues from {}...",
+                selected_namespace
+                    .clone()
+                    .unwrap_or_else(|| "default".to_string())
+            ),
+        ))) {
+            log::error!("Failed to send loading start message: {}", e);
+        }
+
         let tx_to_main_err = tx_to_main.clone();
         taskpool.execute(async move {
             let result = async {
@@ -212,7 +226,7 @@ where
                 } else {
                     log::warn!("No namespace selected, using default namespace");
                 }
-                
+
                 log::debug!("Requesting queues from Azure AD");
                 let queues = ServiceBusManager::list_queues_azure_ad(&config)
                     .await
@@ -221,7 +235,20 @@ where
                         AppError::ServiceBus(e.to_string())
                     })?;
 
-                log::info!("Loaded {} queues from namespace {}", queues.len(), selected_namespace.unwrap_or_else(|| "default".to_string()));
+                log::info!(
+                    "Loaded {} queues from namespace {}",
+                    queues.len(),
+                    selected_namespace.unwrap_or_else(|| "default".to_string())
+                );
+
+                // Stop loading indicator
+                if let Err(e) =
+                    tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::StopLoading))
+                {
+                    log::error!("Failed to send loading stop message: {}", e);
+                }
+
+                // Send loaded queues
                 tx_to_main
                     .send(Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(queues)))
                     .map_err(|e| {
@@ -234,6 +261,15 @@ where
             .await;
             if let Err(e) = result {
                 log::error!("Error in queue loading task: {}", e);
+
+                // Stop loading indicator even if there was an error
+                if let Err(err) =
+                    tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::StopLoading))
+                {
+                    log::error!("Failed to send loading stop message: {}", err);
+                }
+
+                // Send error message
                 let _ = tx_to_main_err.send(Msg::Error(e));
             }
         });
