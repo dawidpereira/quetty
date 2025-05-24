@@ -2,6 +2,7 @@ use crate::app::view::{
     view_message_details, view_message_picker, view_namespace_picker, view_queue_picker,
 };
 use crate::components::common::{ComponentId, Msg};
+use crate::components::error_popup::ErrorPopup;
 use crate::components::global_key_watcher::GlobalKeyWatcher;
 use crate::components::message_details::MessageDetails;
 use crate::components::messages::Messages;
@@ -85,13 +86,16 @@ impl Model<CrosstermTerminalAdapter> {
             messages: None,
             selected_namespace: None,
         };
+
+        // Load namespaces and handle any errors through the message system
         if let Err(e) = app.load_namespaces() {
             // Send the error through the channel to be handled in the main event loop
             if app.tx_to_main.send(Msg::Error(e.clone())).is_err() {
                 // If the channel send fails, handle the error directly
-                crate::error::handle_error(e);
+                log::error!("Failed to send error through channel: {}", e);
             }
         }
+
         Ok(app)
     }
 }
@@ -197,6 +201,62 @@ where
 
         Ok(app)
     }
+
+    /// Mount error popup and give focus to it
+    pub fn mount_error_popup(&mut self, error: &AppError) -> AppResult<()> {
+        log::error!("Displaying error popup: {}", error);
+
+        self.app
+            .remount(
+                ComponentId::ErrorPopup,
+                Box::new(ErrorPopup::new(error)),
+                Vec::default(),
+            )
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        self.app
+            .active(&ComponentId::ErrorPopup)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        self.redraw = true;
+
+        Ok(())
+    }
+
+    /// Unmount error popup and return focus to previous component
+    pub fn unmount_error_popup(&mut self) -> AppResult<()> {
+        self.app
+            .umount(&ComponentId::ErrorPopup)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        // Return to appropriate state
+        match self.app_state {
+            AppState::NamespacePicker => {
+                self.app
+                    .active(&ComponentId::NamespacePicker)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::QueuePicker => {
+                self.app
+                    .active(&ComponentId::QueuePicker)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::MessagePicker => {
+                self.app
+                    .active(&ComponentId::Messages)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::MessageDetails => {
+                self.app
+                    .active(&ComponentId::MessageDetails)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+        }
+
+        self.redraw = true;
+
+        Ok(())
+    }
 }
 
 impl<T> Update<Msg> for Model<T>
@@ -207,8 +267,9 @@ where
         if let Some(msg) = msg {
             // Set redraw
             self.redraw = true;
-            // Match message
-            match msg {
+
+            // Process the message and handle any resulting errors
+            let result = match msg {
                 Msg::AppClose => {
                     self.quit = true; // Terminate
                     None
@@ -217,13 +278,20 @@ where
                     match ClipboardContext::new() {
                         Ok(mut ctx) => {
                             if let Err(e) = ctx.set_contents(lines.join("\n")) {
-                                //TODO: Move to global error handler
-                                println!("Error during copying data to clipboard: {}", e);
+                                if let Err(err) = self.mount_error_popup(&AppError::Component(
+                                    format!("Error copying to clipboard: {}", e),
+                                )) {
+                                    log::error!("Failed to mount error popup: {}", err);
+                                }
                             }
                         }
                         Err(e) => {
-                            //TODO: Move to global error handler
-                            println!("Failed to initialize clipboard context: {}", e);
+                            if let Err(err) = self.mount_error_popup(&AppError::Component(format!(
+                                "Failed to initialize clipboard: {}",
+                                e
+                            ))) {
+                                log::error!("Failed to mount error popup: {}", err);
+                            }
                         }
                     }
                     None
@@ -232,10 +300,32 @@ where
                 Msg::QueueActivity(msg) => self.update_queue(msg),
                 Msg::NamespaceActivity(msg) => self.update_namespace(msg),
                 Msg::Error(e) => {
-                    crate::error::handle_error(e);
+                    log::error!("Error received: {}", e);
+                    if let Err(err) = self.mount_error_popup(&e) {
+                        log::error!("Failed to mount error popup: {}", err);
+                        // Fallback to terminal error handling
+                        crate::error::handle_error(e);
+                    }
+                    None
+                }
+                Msg::CloseErrorPopup => {
+                    if let Err(e) = self.unmount_error_popup() {
+                        log::error!("Failed to unmount error popup: {}", e);
+                    }
                     None
                 }
                 _ => None,
+            };
+
+            if let Some(Msg::Error(e)) = result {
+                log::error!("Error from message processing: {}", e);
+                if let Err(err) = self.mount_error_popup(&e) {
+                    log::error!("Failed to mount error popup: {}", err);
+                    crate::error::handle_error(e);
+                }
+                None
+            } else {
+                result
             }
         } else {
             None

@@ -2,7 +2,6 @@ use crate::config::CONFIG;
 use fern::colors::{Color, ColoredLevelConfig};
 use log::LevelFilter;
 use std::fs::OpenOptions;
-use std::io;
 
 pub fn setup_logger() -> Result<(), log::SetLoggerError> {
     let log_level = match CONFIG.logging().level().to_lowercase().as_str() {
@@ -35,7 +34,7 @@ pub fn setup_logger() -> Result<(), log::SetLoggerError> {
 
     // Always ensure we have at least one log output
     let log_file = CONFIG.logging().file();
-    
+
     // Create log file if configured
     if let Some(file_path) = log_file {
         let file = OpenOptions::new()
@@ -46,7 +45,7 @@ pub fn setup_logger() -> Result<(), log::SetLoggerError> {
 
         // Only log to the file
         base_config.chain(file).apply()?;
-        
+
         // Print initialization message (will show before TUI starts)
         println!("Logging to file: {}", file_path);
     } else {
@@ -57,12 +56,15 @@ pub fn setup_logger() -> Result<(), log::SetLoggerError> {
             .append(true)
             .open(default_log_path)
             .expect("Failed to open default log file");
-            
+
         // Only log to the file
         base_config.chain(file).apply()?;
-        
+
         // Print initialization message (will show before TUI starts)
-        println!("No log file configured. Logging to default file: {}", default_log_path);
+        println!(
+            "No log file configured. Logging to default file: {}",
+            default_log_path
+        );
     }
 
     log::info!(
@@ -71,4 +73,3 @@ pub fn setup_logger() -> Result<(), log::SetLoggerError> {
     );
     Ok(())
 }
-

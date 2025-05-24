@@ -152,13 +152,10 @@ where
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
 
-        let consumer = self
-            .consumer
-            .clone()
-            .ok_or_else(|| {
-                log::error!("No consumer available");
-                AppError::State("No consumer available".to_string())
-            })?;
+        let consumer = self.consumer.clone().ok_or_else(|| {
+            log::error!("No consumer available");
+            AppError::State("No consumer available".to_string())
+        })?;
 
         let tx_to_main_err = tx_to_main.clone();
         taskpool.execute(async move {
@@ -176,7 +173,9 @@ where
 
                 log::info!("Loaded {} messages", messages.len());
                 tx_to_main
-                    .send(Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(messages)))
+                    .send(Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(
+                        messages,
+                    )))
                     .map_err(|e| {
                         log::error!("Failed to send messages loaded message: {}", e);
                         AppError::Component(e.to_string())

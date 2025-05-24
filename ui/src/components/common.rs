@@ -11,6 +11,7 @@ pub enum ComponentId {
     QueuePicker,
     NamespacePicker,
     GlobalKeyWatcher,
+    ErrorPopup,
 }
 
 #[derive(Debug, PartialEq)]
@@ -22,6 +23,7 @@ pub enum Msg {
     QueueActivity(QueueActivityMsg),
     NamespaceActivity(NamespaceActivityMsg),
     Error(AppError),
+    CloseErrorPopup,
 }
 
 #[derive(Debug, PartialEq)]
