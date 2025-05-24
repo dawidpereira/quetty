@@ -1,5 +1,6 @@
 use crate::app::view::{
     view_message_details, view_message_picker, view_namespace_picker, view_queue_picker,
+    with_error_popup,
 };
 use crate::components::common::{ComponentId, Msg};
 use crate::components::error_popup::ErrorPopup;
@@ -129,11 +130,20 @@ where
 
             self.app.view(&ComponentId::Label, f, chunks[1]);
 
+            // Apply the view based on the app state, with error popup handling
             view_result = match self.app_state {
-                AppState::NamespacePicker => view_namespace_picker(&mut self.app, f, &chunks),
-                AppState::QueuePicker => view_queue_picker(&mut self.app, f, &chunks),
-                AppState::MessagePicker => view_message_picker(&mut self.app, f, &chunks),
-                AppState::MessageDetails => view_message_details(&mut self.app, f, &chunks),
+                AppState::NamespacePicker => {
+                    with_error_popup(&mut self.app, f, &chunks, view_namespace_picker)
+                }
+                AppState::QueuePicker => {
+                    with_error_popup(&mut self.app, f, &chunks, view_queue_picker)
+                }
+                AppState::MessagePicker => {
+                    with_error_popup(&mut self.app, f, &chunks, view_message_picker)
+                }
+                AppState::MessageDetails => {
+                    with_error_popup(&mut self.app, f, &chunks, view_message_details)
+                }
             };
         });
 

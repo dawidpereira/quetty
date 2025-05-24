@@ -32,16 +32,32 @@ pub fn view_error_popup(
     Ok(())
 }
 
+// Higher-order function to wrap view functions with error popup handling
+pub fn with_error_popup<F>(
+    app: &mut Application<ComponentId, Msg, NoUserEvent>,
+    f: &mut Frame,
+    chunks: &[Rect],
+    view_fn: F,
+) -> Result<(), AppError>
+where
+    F: FnOnce(&mut Application<ComponentId, Msg, NoUserEvent>, &mut Frame, &[Rect]) -> Result<(), AppError>,
+{
+    // First, try to render the error popup if it exists
+    if app.mounted(&ComponentId::ErrorPopup) {
+        return view_error_popup(app, f);
+    }
+    
+    // If no error popup, proceed with the original view function
+    view_fn(app, f, chunks)
+}
+
+// View functions - direct implementations without wrappers
+
 pub fn view_namespace_picker(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,
     f: &mut Frame,
     chunks: &[Rect],
 ) -> Result<(), AppError> {
-    // First, try to render the error popup if it exists
-    if app.mounted(&ComponentId::ErrorPopup) {
-        return view_error_popup(app, f);
-    }
-
     app.view(&ComponentId::NamespacePicker, f, chunks[3]);
     app.active(&ComponentId::NamespacePicker)
         .map_err(|e| AppError::Component(e.to_string()))?;
@@ -53,11 +69,6 @@ pub fn view_queue_picker(
     f: &mut Frame,
     chunks: &[Rect],
 ) -> Result<(), AppError> {
-    // First, try to render the error popup if it exists
-    if app.mounted(&ComponentId::ErrorPopup) {
-        return view_error_popup(app, f);
-    }
-
     app.view(&ComponentId::QueuePicker, f, chunks[3]);
     app.active(&ComponentId::QueuePicker)
         .map_err(|e| AppError::Component(e.to_string()))?;
@@ -69,11 +80,6 @@ pub fn view_message_picker(
     f: &mut Frame,
     chunks: &[Rect],
 ) -> Result<(), AppError> {
-    // First, try to render the error popup if it exists
-    if app.mounted(&ComponentId::ErrorPopup) {
-        return view_error_popup(app, f);
-    }
-
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .margin(1)
@@ -97,11 +103,6 @@ pub fn view_message_details(
     f: &mut Frame,
     chunks: &[Rect],
 ) -> Result<(), AppError> {
-    // First, try to render the error popup if it exists
-    if app.mounted(&ComponentId::ErrorPopup) {
-        return view_error_popup(app, f);
-    }
-    
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .margin(1)
