@@ -205,14 +205,12 @@ where
         let selected_namespace = self.selected_namespace.clone();
 
         // Show loading indicator
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::StartLoading(
-            format!(
-                "Loading queues from {}...",
-                selected_namespace
-                    .clone()
-                    .unwrap_or_else(|| "default".to_string())
-            ),
-        ))) {
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Start(format!(
+            "Loading queues from {}...",
+            selected_namespace
+                .clone()
+                .unwrap_or_else(|| "default".to_string())
+        )))) {
             log::error!("Failed to send loading start message: {}", e);
         }
 
@@ -227,13 +225,28 @@ where
                     log::warn!("No namespace selected, using default namespace");
                 }
 
+                // Send an update that we're connecting
+                if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Update(
+                    format!("Connecting to namespace {}...", config.namespace()),
+                ))) {
+                    log::error!("Failed to send loading update message: {}", e);
+                }
+
                 log::debug!("Requesting queues from Azure AD");
+
                 let queues = ServiceBusManager::list_queues_azure_ad(&config)
                     .await
                     .map_err(|e| {
                         log::error!("Failed to list queues: {}", e);
                         AppError::ServiceBus(e.to_string())
                     })?;
+
+                // Send an update that we've received queues
+                if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Update(
+                    format!("Processing {} queues...", queues.len()),
+                ))) {
+                    log::error!("Failed to send loading update message: {}", e);
+                }
 
                 log::info!(
                     "Loaded {} queues from namespace {}",
@@ -242,9 +255,7 @@ where
                 );
 
                 // Stop loading indicator
-                if let Err(e) =
-                    tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::StopLoading))
-                {
+                if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
                     log::error!("Failed to send loading stop message: {}", e);
                 }
 
@@ -263,9 +274,7 @@ where
                 log::error!("Error in queue loading task: {}", e);
 
                 // Stop loading indicator even if there was an error
-                if let Err(err) =
-                    tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::StopLoading))
-                {
+                if let Err(err) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
                     log::error!("Failed to send loading stop message: {}", err);
                 }
 

@@ -152,13 +152,9 @@ where
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
 
-        // Test the error popup by returning an error
-        // NOTE: For testing only, comment this out for production
-        // return Err(AppError::State("Test error popup - This is a test error message".to_string()));
-
         // Show loading indicator
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::StartLoading(
-            "Loading messages...".to_string()
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Start(
+            "Loading messages...".to_string(),
         ))) {
             log::error!("Failed to send loading start message: {}", e);
         }
@@ -174,6 +170,7 @@ where
                 log::debug!("Acquiring consumer lock");
                 let mut consumer = consumer.lock().await;
                 log::debug!("Peeking messages");
+
                 let messages = consumer
                     .peek_messages(config::CONFIG.max_messages(), None)
                     .await
@@ -183,15 +180,17 @@ where
                     })?;
 
                 log::info!("Loaded {} messages", messages.len());
-                
+
                 // Stop loading indicator
-                if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::StopLoading)) {
+                if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
                     log::error!("Failed to send loading stop message: {}", e);
                 }
-                
+
                 // Send loaded messages
                 tx_to_main
-                    .send(Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(messages)))
+                    .send(Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(
+                        messages,
+                    )))
                     .map_err(|e| {
                         log::error!("Failed to send messages loaded message: {}", e);
                         AppError::Component(e.to_string())
@@ -202,12 +201,12 @@ where
             .await;
             if let Err(e) = result {
                 log::error!("Error in message loading task: {}", e);
-                
+
                 // Stop loading indicator even if there was an error
-                if let Err(err) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::StopLoading)) {
+                if let Err(err) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
                     log::error!("Failed to send loading stop message: {}", err);
                 }
-                
+
                 // Send error message
                 let _ = tx_to_main_err.send(Msg::Error(e));
             }

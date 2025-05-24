@@ -13,7 +13,7 @@ use crate::app::model::Model;
 use crate::config::CONFIG;
 use crate::error::{AppError, AppResult};
 
-use super::common::{Msg, NamespaceActivityMsg, LoadingActivityMsg};
+use super::common::{LoadingActivityMsg, Msg, NamespaceActivityMsg};
 
 const CMD_RESULT_NAMESPACE_SELECTED: &str = "NamespaceSelected";
 
@@ -133,18 +133,26 @@ where
         log::debug!("Loading namespaces");
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
-        
+
         // Show loading indicator
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::StartLoading(
-            "Loading namespaces...".to_string()
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Start(
+            "Loading namespaces...".to_string(),
         ))) {
             log::error!("Failed to send loading start message: {}", e);
         }
-        
+
         let tx_to_main_err = tx_to_main.clone();
         taskpool.execute(async move {
             let result = async {
                 log::debug!("Requesting namespaces from Azure AD");
+
+                // Send an update that we're requesting namespaces
+                if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Update(
+                    "Connecting to Azure AD...".to_string(),
+                ))) {
+                    log::error!("Failed to send loading update message: {}", e);
+                }
+
                 let namespaces = ServiceBusManager::list_namespaces_azure_ad(CONFIG.azure_ad())
                     .await
                     .map_err(|e| {
@@ -152,13 +160,20 @@ where
                         AppError::ServiceBus(e.to_string())
                     })?;
 
+                // Send an update that we've received namespaces
+                if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Update(
+                    "Processing namespaces...".to_string(),
+                ))) {
+                    log::error!("Failed to send loading update message: {}", e);
+                }
+
                 log::info!("Loaded {} namespaces", namespaces.len());
-                
+
                 // Stop loading indicator
-                if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::StopLoading)) {
+                if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
                     log::error!("Failed to send loading stop message: {}", e);
                 }
-                
+
                 // Send loaded namespaces
                 tx_to_main
                     .send(Msg::NamespaceActivity(
@@ -174,12 +189,12 @@ where
             .await;
             if let Err(e) = result {
                 log::error!("Error in namespace loading task: {}", e);
-                
+
                 // Stop loading indicator even if there was an error
-                if let Err(err) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::StopLoading)) {
+                if let Err(err) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
                     log::error!("Failed to send loading stop message: {}", err);
                 }
-                
+
                 // Send error message
                 let _ = tx_to_main_err.send(Msg::Error(e));
             }

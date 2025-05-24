@@ -12,23 +12,23 @@ pub fn view_error_popup(
     let popup_width = 60;
     let popup_height = 10;
     let area = f.area();
-    
+
     let popup_x = (area.width.saturating_sub(popup_width)) / 2;
     let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-    
+
     let popup_area = Rect::new(
         popup_x,
         popup_y,
         popup_width.min(area.width),
         popup_height.min(area.height),
     );
-    
+
     app.view(&ComponentId::ErrorPopup, f, popup_area);
-    
+
     // Make sure the popup has focus
     app.active(&ComponentId::ErrorPopup)
         .map_err(|e| AppError::Component(e.to_string()))?;
-        
+
     Ok(())
 }
 
@@ -40,13 +40,17 @@ pub fn with_error_popup<F>(
     view_fn: F,
 ) -> Result<(), AppError>
 where
-    F: FnOnce(&mut Application<ComponentId, Msg, NoUserEvent>, &mut Frame, &[Rect]) -> Result<(), AppError>,
+    F: FnOnce(
+        &mut Application<ComponentId, Msg, NoUserEvent>,
+        &mut Frame,
+        &[Rect],
+    ) -> Result<(), AppError>,
 {
     // First, try to render the error popup if it exists
     if app.mounted(&ComponentId::ErrorPopup) {
         return view_error_popup(app, f);
     }
-    
+
     // If no error popup, proceed with the original view function
     view_fn(app, f, chunks)
 }
@@ -127,19 +131,23 @@ pub fn view_loading(
     f: &mut Frame,
     _chunks: &[Rect],
 ) -> Result<(), AppError> {
-    // Center the loading indicator
+    // Create a centered area for the loading indicator
     let area = f.area();
-    let width = 60;
-    let height = 4;
-    
-    let loading_area = Rect::new(
-        (area.width.saturating_sub(width)) / 2,
-        (area.height.saturating_sub(height)) / 2,
-        width.min(area.width),
-        height.min(area.height),
+    let popup_width = 60;
+    let popup_height = 5;
+
+    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+
+    let popup_area = Rect::new(
+        popup_x,
+        popup_y,
+        popup_width.min(area.width),
+        popup_height.min(area.height),
     );
-    
-    app.view(&ComponentId::LoadingIndicator, f, loading_area);
-    
+
+    // Draw the loading indicator in the popup area
+    app.view(&ComponentId::LoadingIndicator, f, popup_area);
+
     Ok(())
 }

@@ -29,7 +29,7 @@ pub struct AppConfig {
     crossterm_input_listener_interval_ms: u64,
     crossterm_input_listener_retries: usize,
     poll_timeout_ms: u64,
-    tick_interval_secs: u64,
+    tick_interval_millis: u64,
     servicebus: ServicebusConfig,
     azure_ad: AzureAdConfig,
     logging: LoggingConfig,
@@ -69,7 +69,7 @@ impl AppConfig {
         Duration::from_millis(self.poll_timeout_ms)
     }
     pub fn tick_interval(&self) -> Duration {
-        Duration::from_secs(self.tick_interval_secs)
+        Duration::from_millis(self.tick_interval_millis)
     }
     pub fn servicebus(&self) -> &ServicebusConfig {
         &self.servicebus
@@ -92,7 +92,7 @@ impl LoggingConfig {
     pub fn level(&self) -> &str {
         self.level.as_deref().unwrap_or("info")
     }
-    
+
     pub fn file(&self) -> Option<&str> {
         self.file.as_deref()
     }

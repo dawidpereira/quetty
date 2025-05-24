@@ -27,6 +27,7 @@ use tuirealm::ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBridge};
 use tuirealm::{Application, EventListenerCfg, Sub, SubClause, SubEventClause, Update};
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum AppState {
     NamespacePicker,
     QueuePicker,
@@ -51,7 +52,8 @@ where
 
     pub pending_queue: Option<String>,
     pub selected_namespace: Option<String>,
-    pub loading_message: Option<String>,
+    // Store both the loading message and the previous state to return to
+    pub loading_message: Option<(String, AppState)>,
 
     pub taskpool: TaskPool,
     pub tx_to_main: Sender<Msg>,
@@ -104,7 +106,7 @@ impl Model<CrosstermTerminalAdapter> {
         // Load namespaces and handle any errors through the message system
         if app
             .tx_to_main
-            .send(Msg::LoadingActivity(LoadingActivityMsg::StartLoading(
+            .send(Msg::LoadingActivity(LoadingActivityMsg::Start(
                 "Loading namespaces...".to_string(),
             )))
             .is_err()
@@ -234,6 +236,29 @@ where
             .map_err(|e| AppError::Component(e.to_string()))?;
 
         Ok(app)
+    }
+
+    pub fn mount_loading_indicator(&mut self, message: &str) -> AppResult<()> {
+        log::debug!("Mounting loading indicator with message: {}", message);
+
+        // Unmount existing loading indicator if any
+        if self.app.mounted(&ComponentId::LoadingIndicator) {
+            if let Err(e) = self.app.umount(&ComponentId::LoadingIndicator) {
+                log::error!("Failed to unmount loading indicator: {}", e);
+            }
+        }
+
+        // Mount new loading indicator with proper subscriptions for tick events
+        self.app
+            .mount(
+                ComponentId::LoadingIndicator,
+                Box::new(LoadingIndicator::new(message, true)),
+                vec![Sub::new(SubEventClause::Tick, SubClause::Always)],
+            )
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        log::debug!("Loading indicator mounted successfully");
+        Ok(())
     }
 
     /// Mount error popup and give focus to it
