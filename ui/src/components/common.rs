@@ -53,9 +53,9 @@ pub enum MessageActivityMsg {
 
 #[derive(Debug, PartialEq)]
 pub enum LoadingActivityMsg {
-    StartLoading(String),
-    UpdateLoading(f64, String),
-    StopLoading,
+    Start(String),
+    Update(String),
+    Stop,
 }
 
 impl Default for Msg {
