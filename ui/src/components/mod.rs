@@ -1,6 +1,7 @@
 pub mod common;
 pub mod error_popup;
 pub mod global_key_watcher;
+pub mod loading_indicator;
 pub mod message_details;
 pub mod messages;
 pub mod namespace_picker;

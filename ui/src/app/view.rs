@@ -120,3 +120,26 @@ pub fn view_message_details(
         .map_err(|e| AppError::Component(e.to_string()))?;
     Ok(())
 }
+
+// View function for loading indicator
+pub fn view_loading(
+    app: &mut Application<ComponentId, Msg, NoUserEvent>,
+    f: &mut Frame,
+    _chunks: &[Rect],
+) -> Result<(), AppError> {
+    // Center the loading indicator
+    let area = f.area();
+    let width = 60;
+    let height = 4;
+    
+    let loading_area = Rect::new(
+        (area.width.saturating_sub(width)) / 2,
+        (area.height.saturating_sub(height)) / 2,
+        width.min(area.width),
+        height.min(area.height),
+    );
+    
+    app.view(&ComponentId::LoadingIndicator, f, loading_area);
+    
+    Ok(())
+}

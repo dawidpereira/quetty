@@ -1,10 +1,11 @@
 use crate::app::view::{
-    view_message_details, view_message_picker, view_namespace_picker, view_queue_picker,
-    with_error_popup,
+    view_loading, view_message_details, view_message_picker, view_namespace_picker,
+    view_queue_picker, with_error_popup,
 };
-use crate::components::common::{ComponentId, Msg};
+use crate::components::common::{ComponentId, LoadingActivityMsg, Msg};
 use crate::components::error_popup::ErrorPopup;
 use crate::components::global_key_watcher::GlobalKeyWatcher;
+use crate::components::loading_indicator::LoadingIndicator;
 use crate::components::message_details::MessageDetails;
 use crate::components::messages::Messages;
 use crate::components::namespace_picker::NamespacePicker;
@@ -31,6 +32,7 @@ pub enum AppState {
     QueuePicker,
     MessagePicker,
     MessageDetails,
+    Loading,
 }
 
 pub struct Model<T>
@@ -49,6 +51,7 @@ where
 
     pub pending_queue: Option<String>,
     pub selected_namespace: Option<String>,
+    pub loading_message: Option<String>,
 
     pub taskpool: TaskPool,
     pub tx_to_main: Sender<Msg>,
@@ -86,9 +89,29 @@ impl Model<CrosstermTerminalAdapter> {
             consumer: None,
             messages: None,
             selected_namespace: None,
+            loading_message: None,
         };
 
+        // Initialize loading indicator
+        app.app
+            .mount(
+                ComponentId::LoadingIndicator,
+                Box::new(LoadingIndicator::new("Loading...", true)),
+                Vec::default(),
+            )
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
         // Load namespaces and handle any errors through the message system
+        if app
+            .tx_to_main
+            .send(Msg::LoadingActivity(LoadingActivityMsg::StartLoading(
+                "Loading namespaces...".to_string(),
+            )))
+            .is_err()
+        {
+            log::error!("Failed to send loading start message");
+        }
+
         if let Err(e) = app.load_namespaces() {
             // Send the error through the channel to be handled in the main event loop
             if app.tx_to_main.send(Msg::Error(e.clone())).is_err() {
@@ -144,6 +167,7 @@ where
                 AppState::MessageDetails => {
                     with_error_popup(&mut self.app, f, &chunks, view_message_details)
                 }
+                AppState::Loading => with_error_popup(&mut self.app, f, &chunks, view_loading),
             };
         });
 
@@ -261,6 +285,11 @@ where
                     .active(&ComponentId::MessageDetails)
                     .map_err(|e| AppError::Component(e.to_string()))?;
             }
+            AppState::Loading => {
+                // If we were showing a loading indicator, just continue showing it
+                // No need to activate any specific component
+                // The loading indicator will be updated or closed by its own message flow
+            }
         }
 
         self.redraw = true;
@@ -309,6 +338,7 @@ where
                 Msg::MessageActivity(msg) => self.update_messages(msg),
                 Msg::QueueActivity(msg) => self.update_queue(msg),
                 Msg::NamespaceActivity(msg) => self.update_namespace(msg),
+                Msg::LoadingActivity(msg) => self.update_loading(msg),
                 Msg::Error(e) => {
                     log::error!("Error received: {}", e);
                     if let Err(err) = self.mount_error_popup(&e) {
