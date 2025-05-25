@@ -1,7 +1,4 @@
-use crate::app::view::{
-    view_help_bar, view_loading, view_message_details, view_message_picker, view_namespace_picker,
-    view_queue_picker, with_error_popup,
-};
+use crate::app::view::*;
 use crate::components::common::{ComponentId, LoadingActivityMsg, Msg};
 use crate::components::error_popup::ErrorPopup;
 use crate::components::global_key_watcher::GlobalKeyWatcher;
@@ -34,6 +31,7 @@ pub enum AppState {
     MessagePicker,
     MessageDetails,
     Loading,
+    HelpScreen,
 }
 
 /// Application model
@@ -55,6 +53,8 @@ where
     pub selected_namespace: Option<String>,
     // Store both the loading message and the previous state to return to
     pub loading_message: Option<(String, AppState)>,
+    // Store the previous state when showing help screen
+    pub previous_state: Option<AppState>,
 
     pub taskpool: TaskPool,
     pub tx_to_main: Sender<Msg>,
@@ -94,6 +94,7 @@ impl Model<CrosstermTerminalAdapter> {
             messages: None,
             selected_namespace: None,
             loading_message: None,
+            previous_state: None,
             active_component: ComponentId::NamespacePicker,
         };
 
@@ -166,6 +167,7 @@ where
                 AppState::MessagePicker => ComponentId::Messages,
                 AppState::MessageDetails => ComponentId::MessageDetails,
                 AppState::Loading => ComponentId::LoadingIndicator,
+                AppState::HelpScreen => ComponentId::HelpScreen,
             };
 
             // Apply the view based on the app state, with error popup handling
@@ -183,13 +185,18 @@ where
                     with_error_popup(&mut self.app, f, &chunks, view_message_details)
                 }
                 AppState::Loading => with_error_popup(&mut self.app, f, &chunks, view_loading),
+                AppState::HelpScreen => {
+                    with_error_popup(&mut self.app, f, &chunks, view_help_screen)
+                }
             };
 
             // View help bar (if not showing error popup) with active component
             if !self.app.mounted(&ComponentId::ErrorPopup) {
-                if let Err(e) = view_help_bar(f, &chunks, &self.active_component) {
-                    log::error!("Failed to view help bar: {}", e);
-                }
+                // Create a temporary help bar with the active component
+                let mut help_bar = crate::components::help_bar::HelpBar::new();
+
+                // Directly render the help bar with the active component
+                help_bar.view_with_active(f, chunks[4], &self.active_component);
             }
         });
 
@@ -335,6 +342,11 @@ where
                 // No need to activate any specific component
                 // The loading indicator will be updated or closed by its own message flow
             }
+            AppState::HelpScreen => {
+                self.app
+                    .active(&ComponentId::HelpScreen)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
         }
 
         self.redraw = true;
@@ -399,6 +411,7 @@ where
                     }
                     None
                 }
+                Msg::ToggleHelpScreen => self.update_help(),
                 _ => None,
             };
 
