@@ -12,6 +12,16 @@ use crate::error::{AppError, AppResult};
 use crate::app::model::Model;
 use crate::config;
 
+#[derive(Debug, Clone)]
+pub struct PaginationInfo {
+    pub current_page: usize,
+    pub total_pages_loaded: usize,
+    pub total_messages_loaded: usize,
+    pub current_page_size: usize,
+    pub has_next_page: bool,
+    pub has_previous_page: bool,
+}
+
 #[derive(MockComponent)]
 pub struct Messages {
     component: Table,
@@ -23,6 +33,30 @@ const CMD_RESULT_QUEUE_UNSELECTED: &str = "QueueUnSelected";
 
 impl Messages {
     pub fn new(messages: Option<&Vec<MessageModel>>) -> Self {
+        Self::new_with_pagination(messages, None)
+    }
+
+    pub fn new_with_pagination(
+        messages: Option<&Vec<MessageModel>>,
+        pagination_info: Option<PaginationInfo>,
+    ) -> Self {
+        let title = if let Some(info) = pagination_info {
+            if info.total_messages_loaded == 0 {
+                " Messages - No messages available ".to_string()
+            } else {
+                format!(
+                    " Messages - Page {}/{} • {} total • {} on page {} ",
+                    info.current_page + 1, // Display as 1-based
+                    info.total_pages_loaded.max(1),
+                    info.total_messages_loaded,
+                    info.current_page_size,
+                    Self::format_navigation_hints(&info)
+                )
+            }
+        } else {
+            " Messages ".to_string()
+        };
+
         let component = {
             Table::default()
                 .borders(
@@ -32,7 +66,7 @@ impl Messages {
                 )
                 .background(Color::Reset)
                 .foreground(Color::Green)
-                .title(" Messages ", Alignment::Center)
+                .title(&title, Alignment::Center)
                 .scroll(true)
                 .highlighted_color(Color::Yellow)
                 .highlighted_str(">")
@@ -46,6 +80,23 @@ impl Messages {
         };
 
         Self { component }
+    }
+
+    fn format_navigation_hints(info: &PaginationInfo) -> String {
+        let mut hints = Vec::new();
+        
+        if info.has_previous_page {
+            hints.push("◀[p]");
+        }
+        if info.has_next_page {
+            hints.push("[n]▶");
+        }
+        
+        if hints.is_empty() {
+            "• End of pages".to_string()
+        } else {
+            format!("• {}", hints.join(" "))
+        }
     }
 
     fn build_table_from_messages(messages: Option<&Vec<MessageModel>>) -> Vec<Vec<TextSpan>> {
