@@ -203,6 +203,17 @@ impl Component<Msg, NoUserEvent> for Messages {
                 code: Key::Char('d'),
                 modifiers: KeyModifiers::NONE,
             }) => return Some(Msg::QueueActivity(QueueActivityMsg::ToggleDeadLetterQueue)),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('d'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => {
+                return Some(Msg::MessageActivity(MessageActivityMsg::SendMessageToDLQ(
+                    match self.state() {
+                        tuirealm::State::One(StateValue::Usize(index)) => index,
+                        _ => 0,
+                    },
+                )));
+            }
             _ => CmdResult::None,
         };
         match cmd_result {

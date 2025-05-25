@@ -120,6 +120,7 @@ where
                 current_page,
                 total_pages_loaded,
             ),
+            MessageActivityMsg::SendMessageToDLQ(index) => self.handle_send_message_to_dlq(index),
         }
     }
 
@@ -500,6 +501,255 @@ where
         log::error!("Error in message loading task: {}", error);
 
         Self::send_loading_stop_message(&tx_to_main);
+        let _ = tx_to_main_err.send(crate::components::common::Msg::Error(error));
+    }
+
+    fn handle_send_message_to_dlq(&mut self, index: usize) -> Option<Msg> {
+        // Validate the request
+        let message = match self.validate_dlq_request(index) {
+            Ok(msg) => msg,
+            Err(error_msg) => return Some(error_msg),
+        };
+
+        // Get required resources
+        let consumer = match self.get_consumer_for_dlq() {
+            Ok(consumer) => consumer,
+            Err(error_msg) => return Some(error_msg),
+        };
+
+        // Start the DLQ operation
+        self.start_dlq_operation(message, consumer);
+        None
+    }
+
+    /// Validates that the DLQ request is valid and returns the target message
+    fn validate_dlq_request(&self, index: usize) -> Result<server::model::MessageModel, Msg> {
+        // Get the message at the specified index
+        let message = if let Some(messages) = &self.queue_state.messages {
+            if let Some(msg) = messages.get(index) {
+                msg.clone()
+            } else {
+                log::error!("Message index {} out of bounds", index);
+                return Err(Msg::Error(crate::error::AppError::State(
+                    "Message index out of bounds".to_string(),
+                )));
+            }
+        } else {
+            log::error!("No messages available");
+            return Err(Msg::Error(crate::error::AppError::State(
+                "No messages available".to_string(),
+            )));
+        };
+
+        // Only allow sending to DLQ from main queue (not from DLQ itself)
+        if self.queue_state.current_queue_type != crate::components::common::QueueType::Main {
+            log::warn!("Cannot send message to DLQ from dead letter queue");
+            return Err(Msg::Error(crate::error::AppError::State(
+                "Cannot send message to DLQ from dead letter queue".to_string(),
+            )));
+        }
+
+        Ok(message)
+    }
+
+    /// Gets the consumer for DLQ operations
+    fn get_consumer_for_dlq(&self) -> Result<Arc<Mutex<Consumer>>, Msg> {
+        match self.queue_state.consumer.clone() {
+            Some(consumer) => Ok(consumer),
+            None => {
+                log::error!("No consumer available");
+                Err(Msg::Error(crate::error::AppError::State(
+                    "No consumer available".to_string(),
+                )))
+            }
+        }
+    }
+
+    /// Starts the DLQ operation in a background task
+    fn start_dlq_operation(
+        &self,
+        message: server::model::MessageModel,
+        consumer: Arc<Mutex<Consumer>>,
+    ) {
+        let taskpool = &self.taskpool;
+        let tx_to_main = self.tx_to_main.clone();
+
+        // Show loading indicator
+        if let Err(e) = tx_to_main.send(crate::components::common::Msg::LoadingActivity(
+            crate::components::common::LoadingActivityMsg::Start(
+                "Sending message to dead letter queue...".to_string(),
+            ),
+        )) {
+            log::error!("Failed to send loading start message: {}", e);
+        }
+
+        let tx_to_main_err = tx_to_main.clone();
+        let message_id = message.id.clone();
+        let message_sequence = message.sequence;
+
+        taskpool.execute(async move {
+            let result =
+                Self::execute_dlq_operation(consumer, message_id.clone(), message_sequence).await;
+
+            match result {
+                Ok(()) => {
+                    Self::handle_dlq_success(&tx_to_main, &message_id);
+                }
+                Err(e) => {
+                    Self::handle_dlq_error(&tx_to_main, &tx_to_main_err, e);
+                }
+            }
+        });
+    }
+
+    /// Executes the DLQ operation: find and dead letter the target message
+    async fn execute_dlq_operation(
+        consumer: Arc<Mutex<Consumer>>,
+        message_id: String,
+        message_sequence: i64,
+    ) -> Result<(), crate::error::AppError> {
+        log::debug!("Acquiring consumer lock for DLQ operation");
+        let mut consumer = consumer.lock().await;
+
+        // Find the target message
+        let target_msg =
+            Self::find_target_message(&mut consumer, &message_id, message_sequence).await?;
+
+        // Send the message to dead letter queue
+        log::info!("Sending message {} to dead letter queue", message_id);
+        consumer
+            .dead_letter_message(
+                &target_msg,
+                Some("Manual dead letter".to_string()),
+                Some("Message manually sent to DLQ via Ctrl+D".to_string()),
+            )
+            .await
+            .map_err(|e| {
+                log::error!("Failed to dead letter message: {}", e);
+                crate::error::AppError::ServiceBus(e.to_string())
+            })?;
+
+        log::info!(
+            "Successfully sent message {} to dead letter queue",
+            message_id
+        );
+
+        Ok(())
+    }
+
+    /// Finds the target message by receiving messages and searching by ID
+    async fn find_target_message(
+        consumer: &mut Consumer,
+        message_id: &str,
+        message_sequence: i64,
+    ) -> Result<azservicebus::ServiceBusReceivedMessage, crate::error::AppError> {
+        log::debug!(
+            "Looking for message with ID {} and sequence {}",
+            message_id,
+            message_sequence
+        );
+
+        let mut attempts = 0;
+        const MAX_ATTEMPTS: usize = 10;
+        let mut target_message = None;
+        let mut other_messages = Vec::new();
+
+        while attempts < MAX_ATTEMPTS && target_message.is_none() {
+            let received_messages = consumer.receive_messages(5).await.map_err(|e| {
+                log::error!("Failed to receive messages: {}", e);
+                crate::error::AppError::ServiceBus(e.to_string())
+            })?;
+
+            if received_messages.is_empty() {
+                log::warn!("No more messages available to receive");
+                break;
+            }
+
+            for msg in received_messages {
+                if let Some(msg_id) = msg.message_id() {
+                    if msg_id == message_id {
+                        log::info!("Found target message with ID {}", message_id);
+                        target_message = Some(msg);
+                        break;
+                    }
+                }
+                other_messages.push(msg);
+            }
+
+            attempts += 1;
+        }
+
+        // Abandon all the other messages we received but don't want to dead letter
+        Self::abandon_other_messages(consumer, other_messages).await;
+
+        // Return the target message or error
+        target_message.ok_or_else(|| {
+            log::error!(
+                "Could not find message with ID {} after {} attempts",
+                message_id,
+                attempts
+            );
+            crate::error::AppError::ServiceBus(format!(
+                "Could not find message with ID {} in received messages",
+                message_id
+            ))
+        })
+    }
+
+    /// Abandons messages that were received but are not the target
+    async fn abandon_other_messages(
+        consumer: &mut Consumer,
+        other_messages: Vec<azservicebus::ServiceBusReceivedMessage>,
+    ) {
+        for msg in other_messages {
+            if let Err(e) = consumer.abandon_message(&msg).await {
+                let msg_id = msg
+                    .message_id()
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+                log::warn!("Failed to abandon message {}: {}", msg_id, e);
+            }
+        }
+    }
+
+    /// Handles successful DLQ operation
+    fn handle_dlq_success(tx_to_main: &Sender<crate::components::common::Msg>, message_id: &str) {
+        log::info!(
+            "DLQ operation completed successfully for message {}",
+            message_id
+        );
+
+        // Stop loading indicator
+        if let Err(e) = tx_to_main.send(crate::components::common::Msg::LoadingActivity(
+            crate::components::common::LoadingActivityMsg::Stop,
+        )) {
+            log::error!("Failed to send loading stop message: {}", e);
+        }
+
+        // Reload messages to refresh the view
+        if let Err(e) = tx_to_main.send(crate::components::common::Msg::MessageActivity(
+            crate::components::common::MessageActivityMsg::MessagesLoaded(Vec::new()),
+        )) {
+            log::error!("Failed to send messages reload message: {}", e);
+        }
+    }
+
+    /// Handles DLQ operation errors
+    fn handle_dlq_error(
+        tx_to_main: &Sender<crate::components::common::Msg>,
+        tx_to_main_err: &Sender<crate::components::common::Msg>,
+        error: crate::error::AppError,
+    ) {
+        log::error!("Error in DLQ operation: {}", error);
+
+        // Stop loading indicator
+        if let Err(err) = tx_to_main.send(crate::components::common::Msg::LoadingActivity(
+            crate::components::common::LoadingActivityMsg::Stop,
+        )) {
+            log::error!("Failed to send loading stop message: {}", err);
+        }
+
+        // Send error message
         let _ = tx_to_main_err.send(crate::components::common::Msg::Error(error));
     }
 }

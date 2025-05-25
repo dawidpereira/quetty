@@ -1,3 +1,4 @@
+use azservicebus::receiver::DeadLetterOptions;
 use azservicebus::{ServiceBusClient, ServiceBusReceiver, ServiceBusReceiverOptions};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -34,6 +35,52 @@ impl Consumer {
                 .await?;
             let result = MessageModel::try_convert_messages_collect(messages);
             Ok(result)
+        } else {
+            Err("Receiver already disposed".into())
+        }
+    }
+
+    pub async fn receive_messages(
+        &mut self,
+        max_count: u32,
+    ) -> Result<Vec<azservicebus::ServiceBusReceivedMessage>, Box<dyn std::error::Error>> {
+        let mut guard = self.receiver.lock().await;
+        if let Some(receiver) = guard.as_mut() {
+            let messages = receiver.receive_messages(max_count).await?;
+            Ok(messages)
+        } else {
+            Err("Receiver already disposed".into())
+        }
+    }
+
+    pub async fn abandon_message(
+        &mut self,
+        message: &azservicebus::ServiceBusReceivedMessage,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut guard = self.receiver.lock().await;
+        if let Some(receiver) = guard.as_mut() {
+            receiver.abandon_message(message, None).await?;
+            Ok(())
+        } else {
+            Err("Receiver already disposed".into())
+        }
+    }
+
+    pub async fn dead_letter_message(
+        &mut self,
+        message: &azservicebus::ServiceBusReceivedMessage,
+        reason: Option<String>,
+        error_description: Option<String>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut guard = self.receiver.lock().await;
+        if let Some(receiver) = guard.as_mut() {
+            let options = DeadLetterOptions {
+                dead_letter_reason: reason,
+                dead_letter_error_description: error_description,
+                properties_to_modify: None,
+            };
+            receiver.dead_letter_message(message, options).await?;
+            Ok(())
         } else {
             Err("Receiver already disposed".into())
         }
