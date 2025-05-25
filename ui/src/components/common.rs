@@ -13,6 +13,7 @@ pub enum ComponentId {
     GlobalKeyWatcher,
     ErrorPopup,
     LoadingIndicator,
+    HelpScreen,
 }
 
 #[derive(Debug, PartialEq)]
@@ -26,6 +27,7 @@ pub enum Msg {
     LoadingActivity(LoadingActivityMsg),
     Error(AppError),
     CloseErrorPopup,
+    ToggleHelpScreen,
 }
 
 #[derive(Debug, PartialEq)]

@@ -37,7 +37,7 @@ cargo run
   - **PgUp/PgDn**: Scroll through long content
 - **Global**
   - **q**: Quit the application
-  - **Ctrl+h**: Help (future implementation)
+  - **h**: Show help screen with keyboard shortcuts
 
 ## Next Steps
 

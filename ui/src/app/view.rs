@@ -152,17 +152,30 @@ pub fn view_loading(
     Ok(())
 }
 
-// View function for help bar
-pub fn view_help_bar(
+// View function for help screen
+pub fn view_help_screen(
+    app: &mut Application<ComponentId, Msg, NoUserEvent>,
     f: &mut Frame,
-    chunks: &[Rect],
-    active_component: &ComponentId,
+    _chunks: &[Rect],
 ) -> Result<(), AppError> {
-    // Create a temporary help bar with the active component
-    let mut help_bar = crate::components::help_bar::HelpBar::new();
+    // Create a centered box for the help screen
+    let area = f.area();
+    let popup_width = area.width.saturating_sub(10);
+    let popup_height = area.height.saturating_sub(6);
 
-    // Directly render the help bar with the active component
-    help_bar.view_with_active(f, chunks[4], active_component);
+    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+
+    let popup_area = Rect::new(
+        popup_x,
+        popup_y,
+        popup_width.min(area.width),
+        popup_height.min(area.height),
+    );
+
+    app.view(&ComponentId::HelpScreen, f, popup_area);
+    app.active(&ComponentId::HelpScreen)
+        .map_err(|e| AppError::Component(e.to_string()))?;
 
     Ok(())
 }
