@@ -55,6 +55,8 @@ impl MockComponent for HelpScreen {
             vec!["Navigation", "Esc", "Go back/cancel"],
             // Message list
             vec!["Messages", "PgUp/PgDown", "Scroll list"],
+            vec!["Messages", "n/]", "Next page"],
+            vec!["Messages", "p/[", "Previous page"],
             vec!["Messages", "Enter", "View message details"],
             // Message details
             vec!["Details", "←/→", "Move cursor"],

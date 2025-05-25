@@ -39,8 +39,10 @@ impl HelpBar {
                 (" Select ".to_string(), false),
                 ("[Esc]".to_string(), true),
                 (" Back ".to_string(), false),
-                ("[PgUp/PgDn]".to_string(), true),
-                (" Scroll ".to_string(), false),
+                ("[n/]]".to_string(), true),
+                (" Next page ".to_string(), false),
+                ("[p/[]".to_string(), true),
+                (" Prev page ".to_string(), false),
             ],
             ComponentId::MessageDetails => vec![
                 ("[↑/k]".to_string(), true),
