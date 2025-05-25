@@ -68,6 +68,7 @@ pub enum MessageActivityMsg {
     },
     NewMessagesLoaded(Vec<MessageModel>), // New messages loaded from API
     PageChanged,                          // Just changed page within already loaded messages
+    SendMessageToDLQ(usize),              // Send message at index to dead letter queue
 }
 
 #[derive(Debug, PartialEq)]
