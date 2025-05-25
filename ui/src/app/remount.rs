@@ -1,7 +1,7 @@
 use crate::app::model::Model;
 use crate::components::common::ComponentId;
 use crate::components::message_details::MessageDetails;
-use crate::components::messages::Messages;
+use crate::components::messages::{Messages, PaginationInfo};
 use crate::components::namespace_picker::NamespacePicker;
 use crate::components::queue_picker::QueuePicker;
 use crate::error::{AppError, AppResult};
@@ -30,15 +30,33 @@ where
     }
 
     pub fn remount_messages(&mut self) -> AppResult<()> {
+        let pagination_info = self.create_pagination_info();
+        
         self.app
             .remount(
                 ComponentId::Messages,
-                Box::new(Messages::new(self.messages.as_ref())),
+                Box::new(Messages::new_with_pagination(
+                    self.messages.as_ref(),
+                    Some(pagination_info),
+                )),
                 Vec::default(),
             )
             .map_err(|e| AppError::Component(e.to_string()))?;
 
         Ok(())
+    }
+
+    fn create_pagination_info(&self) -> PaginationInfo {
+        let current_page_size = self.messages.as_ref().map(|m| m.len()).unwrap_or(0);
+        
+        PaginationInfo {
+            current_page: self.message_pagination.current_page,
+            total_pages_loaded: self.message_pagination.total_pages_loaded,
+            total_messages_loaded: self.message_pagination.all_loaded_messages.len(),
+            current_page_size,
+            has_next_page: self.message_pagination.has_next_page,
+            has_previous_page: self.message_pagination.has_previous_page,
+        }
     }
 
     pub fn remount_queue_picker(&mut self, queues: Option<Vec<String>>) -> AppResult<()> {
