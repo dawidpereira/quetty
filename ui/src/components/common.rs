@@ -51,6 +51,16 @@ pub enum MessageActivityMsg {
     CancelEditMessage,
     MessagesLoaded(Vec<MessageModel>),
     ConsumerCreated(Consumer),
+    NextPage,
+    PreviousPage,
+    PaginationStateUpdated {
+        has_next: bool,
+        has_previous: bool,
+        current_page: usize,
+        total_pages_loaded: usize,
+    },
+    NewMessagesLoaded(Vec<MessageModel>), // New messages loaded from API
+    PageChanged,                          // Just changed page within already loaded messages
 }
 
 #[derive(Debug, PartialEq)]

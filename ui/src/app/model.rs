@@ -64,6 +64,14 @@ where
     pub consumer: Option<Arc<Mutex<Consumer>>>,
     pub messages: Option<Vec<MessageModel>>,
     pub active_component: ComponentId,
+    
+    // Pagination state
+    pub current_page: usize,
+    pub has_next_page: bool,
+    pub has_previous_page: bool,
+    pub all_loaded_messages: Vec<MessageModel>, // Store all messages we've loaded
+    pub total_pages_loaded: usize, // How many pages we've loaded from API
+    pub last_loaded_sequence: Option<i64>, // Last sequence number we loaded from API
 }
 
 impl Model<CrosstermTerminalAdapter> {
@@ -96,6 +104,12 @@ impl Model<CrosstermTerminalAdapter> {
             loading_message: None,
             previous_state: None,
             active_component: ComponentId::NamespacePicker,
+            current_page: 0,
+            has_next_page: false,
+            has_previous_page: false,
+            all_loaded_messages: Vec::new(),
+            total_pages_loaded: 0,
+            last_loaded_sequence: None,
         };
 
         // Initialize loading indicator

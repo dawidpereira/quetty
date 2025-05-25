@@ -120,6 +120,22 @@ impl Component<Msg, NoUserEvent> for Messages {
                 code: Key::Esc,
                 modifiers: KeyModifiers::NONE,
             }) => CmdResult::Custom(CMD_RESULT_QUEUE_UNSELECTED, self.state()),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('n'),
+                modifiers: KeyModifiers::NONE,
+            }) => return Some(Msg::MessageActivity(MessageActivityMsg::NextPage)),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(']'),
+                modifiers: KeyModifiers::NONE,
+            }) => return Some(Msg::MessageActivity(MessageActivityMsg::NextPage)),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('p'),
+                modifiers: KeyModifiers::NONE,
+            }) => return Some(Msg::MessageActivity(MessageActivityMsg::PreviousPage)),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('['),
+                modifiers: KeyModifiers::NONE,
+            }) => return Some(Msg::MessageActivity(MessageActivityMsg::PreviousPage)),
             _ => CmdResult::None,
         };
         match cmd_result {
@@ -186,15 +202,27 @@ where
                     log::error!("Failed to send loading stop message: {}", e);
                 }
 
-                // Send loaded messages
-                tx_to_main
-                    .send(Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(
-                        messages,
-                    )))
-                    .map_err(|e| {
-                        log::error!("Failed to send messages loaded message: {}", e);
-                        AppError::Component(e.to_string())
-                    })?;
+                // Send initial messages as new messages loaded
+                if !messages.is_empty() {
+                    tx_to_main
+                        .send(Msg::MessageActivity(MessageActivityMsg::NewMessagesLoaded(
+                            messages,
+                        )))
+                        .map_err(|e| {
+                            log::error!("Failed to send new messages loaded message: {}", e);
+                            AppError::Component(e.to_string())
+                        })?;
+                } else {
+                    // No messages, but still need to update the view
+                    tx_to_main
+                        .send(Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(
+                            messages,
+                        )))
+                        .map_err(|e| {
+                            log::error!("Failed to send messages loaded message: {}", e);
+                            AppError::Component(e.to_string())
+                        })?;
+                }
 
                 Ok::<(), AppError>(())
             }
