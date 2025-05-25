@@ -7,6 +7,89 @@ use std::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tuirealm::terminal::TerminalAdapter;
 
+/// Dedicated type for managing message pagination state
+#[derive(Debug, Clone, Default)]
+pub struct MessagePaginationState {
+    pub current_page: usize,
+    pub has_next_page: bool,
+    pub has_previous_page: bool,
+    pub total_pages_loaded: usize,
+    pub last_loaded_sequence: Option<i64>,
+    pub all_loaded_messages: Vec<MessageModel>,
+}
+
+impl MessagePaginationState {
+    /// Check if a specific page is already loaded
+    pub fn is_page_loaded(&self, page: usize) -> bool {
+        page < self.total_pages_loaded
+    }
+
+    /// Calculate page bounds for the current page
+    pub fn calculate_page_bounds(&self, page_size: usize) -> (usize, usize) {
+        let start_idx = self.current_page * page_size;
+        let end_idx = std::cmp::min(start_idx + page_size, self.all_loaded_messages.len());
+        (start_idx, end_idx)
+    }
+
+    /// Reset pagination state to initial values
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Update pagination state based on current page and total loaded pages
+    pub fn update(&mut self, page_size: usize) {
+        self.has_previous_page = self.current_page > 0;
+        self.has_next_page = self.calculate_has_next_page(page_size);
+    }
+
+    /// Calculate if there's a next page available
+    fn calculate_has_next_page(&self, page_size: usize) -> bool {
+        let next_page_exists = self.current_page + 1 < self.total_pages_loaded;
+        let might_have_more_to_load =
+            self.total_pages_loaded > 0 && self.all_loaded_messages.len() % page_size == 0;
+
+        next_page_exists || might_have_more_to_load
+    }
+
+    /// Move to the next page
+    pub fn advance_to_next_page(&mut self) {
+        self.current_page += 1;
+    }
+
+    /// Move to the previous page
+    pub fn go_to_previous_page(&mut self) {
+        if self.current_page > 0 {
+            self.current_page -= 1;
+        }
+    }
+
+    /// Set the current page directly
+    pub fn set_current_page(&mut self, page: usize) {
+        self.current_page = page;
+    }
+
+    /// Increment total pages loaded and update last sequence
+    pub fn add_loaded_page(&mut self, new_messages: Vec<MessageModel>) {
+        self.all_loaded_messages.extend(new_messages);
+        self.total_pages_loaded += 1;
+
+        if let Some(last_msg) = self.all_loaded_messages.last() {
+            self.last_loaded_sequence = Some(last_msg.sequence);
+        }
+    }
+
+    /// Get current page messages
+    pub fn get_current_page_messages(&self, page_size: usize) -> Vec<MessageModel> {
+        let (start_idx, end_idx) = self.calculate_page_bounds(page_size);
+
+        if start_idx < self.all_loaded_messages.len() {
+            self.all_loaded_messages[start_idx..end_idx].to_vec()
+        } else {
+            Vec::new()
+        }
+    }
+}
+
 impl<T> Model<T>
 where
     T: TerminalAdapter,
@@ -83,20 +166,14 @@ where
     }
 
     fn handle_new_messages_loaded(&mut self, new_messages: Vec<MessageModel>) -> Option<Msg> {
-        let is_initial_load = self.all_loaded_messages.is_empty();
+        let is_initial_load = self.message_pagination.all_loaded_messages.is_empty();
 
-        // Add new messages to our store
-        self.all_loaded_messages.extend(new_messages);
-        self.total_pages_loaded += 1;
-
-        // Update last loaded sequence
-        if let Some(last_msg) = self.all_loaded_messages.last() {
-            self.last_loaded_sequence = Some(last_msg.sequence);
-        }
+        // Add new messages to pagination state
+        self.message_pagination.add_loaded_page(new_messages);
 
         // If this is not the initial load, advance to the new page
         if !is_initial_load {
-            self.current_page += 1;
+            self.message_pagination.advance_to_next_page();
         }
 
         // Update the current page view
@@ -110,7 +187,7 @@ where
         }
 
         // Initialize message details if we have messages
-        if !self.all_loaded_messages.is_empty() {
+        if !self.message_pagination.all_loaded_messages.is_empty() {
             if let Err(e) = self.remount_message_details(0) {
                 return Some(Msg::Error(e));
             }
@@ -133,16 +210,16 @@ where
         current_page: usize,
         total_pages_loaded: usize,
     ) -> Option<Msg> {
-        self.has_next_page = has_next;
-        self.has_previous_page = has_previous;
-        self.current_page = current_page;
-        self.total_pages_loaded = total_pages_loaded;
+        self.message_pagination.has_next_page = has_next;
+        self.message_pagination.has_previous_page = has_previous;
+        self.message_pagination.current_page = current_page;
+        self.message_pagination.total_pages_loaded = total_pages_loaded;
         None
     }
 
     // Pagination request handlers
     fn handle_next_page_request(&mut self) -> Option<Msg> {
-        if self.has_next_page {
+        if self.message_pagination.has_next_page {
             if let Err(e) = self.handle_next_page() {
                 return Some(Msg::Error(e));
             }
@@ -151,7 +228,7 @@ where
     }
 
     fn handle_previous_page_request(&mut self) -> Option<Msg> {
-        if self.has_previous_page {
+        if self.message_pagination.has_previous_page {
             if let Err(e) = self.handle_previous_page() {
                 return Some(Msg::Error(e));
             }
@@ -163,13 +240,13 @@ where
     pub fn handle_next_page(&mut self) -> crate::error::AppResult<()> {
         log::debug!(
             "Handle next page - current: {}, total_loaded: {}",
-            self.current_page,
-            self.total_pages_loaded
+            self.message_pagination.current_page,
+            self.message_pagination.total_pages_loaded
         );
 
-        let next_page = self.current_page + 1;
+        let next_page = self.message_pagination.current_page + 1;
 
-        if self.is_page_already_loaded(next_page) {
+        if self.message_pagination.is_page_loaded(next_page) {
             self.switch_to_loaded_page(next_page);
         } else {
             log::debug!("Loading new page {} from API", next_page);
@@ -180,10 +257,13 @@ where
     }
 
     pub fn handle_previous_page(&mut self) -> crate::error::AppResult<()> {
-        log::debug!("Handle previous page - current: {}", self.current_page);
+        log::debug!(
+            "Handle previous page - current: {}",
+            self.message_pagination.current_page
+        );
 
-        if self.current_page > 0 {
-            self.current_page -= 1;
+        if self.message_pagination.current_page > 0 {
+            self.message_pagination.go_to_previous_page();
             self.update_pagination_state();
             self.send_page_changed_message();
         }
@@ -193,21 +273,12 @@ where
 
     // Pagination utility methods
     fn reset_pagination_state(&mut self) {
-        self.current_page = 0;
-        self.has_next_page = false;
-        self.has_previous_page = false;
-        self.all_loaded_messages.clear();
-        self.total_pages_loaded = 0;
-        self.last_loaded_sequence = None;
-    }
-
-    fn is_page_already_loaded(&self, page: usize) -> bool {
-        page < self.total_pages_loaded
+        self.message_pagination.reset();
     }
 
     fn switch_to_loaded_page(&mut self, page: usize) {
         log::debug!("Page {} already loaded, switching view", page);
-        self.current_page = page;
+        self.message_pagination.set_current_page(page);
         self.update_pagination_state();
         self.send_page_changed_message();
     }
@@ -224,42 +295,29 @@ where
     }
 
     fn update_pagination_state(&mut self) {
-        self.has_previous_page = self.current_page > 0;
-        self.has_next_page = self.calculate_has_next_page();
+        let page_size = crate::config::CONFIG.max_messages() as usize;
+        self.message_pagination.update(page_size);
 
         log::debug!(
             "Updated pagination state: current={}, total_loaded={}, has_prev={}, has_next={}",
-            self.current_page,
-            self.total_pages_loaded,
-            self.has_previous_page,
-            self.has_next_page
+            self.message_pagination.current_page,
+            self.message_pagination.total_pages_loaded,
+            self.message_pagination.has_previous_page,
+            self.message_pagination.has_next_page
         );
-    }
-
-    fn calculate_has_next_page(&self) -> bool {
-        let next_page_exists = self.current_page + 1 < self.total_pages_loaded;
-        let might_have_more_to_load = self.total_pages_loaded > 0
-            && self.all_loaded_messages.len() % crate::config::CONFIG.max_messages() as usize == 0;
-
-        next_page_exists || might_have_more_to_load
     }
 
     fn update_current_page_view(&mut self) -> crate::error::AppResult<()> {
         let page_size = crate::config::CONFIG.max_messages() as usize;
-        let (start_idx, end_idx) = self.calculate_page_bounds(page_size);
-
-        let current_page_messages = if start_idx < self.all_loaded_messages.len() {
-            self.all_loaded_messages[start_idx..end_idx].to_vec()
-        } else {
-            Vec::new()
-        };
+        let current_page_messages = self.message_pagination.get_current_page_messages(page_size);
+        let (start_idx, end_idx) = self.message_pagination.calculate_page_bounds(page_size);
 
         log::debug!(
             "Updating view for page {}: showing messages {}-{} of {}",
-            self.current_page,
+            self.message_pagination.current_page,
             start_idx,
             end_idx,
-            self.all_loaded_messages.len()
+            self.message_pagination.all_loaded_messages.len()
         );
 
         self.messages = Some(current_page_messages);
@@ -270,20 +328,14 @@ where
         Ok(())
     }
 
-    fn calculate_page_bounds(&self, page_size: usize) -> (usize, usize) {
-        let start_idx = self.current_page * page_size;
-        let end_idx = std::cmp::min(start_idx + page_size, self.all_loaded_messages.len());
-        (start_idx, end_idx)
-    }
-
     fn send_pagination_state_update(&self) -> crate::error::AppResult<()> {
         self.tx_to_main
             .send(crate::components::common::Msg::MessageActivity(
                 crate::components::common::MessageActivityMsg::PaginationStateUpdated {
-                    has_next: self.has_next_page,
-                    has_previous: self.has_previous_page,
-                    current_page: self.current_page,
-                    total_pages_loaded: self.total_pages_loaded,
+                    has_next: self.message_pagination.has_next_page,
+                    has_previous: self.message_pagination.has_previous_page,
+                    current_page: self.message_pagination.current_page,
+                    total_pages_loaded: self.message_pagination.total_pages_loaded,
                 },
             ))
             .map_err(|e| {
@@ -295,7 +347,7 @@ where
     fn load_new_messages_from_api(&mut self) -> crate::error::AppResult<()> {
         log::debug!(
             "Loading new messages from API, last_sequence: {:?}",
-            self.last_loaded_sequence
+            self.message_pagination.last_loaded_sequence
         );
 
         let taskpool = &self.taskpool;
@@ -305,7 +357,10 @@ where
 
         let consumer = self.get_consumer()?;
         let tx_to_main_err = tx_to_main.clone();
-        let from_sequence = self.last_loaded_sequence.map(|seq| seq + 1);
+        let from_sequence = self
+            .message_pagination
+            .last_loaded_sequence
+            .map(|seq| seq + 1);
 
         taskpool.execute(async move {
             Self::execute_message_loading_task(tx_to_main, tx_to_main_err, consumer, from_sequence)
