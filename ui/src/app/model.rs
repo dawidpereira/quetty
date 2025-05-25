@@ -1,5 +1,5 @@
 use crate::app::view::{
-    view_loading, view_message_details, view_message_picker, view_namespace_picker,
+    view_help_bar, view_loading, view_message_details, view_message_picker, view_namespace_picker,
     view_queue_picker, with_error_popup,
 };
 use crate::components::common::{ComponentId, LoadingActivityMsg, Msg};
@@ -36,6 +36,7 @@ pub enum AppState {
     Loading,
 }
 
+/// Application model
 pub struct Model<T>
 where
     T: TerminalAdapter,
@@ -62,6 +63,7 @@ where
     pub service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
     pub consumer: Option<Arc<Mutex<Consumer>>>,
     pub messages: Option<Vec<MessageModel>>,
+    pub active_component: ComponentId,
 }
 
 impl Model<CrosstermTerminalAdapter> {
@@ -92,6 +94,7 @@ impl Model<CrosstermTerminalAdapter> {
             messages: None,
             selected_namespace: None,
             loading_message: None,
+            active_component: ComponentId::NamespacePicker,
         };
 
         // Initialize loading indicator
@@ -147,13 +150,23 @@ where
                         Constraint::Length(1),
                         Constraint::Length(1), // Label
                         Constraint::Length(2),
-                        Constraint::Min(16), // Main area
+                        Constraint::Min(16),   // Main area
+                        Constraint::Length(1), // Help bar
                     ]
                     .as_ref(),
                 )
                 .split(f.area());
 
             self.app.view(&ComponentId::Label, f, chunks[1]);
+
+            // Update active component based on current app state
+            self.active_component = match self.app_state {
+                AppState::NamespacePicker => ComponentId::NamespacePicker,
+                AppState::QueuePicker => ComponentId::QueuePicker,
+                AppState::MessagePicker => ComponentId::Messages,
+                AppState::MessageDetails => ComponentId::MessageDetails,
+                AppState::Loading => ComponentId::LoadingIndicator,
+            };
 
             // Apply the view based on the app state, with error popup handling
             view_result = match self.app_state {
@@ -171,6 +184,13 @@ where
                 }
                 AppState::Loading => with_error_popup(&mut self.app, f, &chunks, view_loading),
             };
+
+            // View help bar (if not showing error popup) with active component
+            if !self.app.mounted(&ComponentId::ErrorPopup) {
+                if let Err(e) = view_help_bar(f, &chunks, &self.active_component) {
+                    log::error!("Failed to view help bar: {}", e);
+                }
+            }
         });
 
         view_result

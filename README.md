@@ -28,23 +28,30 @@ cargo run
 ```
 
 ### Keyboard Shortcuts
-- **Up/Down/J/L**: Navigate through messages.
-- **Enter**: Select a message for detailed view.
-- **Esc**: Cancel the current action.
+- **Navigation**
+  - **↑/k**: Move up in lists or text
+  - **↓/j**: Move down in lists or text
+  - **←/→**: Move cursor left/right in message details
+  - **Enter/o**: Select an item
+  - **Esc**: Go back/cancel the current action
+  - **PgUp/PgDn**: Scroll through long content
+- **Global**
+  - **q**: Quit the application
+  - **Ctrl+h**: Help (future implementation)
 
 ## Next Steps
 
 ### Error Handling & Logging:
 - [x] Implement robust error handling for API calls, file operations, and user interactions.
-- [x] Add logging to help with debugging and monitoring the application's behavior.
-### User Experience Enhancements:
-- [x] Improve the UI/UX with better feedback (e.g., loading indicators, success/error messages).
-- [ ] Add keyboard shortcuts or tooltips to make navigation more intuitive.
+- [x] Add logging to help with debugging and monitoring the application's behavior.
+### User Experience Enhancements:
+- [x] Improve the UI/UX with better feedback (e.g., loading indicators, success/error messages).
+- [x] Add keyboard shortcuts or tooltips to make navigation more intuitive.
 ### Testing:
-- [ ] Write unit tests for critical components and integration tests for key workflows.
+- [ ] Write unit tests for critical components and integration tests for key workflows.
 - [ ] Ensure edge cases (e.g., empty message lists, network failures) are handled gracefully.
 ### Documentation:
-- [ ] Document the codebase, especially complex logic or public APIs.
+- [ ] Document the codebase, especially complex logic or public APIs.
 - [ ] Create a user guide or README to help new users get started.
 ### Feature Expansion:
 - [ ] Support for messages pagination.

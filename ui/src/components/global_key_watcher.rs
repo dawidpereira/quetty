@@ -16,8 +16,14 @@ impl Component<Msg, NoUserEvent> for GlobalKeyWatcher {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(Msg::AppClose),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('h'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => {
+                // Ctrl+h could show a help screen in the future
+                None
+            }
             _ => None,
         }
     }
 }
-

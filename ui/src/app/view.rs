@@ -151,3 +151,18 @@ pub fn view_loading(
 
     Ok(())
 }
+
+// View function for help bar
+pub fn view_help_bar(
+    f: &mut Frame,
+    chunks: &[Rect],
+    active_component: &ComponentId,
+) -> Result<(), AppError> {
+    // Create a temporary help bar with the active component
+    let mut help_bar = crate::components::help_bar::HelpBar::new();
+
+    // Directly render the help bar with the active component
+    help_bar.view_with_active(f, chunks[4], active_component);
+
+    Ok(())
+}
