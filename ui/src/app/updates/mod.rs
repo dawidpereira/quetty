@@ -1,7 +1,5 @@
 use crate::app::model::{AppState, Model};
-use crate::components::common::{
-    MessageActivityMsg, Msg, QueueActivityMsg,
-};
+use crate::components::common::{MessageActivityMsg, Msg};
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -10,6 +8,7 @@ use tuirealm::terminal::TerminalAdapter;
 pub mod help;
 pub mod loading;
 pub mod namespace;
+pub mod queue;
 
 impl<T> Model<T>
 where
@@ -132,31 +131,6 @@ where
             }
         }
     }
-
-    pub fn update_queue(&mut self, msg: QueueActivityMsg) -> Option<Msg> {
-        match msg {
-            QueueActivityMsg::QueueSelected(queue) => {
-                self.pending_queue = Some(queue);
-                if let Err(e) = self.new_consumer_for_queue() {
-                    return Some(Msg::Error(e));
-                }
-                None
-            }
-            QueueActivityMsg::QueuesLoaded(queues) => {
-                if let Err(e) = self.remount_queue_picker(Some(queues)) {
-                    return Some(Msg::Error(e));
-                }
-                self.app_state = AppState::QueuePicker;
-                None
-            }
-            QueueActivityMsg::QueueUnselected => {
-                self.app_state = AppState::QueuePicker;
-                None
-            }
-        }
-    }
-
-
 
     pub fn handle_next_page(&mut self) -> crate::error::AppResult<()> {
         log::debug!(
