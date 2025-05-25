@@ -3,6 +3,12 @@ use server::model::MessageModel;
 
 use crate::error::AppError;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum QueueType {
+    Main,
+    DeadLetter,
+}
+
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum ComponentId {
     Label,
@@ -42,6 +48,7 @@ pub enum QueueActivityMsg {
     QueueSelected(String),
     QueueUnselected,
     QueuesLoaded(Vec<String>),
+    ToggleDeadLetterQueue,
 }
 
 #[derive(Debug, PartialEq)]

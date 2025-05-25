@@ -12,7 +12,7 @@ where
     T: TerminalAdapter,
 {
     pub fn remount_message_details(&mut self, index: usize) -> AppResult<()> {
-        let message = if let Some(messages) = &self.messages {
+        let message = if let Some(messages) = &self.queue_state.messages {
             messages.get(index).cloned()
         } else {
             None
@@ -31,12 +31,12 @@ where
 
     pub fn remount_messages(&mut self) -> AppResult<()> {
         let pagination_info = self.create_pagination_info();
-        
+
         self.app
             .remount(
                 ComponentId::Messages,
                 Box::new(Messages::new_with_pagination(
-                    self.messages.as_ref(),
+                    self.queue_state.messages.as_ref(),
                     Some(pagination_info),
                 )),
                 Vec::default(),
@@ -47,15 +47,26 @@ where
     }
 
     fn create_pagination_info(&self) -> PaginationInfo {
-        let current_page_size = self.messages.as_ref().map(|m| m.len()).unwrap_or(0);
-        
+        let current_page_size = self
+            .queue_state
+            .messages
+            .as_ref()
+            .map(|m| m.len())
+            .unwrap_or(0);
+
         PaginationInfo {
-            current_page: self.message_pagination.current_page,
-            total_pages_loaded: self.message_pagination.total_pages_loaded,
-            total_messages_loaded: self.message_pagination.all_loaded_messages.len(),
+            current_page: self.queue_state.message_pagination.current_page,
+            total_pages_loaded: self.queue_state.message_pagination.total_pages_loaded,
+            total_messages_loaded: self
+                .queue_state
+                .message_pagination
+                .all_loaded_messages
+                .len(),
             current_page_size,
-            has_next_page: self.message_pagination.has_next_page,
-            has_previous_page: self.message_pagination.has_previous_page,
+            has_next_page: self.queue_state.message_pagination.has_next_page,
+            has_previous_page: self.queue_state.message_pagination.has_previous_page,
+            queue_name: self.queue_state.current_queue_name.clone(),
+            queue_type: self.queue_state.current_queue_type.clone(),
         }
     }
 

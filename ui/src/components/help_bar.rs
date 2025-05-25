@@ -3,7 +3,7 @@ use tuirealm::ratatui::layout::Rect;
 use tuirealm::ratatui::text::{Line, Span, Text};
 use tuirealm::{Component, Event, Frame, MockComponent, NoUserEvent};
 
-use super::common::{ComponentId, Msg};
+use super::common::{ComponentId, Msg, QueueType};
 
 /// Help bar that shows keyboard shortcuts based on the current active component
 pub struct HelpBar {
@@ -28,22 +28,44 @@ impl HelpBar {
     }
 
     /// Get context-specific shortcuts for a given component
-    fn get_context_shortcuts(&self, active_component: &ComponentId) -> Vec<(String, bool)> {
+    fn get_context_shortcuts(
+        &self,
+        active_component: &ComponentId,
+        queue_type: Option<&QueueType>,
+    ) -> Vec<(String, bool)> {
         match active_component {
-            ComponentId::Messages => vec![
-                ("[↑/k]".to_string(), true),
-                (" Up ".to_string(), false),
-                ("[↓/j]".to_string(), true),
-                (" Down ".to_string(), false),
-                ("[Enter]".to_string(), true),
-                (" Select ".to_string(), false),
-                ("[Esc]".to_string(), true),
-                (" Back ".to_string(), false),
-                ("[n/]]".to_string(), true),
-                (" Next page ".to_string(), false),
-                ("[p/[]".to_string(), true),
-                (" Prev page ".to_string(), false),
-            ],
+            ComponentId::Messages => {
+                let mut shortcuts = vec![
+                    ("[↑/k]".to_string(), true),
+                    (" Up ".to_string(), false),
+                    ("[↓/j]".to_string(), true),
+                    (" Down ".to_string(), false),
+                    ("[Enter]".to_string(), true),
+                    (" Select ".to_string(), false),
+                    ("[Esc]".to_string(), true),
+                    (" Back ".to_string(), false),
+                    ("[n/]]".to_string(), true),
+                    (" Next page ".to_string(), false),
+                    ("[p/[]".to_string(), true),
+                    (" Prev page ".to_string(), false),
+                ];
+
+                // Add DLQ toggle shortcut based on current queue type
+                if let Some(queue_type) = queue_type {
+                    match queue_type {
+                        QueueType::Main => {
+                            shortcuts.push(("[d]".to_string(), true));
+                            shortcuts.push((" Switch to DLQ ".to_string(), false));
+                        }
+                        QueueType::DeadLetter => {
+                            shortcuts.push(("[d]".to_string(), true));
+                            shortcuts.push((" Switch to Main ".to_string(), false));
+                        }
+                    }
+                }
+
+                shortcuts
+            }
             ComponentId::MessageDetails => vec![
                 ("[↑/k]".to_string(), true),
                 (" Up ".to_string(), false),
@@ -83,8 +105,12 @@ impl HelpBar {
     }
 
     /// Combine context-specific and global shortcuts
-    fn get_help_text(&self, active_component: &ComponentId) -> Vec<(String, bool)> {
-        let mut shortcuts = self.get_context_shortcuts(active_component);
+    fn get_help_text(
+        &self,
+        active_component: &ComponentId,
+        queue_type: Option<&QueueType>,
+    ) -> Vec<(String, bool)> {
+        let mut shortcuts = self.get_context_shortcuts(active_component, queue_type);
         let global_shortcuts = self.get_global_shortcuts();
 
         // Add global shortcuts
@@ -99,7 +125,17 @@ impl HelpBar {
         area: Rect,
         active_component: &ComponentId,
     ) {
-        let help_text = self.get_help_text(active_component);
+        self.view_with_active_and_queue_type(frame, area, active_component, None);
+    }
+
+    pub fn view_with_active_and_queue_type(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        active_component: &ComponentId,
+        queue_type: Option<&QueueType>,
+    ) {
+        let help_text = self.get_help_text(active_component, queue_type);
         let mut spans: Vec<Span> = Vec::new();
 
         // Add each shortcut pair with separators
