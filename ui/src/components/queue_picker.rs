@@ -144,7 +144,7 @@ where
 {
     pub fn new_consumer_for_queue(&mut self) -> crate::error::AppResult<()> {
         log::debug!("Creating new consumer for queue");
-        let queue = self.pending_queue.take().expect("No queue selected");
+        let queue = self.queue_state.pending_queue.take().expect("No queue selected");
         log::info!("Creating consumer for queue: {}", queue);
 
         let taskpool = &self.taskpool;
@@ -152,7 +152,7 @@ where
 
         // Clone the Arc to pass into async block
         let service_bus_client = self.service_bus_client.clone();
-        let consumer = self.consumer.clone();
+        let consumer = self.queue_state.consumer.clone();
 
         let tx_to_main_err = tx_to_main.clone();
         taskpool.execute(async move {

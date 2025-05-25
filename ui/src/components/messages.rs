@@ -6,7 +6,7 @@ use tuirealm::props::{Alignment, BorderType, Borders, Color, TableBuilder, TextS
 use tuirealm::terminal::TerminalAdapter;
 use tuirealm::{Component, Event, MockComponent, NoUserEvent, StateValue};
 
-use super::common::{LoadingActivityMsg, MessageActivityMsg, Msg, QueueActivityMsg};
+use super::common::{LoadingActivityMsg, MessageActivityMsg, Msg, QueueActivityMsg, QueueType};
 use crate::error::{AppError, AppResult};
 
 use crate::app::model::Model;
@@ -20,6 +20,8 @@ pub struct PaginationInfo {
     pub current_page_size: usize,
     pub has_next_page: bool,
     pub has_previous_page: bool,
+    pub queue_name: Option<String>,
+    pub queue_type: QueueType,
 }
 
 #[derive(MockComponent)]
@@ -41,11 +43,13 @@ impl Messages {
         pagination_info: Option<PaginationInfo>,
     ) -> Self {
         let title = if let Some(info) = pagination_info {
+            let queue_display = Self::format_queue_display(&info);
             if info.total_messages_loaded == 0 {
-                " Messages - No messages available ".to_string()
+                format!(" {} - No messages available ", queue_display)
             } else {
                 format!(
-                    " Messages - Page {}/{} • {} total • {} on page {} ",
+                    " {} - Page {}/{} • {} total • {} on page {} ",
+                    queue_display,
                     info.current_page + 1, // Display as 1-based
                     info.total_pages_loaded.max(1),
                     info.total_messages_loaded,
@@ -82,16 +86,24 @@ impl Messages {
         Self { component }
     }
 
+    fn format_queue_display(info: &PaginationInfo) -> String {
+        let queue_name = info.queue_name.as_deref().unwrap_or("Unknown Queue");
+        match info.queue_type {
+            QueueType::Main => format!("Messages ({}) [Main - d→DLQ]", queue_name),
+            QueueType::DeadLetter => format!("Dead Letter Queue ({}) [DLQ - d→Main]", queue_name),
+        }
+    }
+
     fn format_navigation_hints(info: &PaginationInfo) -> String {
         let mut hints = Vec::new();
-        
+
         if info.has_previous_page {
             hints.push("◀[p]");
         }
         if info.has_next_page {
             hints.push("[n]▶");
         }
-        
+
         if hints.is_empty() {
             "• End of pages".to_string()
         } else {
@@ -187,6 +199,10 @@ impl Component<Msg, NoUserEvent> for Messages {
                 code: Key::Char('['),
                 modifiers: KeyModifiers::NONE,
             }) => return Some(Msg::MessageActivity(MessageActivityMsg::PreviousPage)),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('d'),
+                modifiers: KeyModifiers::NONE,
+            }) => return Some(Msg::QueueActivity(QueueActivityMsg::ToggleDeadLetterQueue)),
             _ => CmdResult::None,
         };
         match cmd_result {
@@ -226,7 +242,7 @@ where
             log::error!("Failed to send loading start message: {}", e);
         }
 
-        let consumer = self.consumer.clone().ok_or_else(|| {
+        let consumer = self.queue_state.consumer.clone().ok_or_else(|| {
             log::error!("No consumer available");
             AppError::State("No consumer available".to_string())
         })?;

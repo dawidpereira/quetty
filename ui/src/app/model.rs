@@ -1,4 +1,4 @@
-use crate::app::updates::messages::MessagePaginationState;
+use crate::app::queue_state::QueueState;
 use crate::app::view::*;
 use crate::components::common::{ComponentId, LoadingActivityMsg, Msg};
 use crate::components::error_popup::ErrorPopup;
@@ -14,8 +14,6 @@ use crate::error::{AppError, AppResult};
 use azservicebus::core::BasicRetryPolicy;
 use azservicebus::{ServiceBusClient, ServiceBusClientOptions};
 use copypasta::{ClipboardContext, ClipboardProvider};
-use server::consumer::Consumer;
-use server::model::MessageModel;
 use server::taskpool::TaskPool;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -50,7 +48,6 @@ where
     /// Used to draw to terminal
     pub terminal: TerminalBridge<T>,
 
-    pub pending_queue: Option<String>,
     pub selected_namespace: Option<String>,
     // Store both the loading message and the previous state to return to
     pub loading_message: Option<(String, AppState)>,
@@ -62,12 +59,10 @@ where
     pub rx_to_main: Receiver<Msg>,
 
     pub service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
-    pub consumer: Option<Arc<Mutex<Consumer>>>,
-    pub messages: Option<Vec<MessageModel>>,
     pub active_component: ComponentId,
 
-    // Message pagination state
-    pub message_pagination: MessagePaginationState,
+    // All queue-related state
+    pub queue_state: QueueState,
 }
 
 impl Model<CrosstermTerminalAdapter> {
@@ -82,8 +77,9 @@ impl Model<CrosstermTerminalAdapter> {
         let (tx_to_main, rx_to_main) = mpsc::channel();
         let taskpool = TaskPool::new(10);
 
+        let queue_state = QueueState::new();
         let mut app = Self {
-            app: Self::init_app(None)?,
+            app: Self::init_app(&queue_state)?,
             quit: false,
             redraw: true,
             terminal: TerminalBridge::init_crossterm()
@@ -93,14 +89,11 @@ impl Model<CrosstermTerminalAdapter> {
             rx_to_main,
             taskpool,
             service_bus_client: Arc::new(Mutex::new(service_bus_client)),
-            pending_queue: None,
-            consumer: None,
-            messages: None,
             selected_namespace: None,
             loading_message: None,
             previous_state: None,
             active_component: ComponentId::NamespacePicker,
-            message_pagination: MessagePaginationState::default(),
+            queue_state,
         };
 
         // Initialize loading indicator
@@ -200,8 +193,13 @@ where
                 // Create a temporary help bar with the active component
                 let mut help_bar = crate::components::help_bar::HelpBar::new();
 
-                // Directly render the help bar with the active component
-                help_bar.view_with_active(f, chunks[4], &self.active_component);
+                // Directly render the help bar with the active component and queue type
+                let queue_type = if self.active_component == ComponentId::Messages {
+                    Some(&self.queue_state.current_queue_type)
+                } else {
+                    None
+                };
+                help_bar.view_with_active_and_queue_type(f, chunks[4], &self.active_component, queue_type);
             }
         });
 
@@ -209,7 +207,7 @@ where
     }
 
     fn init_app(
-        messages: Option<&Vec<MessageModel>>,
+        queue_state: &QueueState,
     ) -> AppResult<Application<ComponentId, Msg, NoUserEvent>> {
         let mut app: Application<ComponentId, Msg, NoUserEvent> = Application::init(
             EventListenerCfg::default()
@@ -245,7 +243,7 @@ where
 
         app.mount(
             ComponentId::Messages,
-            Box::new(Messages::new(messages)),
+            Box::new(Messages::new(queue_state.messages.as_ref())),
             Vec::default(),
         )
         .map_err(|e| AppError::Component(e.to_string()))?;
