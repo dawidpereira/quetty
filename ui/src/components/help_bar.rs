@@ -16,79 +16,107 @@ impl HelpBar {
             style: Style::default().fg(Color::White).bg(Color::DarkGray),
         }
     }
-    
-    fn get_help_text(&self, active_component: &ComponentId) -> Vec<(String, bool)> {
+
+    /// Get global shortcuts that should appear in all contexts
+    fn get_global_shortcuts(&self) -> Vec<(String, bool)> {
+        vec![
+            ("[h]".to_string(), true),
+            (" Help ".to_string(), false),
+            ("[q]".to_string(), true),
+            (" Quit".to_string(), false),
+        ]
+    }
+
+    /// Get context-specific shortcuts for a given component
+    fn get_context_shortcuts(&self, active_component: &ComponentId) -> Vec<(String, bool)> {
         match active_component {
             ComponentId::Messages => vec![
-                ("↑/k".to_string(), true),
+                ("[↑/k]".to_string(), true),
                 (" Up ".to_string(), false),
-                ("↓/j".to_string(), true),
+                ("[↓/j]".to_string(), true),
                 (" Down ".to_string(), false),
-                ("Enter".to_string(), true),
+                ("[Enter]".to_string(), true),
                 (" Select ".to_string(), false),
-                ("Esc".to_string(), true),
+                ("[Esc]".to_string(), true),
                 (" Back ".to_string(), false),
-                ("PgUp/PgDn".to_string(), true),
+                ("[PgUp/PgDn]".to_string(), true),
                 (" Scroll ".to_string(), false),
-                ("q".to_string(), true),
-                (" Quit".to_string(), false),
             ],
             ComponentId::MessageDetails => vec![
-                ("↑/k".to_string(), true),
+                ("[↑/k]".to_string(), true),
                 (" Up ".to_string(), false),
-                ("↓/j".to_string(), true),
+                ("[↓/j]".to_string(), true),
                 (" Down ".to_string(), false),
-                ("←/→".to_string(), true),
+                ("[←/→]".to_string(), true),
                 (" Move cursor ".to_string(), false),
-                ("Esc".to_string(), true),
+                ("[Esc]".to_string(), true),
                 (" Back ".to_string(), false),
-                ("PgUp/PgDn".to_string(), true),
+                ("[PgUp/PgDn]".to_string(), true),
                 (" Scroll ".to_string(), false),
-                ("q".to_string(), true),
-                (" Quit".to_string(), false),
             ],
             ComponentId::QueuePicker => vec![
-                ("↑/k".to_string(), true),
+                ("[↑/k]".to_string(), true),
                 (" Up ".to_string(), false),
-                ("↓/j".to_string(), true),
+                ("[↓/j]".to_string(), true),
                 (" Down ".to_string(), false),
-                ("Enter/o".to_string(), true),
+                ("[Enter/o]".to_string(), true),
                 (" Select ".to_string(), false),
-                ("Esc".to_string(), true),
+                ("[Esc]".to_string(), true),
                 (" Back ".to_string(), false),
-                ("q".to_string(), true),
-                (" Quit".to_string(), false),
             ],
             ComponentId::NamespacePicker => vec![
-                ("↑/k".to_string(), true),
+                ("[↑/k]".to_string(), true),
                 (" Up ".to_string(), false),
-                ("↓/j".to_string(), true),
+                ("[↓/j]".to_string(), true),
                 (" Down ".to_string(), false),
-                ("Enter/o".to_string(), true),
+                ("[Enter/o]".to_string(), true),
                 (" Select ".to_string(), false),
-                ("q".to_string(), true),
-                (" Quit".to_string(), false),
             ],
             ComponentId::ErrorPopup => vec![
-                ("Enter/Esc".to_string(), true),
+                ("[Enter/Esc]".to_string(), true),
                 (" Close ".to_string(), false),
             ],
-            _ => vec![("q".to_string(), true), (" Quit".to_string(), false)],
+            _ => vec![],
         }
     }
-    
-    pub fn view_with_active(&mut self, frame: &mut Frame, area: Rect, active_component: &ComponentId) {
+
+    /// Combine context-specific and global shortcuts
+    fn get_help_text(&self, active_component: &ComponentId) -> Vec<(String, bool)> {
+        let mut shortcuts = self.get_context_shortcuts(active_component);
+        let global_shortcuts = self.get_global_shortcuts();
+
+        // Add global shortcuts
+        shortcuts.extend(global_shortcuts);
+
+        shortcuts
+    }
+
+    pub fn view_with_active(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        active_component: &ComponentId,
+    ) {
         let help_text = self.get_help_text(active_component);
-        let spans: Vec<Span> = help_text
-            .iter()
-            .map(|(text, highlight)| {
-                if *highlight {
-                    Span::styled(text.clone(), Style::default().fg(Color::Yellow))
-                } else {
-                    Span::raw(text.clone())
-                }
-            })
-            .collect();
+        let mut spans: Vec<Span> = Vec::new();
+
+        // Add each shortcut pair with separators
+        for (i, (text, highlight)) in help_text.iter().enumerate() {
+            // Add separator before each pair (except the first one)
+            if i > 0 && i % 2 == 0 {
+                spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
+            }
+
+            // Add the shortcut text
+            if *highlight {
+                spans.push(Span::styled(
+                    text.clone(),
+                    Style::default().fg(Color::Yellow),
+                ));
+            } else {
+                spans.push(Span::raw(text.clone()));
+            }
+        }
 
         let paragraph = tuirealm::ratatui::widgets::Paragraph::new(Text::from(Line::from(spans)))
             .style(self.style)
@@ -123,4 +151,3 @@ impl Component<Msg, NoUserEvent> for HelpBar {
         None
     }
 }
-
