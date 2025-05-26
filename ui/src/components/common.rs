@@ -59,6 +59,7 @@ pub enum MessageActivityMsg {
     CancelEditMessage,
     MessagesLoaded(Vec<MessageModel>),
     ConsumerCreated(Consumer),
+    QueueNameUpdated(String), // Update current queue name after consumer creation
     NextPage,
     PreviousPage,
     PaginationStateUpdated {
@@ -70,6 +71,7 @@ pub enum MessageActivityMsg {
     NewMessagesLoaded(Vec<MessageModel>), // New messages loaded from API
     PageChanged,                          // Just changed page within already loaded messages
     SendMessageToDLQ(usize),              // Send message at index to dead letter queue
+    ResendMessageFromDLQ(usize),          // Resend message from DLQ back to main queue
     RemoveMessageFromState(String, i64), // Remove message by ID and sequence from local state (after DLQ)
 }
 

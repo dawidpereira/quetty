@@ -86,6 +86,19 @@ impl Consumer {
         }
     }
 
+    pub async fn complete_message(
+        &mut self,
+        message: &azservicebus::ServiceBusReceivedMessage,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut guard = self.receiver.lock().await;
+        if let Some(receiver) = guard.as_mut() {
+            receiver.complete_message(message).await?;
+            Ok(())
+        } else {
+            Err("Receiver already disposed".into())
+        }
+    }
+
     pub async fn dispose(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut guard = self.receiver.lock().await;
         if let Some(receiver) = guard.take() {

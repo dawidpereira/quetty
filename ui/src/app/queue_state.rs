@@ -41,8 +41,6 @@ impl QueueState {
         Self::default()
     }
 
-
-
     /// Set the selected queue and reset related state
     pub fn set_selected_queue(&mut self, queue_name: String) {
         self.pending_queue = Some(queue_name.clone());
@@ -55,15 +53,25 @@ impl QueueState {
 
     /// Toggle between main queue and dead letter queue
     pub fn toggle_queue_type(&mut self) -> Option<String> {
-        if let Some(queue_name) = &self.current_queue_name {
+        if let Some(current_queue_name) = &self.current_queue_name {
             let new_queue_type = match self.current_queue_type {
                 QueueType::Main => QueueType::DeadLetter,
                 QueueType::DeadLetter => QueueType::Main,
             };
 
+            // Extract the base queue name (remove DLQ suffix if present)
+            let base_queue_name = if current_queue_name.ends_with("/$deadletterqueue") {
+                current_queue_name
+                    .strip_suffix("/$deadletterqueue")
+                    .unwrap()
+                    .to_string()
+            } else {
+                current_queue_name.clone()
+            };
+
             let target_queue = match new_queue_type {
-                QueueType::Main => queue_name.clone(),
-                QueueType::DeadLetter => format!("{}/$deadletterqueue", queue_name),
+                QueueType::Main => base_queue_name,
+                QueueType::DeadLetter => format!("{}/$deadletterqueue", base_queue_name),
             };
 
             self.pending_queue = Some(target_queue.clone());
@@ -79,4 +87,3 @@ impl QueueState {
         }
     }
 }
-

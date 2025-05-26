@@ -144,8 +144,15 @@ where
 {
     pub fn new_consumer_for_queue(&mut self) -> crate::error::AppResult<()> {
         log::debug!("Creating new consumer for queue");
-        let queue = self.queue_state.pending_queue.take().expect("No queue selected");
+        let queue = self
+            .queue_state
+            .pending_queue
+            .take()
+            .expect("No queue selected");
         log::info!("Creating consumer for queue: {}", queue);
+
+        // Store the queue name to update current_queue_name when consumer is created
+        let queue_name_for_update = queue.clone();
 
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
@@ -183,6 +190,16 @@ where
                     )))
                     .map_err(|e| {
                         log::error!("Failed to send consumer created message: {}", e);
+                        AppError::Component(e.to_string())
+                    })?;
+
+                // Send a separate message to update the current queue name
+                tx_to_main
+                    .send(Msg::MessageActivity(MessageActivityMsg::QueueNameUpdated(
+                        queue_name_for_update,
+                    )))
+                    .map_err(|e| {
+                        log::error!("Failed to send queue name updated message: {}", e);
                         AppError::Component(e.to_string())
                     })?;
 

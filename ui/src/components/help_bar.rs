@@ -62,6 +62,8 @@ impl HelpBar {
                         QueueType::DeadLetter => {
                             shortcuts.push(("[d]".to_string(), true));
                             shortcuts.push((" Switch to Main".to_string(), false));
+                            shortcuts.push(("[r]".to_string(), true));
+                            shortcuts.push((" Resend from DLQ ⚠️".to_string(), false));
                         }
                     }
                 }

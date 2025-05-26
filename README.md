@@ -53,6 +53,7 @@ cargo run
 - **Dead Letter Queue**
   - **d**: Toggle between main queue and dead letter queue
   - **Ctrl+D**: Send selected message to dead letter queue (with confirmation)
+  - **r**: Resend message from dead letter queue to main queue (DLQ only, development)
 - **Global**
   - **q**: Quit the application
   - **h**: Show help screen with keyboard shortcuts
@@ -90,15 +91,18 @@ Quetty provides comprehensive support for Azure Service Bus Dead Letter Queues:
 ### Features:
 - **Queue Switching**: Toggle between main queue and its dead letter queue using the `d` key
 - **Message Transfer**: Send messages to DLQ using `Ctrl+D` with confirmation dialog
+- **Message Resending**: Resend messages from DLQ back to main queue using `r` key (development)
+- **Producer Integration**: Uses dedicated Producer module for clean message sending
 - **Smart State Management**: Instant UI updates without server reloads
 - **Precise Targeting**: Messages are matched by both ID and sequence number for accuracy
 
 ### How it works:
 1. **View DLQ**: Press `d` to switch between main queue and dead letter queue
 2. **Send to DLQ**: Select a message and press `Ctrl+D` to send it to the dead letter queue
-3. **Confirmation**: A popup asks for confirmation before the operation
-4. **Instant Update**: The message is removed from the current view immediately
-5. **Local State**: No server reload needed - the UI updates instantly
+3. **Resend from DLQ**: Select a message in DLQ and press `r` to resend it to the main queue
+4. **Confirmation**: A popup asks for confirmation before any operation
+5. **Instant Update**: The message is removed from the current view immediately
+6. **Local State**: No server reload needed - the UI updates instantly
 
 ### Queue Naming:
 - **Main Queue**: `your-queue-name`
@@ -115,8 +119,9 @@ Quetty provides comprehensive support for Azure Service Bus Dead Letter Queues:
 - ✅ Queue navigation
 - ✅ Smart local state management
 - ⚠️ **Message transfer to DLQ** - Under development
-- ⚠️ **DLQ sending error recovery** - Limited testing
-- ⚠️ **DLQ sending edge cases** - May not handle all scenarios
+- ⚠️ **Message resending from DLQ** - Under development
+- ⚠️ **DLQ operations error recovery** - Limited testing
+- ⚠️ **DLQ operations edge cases** - May not handle all scenarios
 
 ## Configuration
 
@@ -145,10 +150,10 @@ max_messages = 10
 - [x] Support for DLQ (sending: development stage).
 ##### Message management
 - [x] DQL message
+- [x] Resend message from DLQ (development)
 - [ ] Bulk DLQ
 - [ ] Delete message
 - [ ] Bulk delete
-- [ ] Resend message
 - [ ] Bulk resend
 - [ ] Edit message
 - [ ] Send new message
