@@ -54,6 +54,13 @@ impl MockComponent for ConfirmationPopup {
             Line::from("Are you sure you want to send this message to the dead"),
             Line::from("letter queue? This action cannot be undone."),
             Line::from(""),
+            Line::from(vec![Span::styled(
+                "⚠️ WARNING: DLQ message sending is in development - not for production use",
+                tuirealm::ratatui::style::Style::default()
+                    .fg(tuirealm::ratatui::style::Color::Red)
+                    .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
+            )]),
+            Line::from(""),
             Line::from(vec![
                 Span::styled(
                     "[Y] Yes",
@@ -120,4 +127,3 @@ impl Component<Msg, NoUserEvent> for ConfirmationPopup {
         }
     }
 }
-
