@@ -47,6 +47,7 @@ where
         on_confirm: Box<Msg>,
     ) -> Option<Msg> {
         // Store the action to perform on confirmation
+        log::debug!("Storing confirmation action: {:?}", on_confirm);
         self.pending_confirmation_action = Some(on_confirm);
 
         if let Err(e) = self.mount_confirmation_popup(&title, &message) {
@@ -58,6 +59,8 @@ where
     }
 
     fn handle_confirmation_result(&mut self, confirmed: bool) -> Option<Msg> {
+        log::debug!("Handling confirmation result: confirmed={}", confirmed);
+
         // Close the confirmation popup
         if let Err(e) = self.unmount_confirmation_popup() {
             log::error!("Failed to unmount confirmation popup: {}", e);
@@ -66,6 +69,7 @@ where
         if confirmed {
             // Execute the stored action if user confirmed
             if let Some(action) = self.pending_confirmation_action.take() {
+                log::debug!("Executing stored confirmation action: {:?}", action);
                 Some(*action)
             } else {
                 log::warn!("No pending confirmation action found");
@@ -73,9 +77,9 @@ where
             }
         } else {
             // User cancelled, just clear the pending action
+            log::debug!("User cancelled confirmation, clearing pending action");
             self.pending_confirmation_action = None;
             None
         }
     }
 }
-

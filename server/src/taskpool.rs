@@ -28,23 +28,40 @@ impl TaskPool {
     {
         let semaphore = self.semaphore.clone();
         let token = self.cancel_token.clone();
+
+        log::debug!(
+            "TaskPool: Spawning new task, available permits: {}",
+            semaphore.available_permits()
+        );
+
         tokio::spawn(async move {
+            log::debug!("TaskPool: Task spawned, attempting to acquire semaphore permit");
+
             let main = async {
                 match semaphore.acquire().await {
                     Ok(_permit) => {
+                        log::debug!("TaskPool: Semaphore permit acquired, executing task");
                         func.await;
+                        log::debug!("TaskPool: Task execution completed");
                     }
                     Err(e) => {
+                        log::error!("TaskPool: Failed to acquire semaphore: {}", e);
                         eprintln!("Failed to acquire semaphore: {}", e);
                     }
                 }
             };
 
             tokio::select! {
-                () = main => {},
-                () = token.cancelled() => {}
+                () = main => {
+                    log::debug!("TaskPool: Task finished normally");
+                },
+                () = token.cancelled() => {
+                    log::debug!("TaskPool: Task cancelled");
+                }
             }
         });
+
+        log::debug!("TaskPool: Task submitted to tokio spawn");
     }
 }
 

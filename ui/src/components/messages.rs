@@ -221,6 +221,24 @@ impl Component<Msg, NoUserEvent> for Messages {
                     }
                 ));
             }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('r'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                let index = match self.state() {
+                    tuirealm::State::One(StateValue::Usize(index)) => index,
+                    _ => 0,
+                };
+                return Some(Msg::PopupActivity(
+                    super::common::PopupActivityMsg::ShowConfirmation {
+                        title: "Resend Message from Dead Letter Queue".to_string(),
+                        message: "Are you sure you want to resend this message from the dead letter queue\nback to the main queue?".to_string(),
+                        on_confirm: Box::new(Msg::MessageActivity(
+                            super::common::MessageActivityMsg::ResendMessageFromDLQ(index)
+                        )),
+                    }
+                ));
+            }
             _ => CmdResult::None,
         };
         match cmd_result {
@@ -249,7 +267,6 @@ where
     T: TerminalAdapter,
 {
     pub fn load_messages(&mut self) -> AppResult<()> {
-        log::debug!("Loading messages");
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
 
