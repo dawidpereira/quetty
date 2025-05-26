@@ -713,23 +713,71 @@ where
         );
 
         let mut attempts = 0;
-        const MAX_ATTEMPTS: usize = 10;
+        let dlq_config = crate::config::CONFIG.dlq();
+        let max_attempts = dlq_config.max_attempts();
+        let receive_timeout_secs = dlq_config
+            .receive_timeout_secs()
+            .min(dlq_config.receive_timeout_cap_secs());
         let mut target_message = None;
         let mut other_messages = Vec::new();
 
-        while attempts < MAX_ATTEMPTS && target_message.is_none() {
-            let received_messages = consumer.receive_messages(5).await.map_err(|e| {
-                log::error!("Failed to receive messages: {}", e);
-                crate::error::AppError::ServiceBus(e.to_string())
-            })?;
+        while attempts < max_attempts && target_message.is_none() {
+            log::debug!("Attempt {} to find target message", attempts + 1);
+
+            // Add timeout to prevent hanging indefinitely
+            let received_messages = match tokio::time::timeout(
+                std::time::Duration::from_secs(receive_timeout_secs),
+                consumer.receive_messages(5),
+            )
+            .await
+            {
+                Ok(Ok(messages)) => messages,
+                Ok(Err(e)) => {
+                    log::error!("Failed to receive messages: {}", e);
+                    return Err(crate::error::AppError::ServiceBus(e.to_string()));
+                }
+                Err(_) => {
+                    log::error!(
+                        "Timeout while receiving messages after {} seconds",
+                        receive_timeout_secs
+                    );
+                    return Err(crate::error::AppError::ServiceBus(format!(
+                        "Timeout while receiving messages after {} seconds",
+                        receive_timeout_secs
+                    )));
+                }
+            };
 
             if received_messages.is_empty() {
-                log::warn!("No more messages available to receive");
-                break;
+                log::warn!(
+                    "No more messages available to receive on attempt {}",
+                    attempts + 1
+                );
+                // If no messages are available, wait a bit before retrying
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    dlq_config.retry_delay_ms(),
+                ))
+                .await;
+                attempts += 1;
+                continue;
             }
+
+            log::debug!(
+                "Received {} messages on attempt {}",
+                received_messages.len(),
+                attempts + 1
+            );
 
             for msg in received_messages {
                 if let Some(msg_id) = msg.message_id() {
+                    log::debug!(
+                        "Checking message ID: {} (looking for: {}), sequence: {} (looking for: {})",
+                        msg_id,
+                        message_id,
+                        msg.sequence_number(),
+                        message_sequence
+                    );
+
                     if msg_id == message_id && msg.sequence_number() == message_sequence {
                         log::info!(
                             "Found target message with ID {} and sequence {}",
@@ -739,6 +787,8 @@ where
                         target_message = Some(msg);
                         break;
                     }
+                } else {
+                    log::debug!("Message has no ID, sequence: {}", msg.sequence_number());
                 }
                 other_messages.push(msg);
             }
@@ -747,7 +797,10 @@ where
         }
 
         // Abandon all the other messages we received but don't want to dead letter
-        Self::abandon_other_messages(consumer, other_messages).await;
+        if !other_messages.is_empty() {
+            log::debug!("Abandoning {} other messages", other_messages.len());
+            Self::abandon_other_messages(consumer, other_messages).await;
+        }
 
         // Return the target message or error
         target_message.ok_or_else(|| {
@@ -758,8 +811,8 @@ where
                 attempts
             );
             crate::error::AppError::ServiceBus(format!(
-                "Could not find message with ID {} and sequence {} in received messages",
-                message_id, message_sequence
+                "Could not find message with ID {} and sequence {} in received messages after {} attempts",
+                message_id, message_sequence, attempts
             ))
         })
     }
@@ -905,28 +958,66 @@ where
         let main_queue_name = match self.get_main_queue_name_from_current_dlq() {
             Ok(name) => name,
             Err(e) => {
+                log::error!("Failed to get main queue name: {}", e);
                 return Some(Msg::Error(e));
             }
         };
         let service_bus_client = self.service_bus_client.clone();
 
+        log::info!(
+            "Starting resend operation for message {} (sequence {}) from DLQ to queue {}",
+            message_id,
+            message_sequence,
+            main_queue_name
+        );
+
         let task = async move {
-            let result = Self::execute_resend_operation(
-                consumer,
-                message_id.clone(),
-                message_sequence,
-                main_queue_name,
-                service_bus_client,
+            log::debug!("Executing resend operation in background task");
+
+            // Add overall timeout to the entire resend operation
+            let dlq_config = crate::config::CONFIG.dlq();
+            let overall_timeout_secs = (dlq_config.receive_timeout_secs()
+                + dlq_config.send_timeout_secs())
+            .min(dlq_config.overall_timeout_cap_secs());
+            log::debug!(
+                "Using overall timeout of {} seconds for resend operation",
+                overall_timeout_secs
+            );
+
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(overall_timeout_secs),
+                Self::execute_resend_operation(
+                    consumer,
+                    message_id.clone(),
+                    message_sequence,
+                    main_queue_name,
+                    service_bus_client,
+                ),
             )
             .await;
 
             match result {
-                Ok(()) => {
+                Ok(Ok(())) => {
+                    log::info!(
+                        "Resend operation completed successfully for message {}",
+                        message_id
+                    );
                     Self::handle_resend_success(&tx_to_main, &message_id, message_sequence);
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     log::error!("Failed to resend message {}: {}", message_id, e);
                     Self::handle_resend_error(&tx_to_main, &tx_to_main_err, e);
+                }
+                Err(_) => {
+                    log::error!(
+                        "Overall timeout for resend operation after {} seconds",
+                        overall_timeout_secs
+                    );
+                    let timeout_error = crate::error::AppError::ServiceBus(format!(
+                        "Resend operation timed out after {} seconds",
+                        overall_timeout_secs
+                    ));
+                    Self::handle_resend_error(&tx_to_main, &tx_to_main_err, timeout_error);
                 }
             }
         };
@@ -946,19 +1037,23 @@ where
             Mutex<azservicebus::ServiceBusClient<azservicebus::core::BasicRetryPolicy>>,
         >,
     ) -> Result<(), crate::error::AppError> {
+        log::debug!("Acquiring consumer lock for resend operation");
         let mut consumer = consumer.lock().await;
 
         // Find the target message in DLQ
+        log::debug!("Searching for target message in DLQ");
         let target_msg =
             Self::find_target_message(&mut consumer, &message_id, message_sequence).await?;
 
         // Get the message body and properties for resending
+        log::debug!("Extracting message body for resending");
         let message_body = target_msg.body().map_err(|e| {
             log::error!("Failed to get message body: {}", e);
             crate::error::AppError::ServiceBus(e.to_string())
         })?;
 
         // Create a new message with the same content using Producer helper
+        log::debug!("Creating new message with {} bytes", message_body.len());
         let new_message = Producer::create_message(message_body.to_vec());
 
         // Send the message to the main queue
@@ -1030,30 +1125,77 @@ where
             Mutex<azservicebus::ServiceBusClient<azservicebus::core::BasicRetryPolicy>>,
         >,
     ) -> Result<(), crate::error::AppError> {
-        // Acquire the service bus client lock
-        let mut client = service_bus_client.lock().await;
+        // Use configurable timeout with cap to avoid hanging - Azure Service Bus might have internal timeouts
+        let dlq_config = crate::config::CONFIG.dlq();
+        let send_timeout_secs = dlq_config
+            .send_timeout_secs()
+            .min(dlq_config.send_timeout_cap_secs());
 
-        // Create a producer for the main queue
-        let mut producer = client
-            .create_producer_for_queue(queue_name, azservicebus::ServiceBusSenderOptions::default())
-            .await
-            .map_err(|e| {
-                log::error!("Failed to create producer for queue {}: {}", queue_name, e);
-                crate::error::AppError::ServiceBus(e.to_string())
-            })?;
+        log::debug!(
+            "Creating producer for queue: {} (timeout: {}s)",
+            queue_name,
+            send_timeout_secs
+        );
 
-        // Send the message using the producer
-        producer.send_message(message).await.map_err(|e| {
-            log::error!("Failed to send message to queue {}: {}", queue_name, e);
-            crate::error::AppError::ServiceBus(e.to_string())
-        })?;
+        // Add timeout to the entire send operation
+        let send_result =
+            tokio::time::timeout(std::time::Duration::from_secs(send_timeout_secs), async {
+                log::debug!("Acquiring service bus client lock for sending");
+                // Acquire the service bus client lock
+                let mut client = service_bus_client.lock().await;
 
-        // Dispose the producer
-        producer.dispose().await.map_err(|e| {
-            log::warn!("Failed to dispose producer for queue {}: {}", queue_name, e);
-            crate::error::AppError::ServiceBus(e.to_string())
-        })?;
-        Ok(())
+                log::debug!("Creating producer for queue: {}", queue_name);
+                // Create a producer for the main queue
+                let mut producer = client
+                    .create_producer_for_queue(
+                        queue_name,
+                        azservicebus::ServiceBusSenderOptions::default(),
+                    )
+                    .await
+                    .map_err(|e| {
+                        log::error!("Failed to create producer for queue {}: {}", queue_name, e);
+                        crate::error::AppError::ServiceBus(e.to_string())
+                    })?;
+
+                log::debug!("Sending message to queue: {}", queue_name);
+
+                // Send the message using the producer
+                producer.send_message(message).await.map_err(|e| {
+                    log::error!("Failed to send message to queue {}: {}", queue_name, e);
+                    crate::error::AppError::ServiceBus(e.to_string())
+                })?;
+
+                log::debug!("Message sent successfully, disposing producer");
+
+                // Dispose the producer
+                producer.dispose().await.map_err(|e| {
+                    log::warn!("Failed to dispose producer for queue {}: {}", queue_name, e);
+                    crate::error::AppError::ServiceBus(e.to_string())
+                })?;
+
+                log::debug!("Producer disposed successfully");
+                Ok::<(), crate::error::AppError>(())
+            })
+            .await;
+
+        match send_result {
+            Ok(Ok(())) => {
+                log::info!("Successfully sent message to queue: {}", queue_name);
+                Ok(())
+            }
+            Ok(Err(e)) => Err(e),
+            Err(_) => {
+                log::error!(
+                    "Timeout while sending message to queue {} after {} seconds",
+                    queue_name,
+                    send_timeout_secs
+                );
+                Err(crate::error::AppError::ServiceBus(format!(
+                    "Timeout while sending message to queue {} after {} seconds",
+                    queue_name, send_timeout_secs
+                )))
+            }
+        }
     }
 
     /// Handles successful resend operation
