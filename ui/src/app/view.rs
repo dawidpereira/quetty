@@ -38,7 +38,7 @@ pub fn view_confirmation_popup(
     f: &mut Frame,
 ) -> Result<(), AppError> {
     // Create a centered box for the confirmation popup
-    let popup_width = 60;
+    let popup_width = 80;
     let popup_height = 8;
     let area = f.area();
 

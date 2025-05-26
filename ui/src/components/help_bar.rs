@@ -55,13 +55,13 @@ impl HelpBar {
                     match queue_type {
                         QueueType::Main => {
                             shortcuts.push(("[d]".to_string(), true));
-                            shortcuts.push((" Switch to DLQ ".to_string(), false));
+                            shortcuts.push((" Switch to DLQ".to_string(), false));
                             shortcuts.push(("[Ctrl+d]".to_string(), true));
-                            shortcuts.push((" Send to DLQ ".to_string(), false));
+                            shortcuts.push((" Send to DLQ ⚠️".to_string(), false));
                         }
                         QueueType::DeadLetter => {
                             shortcuts.push(("[d]".to_string(), true));
-                            shortcuts.push((" Switch to Main ".to_string(), false));
+                            shortcuts.push((" Switch to Main".to_string(), false));
                         }
                     }
                 }

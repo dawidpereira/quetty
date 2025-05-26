@@ -37,6 +37,10 @@ impl MockComponent for HelpScreen {
                 Style::default().fg(Color::Yellow),
             )]),
             Line::from(Span::raw("Press Esc or h to close this help screen")),
+            Line::from(vec![Span::styled(
+                "⚠️ DLQ message sending is in development - not for production use",
+                Style::default().fg(Color::Red),
+            )]),
         ]);
 
         let header_para = Paragraph::new(header_text)
@@ -61,7 +65,7 @@ impl MockComponent for HelpScreen {
             vec![
                 "Messages",
                 "Ctrl+d",
-                "Send message to DLQ (with confirmation)",
+                "Send message to DLQ (DEV - with confirmation)",
             ],
             vec!["Messages", "Enter", "View message details"],
             // Message details

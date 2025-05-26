@@ -557,6 +557,8 @@ where
     }
 
     fn handle_send_message_to_dlq(&mut self, index: usize) -> Option<Msg> {
+        // ⚠️ WARNING: DLQ message sending is in development and not recommended for production use
+
         // Validate the request
         let message = match self.validate_dlq_request(index) {
             Ok(msg) => msg,

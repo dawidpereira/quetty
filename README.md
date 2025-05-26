@@ -1,5 +1,7 @@
 # Quetty
 
+⚠️ **DEVELOPMENT STATUS**: This application is currently under active development and is **NOT ready for production use**. Features may be incomplete, unstable, or subject to breaking changes. Use at your own risk and thoroughly test in development environments only.
+
 ## Overview
 Quetty is a terminal-based queue manager designed to help you manage and interact with message queues efficiently. It provides a user-friendly interface for viewing, previewing, and managing messages in your queues.
 
@@ -10,6 +12,8 @@ Quetty is a terminal-based queue manager designed to help you manage and interac
 - **Real-time Updates**: Load and display messages in real-time.
 - **Message Pagination**: Efficiently browse through large message queues with client-side pagination.
 - **Smart Caching**: Previously viewed pages are cached for instant navigation.
+- **Dead Letter Queue (DLQ) Support**: Switch between main queue and DLQ, send messages to DLQ.
+- **Smart State Management**: Local state updates for instant UI refresh without server calls.
 
 ## Installation
 1. Clone the repository:
@@ -46,6 +50,9 @@ cargo run
 - **Message Pagination**
   - **n/]**: Go to next page of messages
   - **p/[**: Go to previous page of messages
+- **Dead Letter Queue**
+  - **d**: Toggle between main queue and dead letter queue
+  - **Ctrl+D**: Send selected message to dead letter queue (with confirmation)
 - **Global**
   - **q**: Quit the application
   - **h**: Show help screen with keyboard shortcuts
@@ -74,6 +81,43 @@ Quetty implements an efficient client-side pagination system for browsing throug
 - **Handles queue changes** - new messages only affect future loads
 - **Reliable pagination** - no complex sequence tracking
 
+## Dead Letter Queue (DLQ) Support
+
+⚠️ **Development Feature Warning**: DLQ **message sending** functionality is currently in development and is **NOT recommended for production use**. Use message sending with caution and thoroughly test in development environments only.
+
+Quetty provides comprehensive support for Azure Service Bus Dead Letter Queues:
+
+### Features:
+- **Queue Switching**: Toggle between main queue and its dead letter queue using the `d` key
+- **Message Transfer**: Send messages to DLQ using `Ctrl+D` with confirmation dialog
+- **Smart State Management**: Instant UI updates without server reloads
+- **Precise Targeting**: Messages are matched by both ID and sequence number for accuracy
+
+### How it works:
+1. **View DLQ**: Press `d` to switch between main queue and dead letter queue
+2. **Send to DLQ**: Select a message and press `Ctrl+D` to send it to the dead letter queue
+3. **Confirmation**: A popup asks for confirmation before the operation
+4. **Instant Update**: The message is removed from the current view immediately
+5. **Local State**: No server reload needed - the UI updates instantly
+
+### Queue Naming:
+- **Main Queue**: `your-queue-name`
+- **Dead Letter Queue**: `your-queue-name/$deadletterqueue`
+
+### Safety Features:
+- **Confirmation Dialog**: Prevents accidental DLQ operations
+- **Dual Matching**: Messages are identified by both ID and sequence number
+- **Error Handling**: Comprehensive error reporting for failed operations
+- **State Consistency**: Local state always matches server state
+
+### Development Status:
+- ✅ DLQ switching and viewing
+- ✅ Queue navigation
+- ✅ Smart local state management
+- ⚠️ **Message transfer to DLQ** - Under development
+- ⚠️ **DLQ sending error recovery** - Limited testing
+- ⚠️ **DLQ sending edge cases** - May not handle all scenarios
+
 ## Configuration
 
 Edit `ui/config.toml` to customize pagination:
@@ -98,8 +142,10 @@ max_messages = 10
 - [x] Create a user guide or README to help new users get started.
 ### Feature Expansion:
 - [x] Support for messages pagination.
-- [ ] Support for DLQ.
+- [x] Support for DLQ (sending: development stage).
 ##### Message management
+- [x] DQL message
+- [ ] Bulk DLQ
 - [ ] Delete message
 - [ ] Bulk delete
 - [ ] Resend message
