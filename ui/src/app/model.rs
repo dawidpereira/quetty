@@ -1,6 +1,7 @@
 use crate::app::queue_state::QueueState;
 use crate::app::view::*;
 use crate::components::common::{ComponentId, LoadingActivityMsg, Msg};
+use crate::components::confirmation_popup::ConfirmationPopup;
 use crate::components::error_popup::ErrorPopup;
 use crate::components::global_key_watcher::GlobalKeyWatcher;
 use crate::components::loading_indicator::LoadingIndicator;
@@ -63,6 +64,9 @@ where
 
     // All queue-related state
     pub queue_state: QueueState,
+
+    // Pending confirmation action (message to execute on confirmation)
+    pub pending_confirmation_action: Option<Box<Msg>>,
 }
 
 impl Model<CrosstermTerminalAdapter> {
@@ -94,6 +98,7 @@ impl Model<CrosstermTerminalAdapter> {
             previous_state: None,
             active_component: ComponentId::NamespacePicker,
             queue_state,
+            pending_confirmation_action: None,
         };
 
         // Initialize loading indicator
@@ -171,25 +176,23 @@ where
             // Apply the view based on the app state, with error popup handling
             view_result = match self.app_state {
                 AppState::NamespacePicker => {
-                    with_error_popup(&mut self.app, f, &chunks, view_namespace_picker)
+                    with_popup(&mut self.app, f, &chunks, view_namespace_picker)
                 }
-                AppState::QueuePicker => {
-                    with_error_popup(&mut self.app, f, &chunks, view_queue_picker)
-                }
+                AppState::QueuePicker => with_popup(&mut self.app, f, &chunks, view_queue_picker),
                 AppState::MessagePicker => {
-                    with_error_popup(&mut self.app, f, &chunks, view_message_picker)
+                    with_popup(&mut self.app, f, &chunks, view_message_picker)
                 }
                 AppState::MessageDetails => {
-                    with_error_popup(&mut self.app, f, &chunks, view_message_details)
+                    with_popup(&mut self.app, f, &chunks, view_message_details)
                 }
-                AppState::Loading => with_error_popup(&mut self.app, f, &chunks, view_loading),
-                AppState::HelpScreen => {
-                    with_error_popup(&mut self.app, f, &chunks, view_help_screen)
-                }
+                AppState::Loading => with_popup(&mut self.app, f, &chunks, view_loading),
+                AppState::HelpScreen => with_popup(&mut self.app, f, &chunks, view_help_screen),
             };
 
-            // View help bar (if not showing error popup) with active component
-            if !self.app.mounted(&ComponentId::ErrorPopup) {
+            // View help bar (if not showing any popup) with active component
+            if !self.app.mounted(&ComponentId::ErrorPopup)
+                && !self.app.mounted(&ComponentId::ConfirmationPopup)
+            {
                 // Create a temporary help bar with the active component
                 let mut help_bar = crate::components::help_bar::HelpBar::new();
 
@@ -199,16 +202,19 @@ where
                 } else {
                     None
                 };
-                help_bar.view_with_active_and_queue_type(f, chunks[4], &self.active_component, queue_type);
+                help_bar.view_with_active_and_queue_type(
+                    f,
+                    chunks[4],
+                    &self.active_component,
+                    queue_type,
+                );
             }
         });
 
         view_result
     }
 
-    fn init_app(
-        queue_state: &QueueState,
-    ) -> AppResult<Application<ComponentId, Msg, NoUserEvent>> {
+    fn init_app(queue_state: &QueueState) -> AppResult<Application<ComponentId, Msg, NoUserEvent>> {
         let mut app: Application<ComponentId, Msg, NoUserEvent> = Application::init(
             EventListenerCfg::default()
                 .crossterm_input_listener(
@@ -356,6 +362,72 @@ where
 
         Ok(())
     }
+
+    /// Mount confirmation popup and give focus to it
+    pub fn mount_confirmation_popup(&mut self, title: &str, message: &str) -> AppResult<()> {
+        log::debug!("Displaying confirmation popup: {}", message);
+
+        self.app
+            .remount(
+                ComponentId::ConfirmationPopup,
+                Box::new(ConfirmationPopup::new(title, message)),
+                Vec::default(),
+            )
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        self.app
+            .active(&ComponentId::ConfirmationPopup)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        self.redraw = true;
+
+        Ok(())
+    }
+
+    /// Unmount confirmation popup and return focus to previous component
+    pub fn unmount_confirmation_popup(&mut self) -> AppResult<()> {
+        self.app
+            .umount(&ComponentId::ConfirmationPopup)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        // Return to appropriate state
+        match self.app_state {
+            AppState::NamespacePicker => {
+                self.app
+                    .active(&ComponentId::NamespacePicker)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::QueuePicker => {
+                self.app
+                    .active(&ComponentId::QueuePicker)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::MessagePicker => {
+                self.app
+                    .active(&ComponentId::Messages)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::MessageDetails => {
+                self.app
+                    .active(&ComponentId::MessageDetails)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::Loading => {
+                // If we were showing a loading indicator, just continue showing it
+                // No need to activate any specific component
+                // The loading indicator will be updated or closed by its own message flow
+            }
+            AppState::HelpScreen => {
+                self.app
+                    .active(&ComponentId::HelpScreen)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+        }
+
+        self.redraw = true;
+
+        Ok(())
+    }
 }
 
 impl<T> Update<Msg> for Model<T>
@@ -399,20 +471,10 @@ where
                 Msg::QueueActivity(msg) => self.update_queue(msg),
                 Msg::NamespaceActivity(msg) => self.update_namespace(msg),
                 Msg::LoadingActivity(msg) => self.update_loading(msg),
+                Msg::PopupActivity(msg) => self.update_popup(msg),
                 Msg::Error(e) => {
                     log::error!("Error received: {}", e);
-                    if let Err(err) = self.mount_error_popup(&e) {
-                        log::error!("Failed to mount error popup: {}", err);
-                        // Fallback to terminal error handling
-                        crate::error::handle_error(e);
-                    }
-                    None
-                }
-                Msg::CloseErrorPopup => {
-                    if let Err(e) = self.unmount_error_popup() {
-                        log::error!("Failed to unmount error popup: {}", e);
-                    }
-                    None
+                    self.update_popup(crate::components::common::PopupActivityMsg::ShowError(e))
                 }
                 Msg::ToggleHelpScreen => self.update_help(),
                 _ => None,

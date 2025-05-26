@@ -58,7 +58,11 @@ impl MockComponent for HelpScreen {
             vec!["Messages", "n/]", "Next page"],
             vec!["Messages", "p/[", "Previous page"],
             vec!["Messages", "d", "Toggle Dead Letter Queue"],
-            vec!["Messages", "Ctrl+d", "Send message to DLQ"],
+            vec![
+                "Messages",
+                "Ctrl+d",
+                "Send message to DLQ (with confirmation)",
+            ],
             vec!["Messages", "Enter", "View message details"],
             // Message details
             vec!["Details", "←/→", "Move cursor"],

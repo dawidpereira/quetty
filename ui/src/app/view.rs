@@ -32,8 +32,37 @@ pub fn view_error_popup(
     Ok(())
 }
 
-// Higher-order function to wrap view functions with error popup handling
-pub fn with_error_popup<F>(
+// Render the confirmation popup centered on the screen
+pub fn view_confirmation_popup(
+    app: &mut Application<ComponentId, Msg, NoUserEvent>,
+    f: &mut Frame,
+) -> Result<(), AppError> {
+    // Create a centered box for the confirmation popup
+    let popup_width = 60;
+    let popup_height = 8;
+    let area = f.area();
+
+    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+
+    let popup_area = Rect::new(
+        popup_x,
+        popup_y,
+        popup_width.min(area.width),
+        popup_height.min(area.height),
+    );
+
+    app.view(&ComponentId::ConfirmationPopup, f, popup_area);
+
+    // Make sure the popup has focus
+    app.active(&ComponentId::ConfirmationPopup)
+        .map_err(|e| AppError::Component(e.to_string()))?;
+
+    Ok(())
+}
+
+// Higher-order function to wrap view functions with popup handling
+pub fn with_popup<F>(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,
     f: &mut Frame,
     chunks: &[Rect],
@@ -46,12 +75,17 @@ where
         &[Rect],
     ) -> Result<(), AppError>,
 {
-    // First, try to render the error popup if it exists
+    // First, try to render the confirmation popup if it exists
+    if app.mounted(&ComponentId::ConfirmationPopup) {
+        return view_confirmation_popup(app, f);
+    }
+
+    // Then, try to render the error popup if it exists
     if app.mounted(&ComponentId::ErrorPopup) {
         return view_error_popup(app, f);
     }
 
-    // If no error popup, proceed with the original view function
+    // If no popups, proceed with the original view function
     view_fn(app, f, chunks)
 }
 

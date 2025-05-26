@@ -18,6 +18,7 @@ pub enum ComponentId {
     NamespacePicker,
     GlobalKeyWatcher,
     ErrorPopup,
+    ConfirmationPopup,
     LoadingIndicator,
     HelpScreen,
 }
@@ -31,8 +32,8 @@ pub enum Msg {
     QueueActivity(QueueActivityMsg),
     NamespaceActivity(NamespaceActivityMsg),
     LoadingActivity(LoadingActivityMsg),
+    PopupActivity(PopupActivityMsg),
     Error(AppError),
-    CloseErrorPopup,
     ToggleHelpScreen,
 }
 
@@ -69,6 +70,7 @@ pub enum MessageActivityMsg {
     NewMessagesLoaded(Vec<MessageModel>), // New messages loaded from API
     PageChanged,                          // Just changed page within already loaded messages
     SendMessageToDLQ(usize),              // Send message at index to dead letter queue
+    ReloadMessages,                       // Reload messages from current queue
 }
 
 #[derive(Debug, PartialEq)]
@@ -76,6 +78,33 @@ pub enum LoadingActivityMsg {
     Start(String),
     Update(String),
     Stop,
+}
+
+#[derive(Debug)]
+pub enum PopupActivityMsg {
+    ShowError(AppError),
+    CloseError,
+    ShowConfirmation {
+        title: String,
+        message: String,
+        on_confirm: Box<Msg>,
+    },
+    ConfirmationResult(bool),
+}
+
+impl PartialEq for PopupActivityMsg {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (PopupActivityMsg::ShowError(e1), PopupActivityMsg::ShowError(e2)) => e1 == e2,
+            (PopupActivityMsg::CloseError, PopupActivityMsg::CloseError) => true,
+            (
+                PopupActivityMsg::ConfirmationResult(b1),
+                PopupActivityMsg::ConfirmationResult(b2),
+            ) => b1 == b2,
+            // ShowConfirmation is not compared due to Box<Msg>
+            _ => false,
+        }
+    }
 }
 
 impl Default for Msg {
