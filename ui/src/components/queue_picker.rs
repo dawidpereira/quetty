@@ -216,7 +216,6 @@ where
     }
 
     pub fn load_queues(&mut self) -> crate::error::AppResult<()> {
-        log::debug!("Loading queues");
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
         let selected_namespace = self.selected_namespace.clone();

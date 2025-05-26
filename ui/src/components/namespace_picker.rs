@@ -130,7 +130,6 @@ where
     T: TerminalAdapter,
 {
     pub fn load_namespaces(&mut self) -> AppResult<()> {
-        log::debug!("Loading namespaces");
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
 

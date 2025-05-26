@@ -45,7 +45,7 @@ pub fn handle_error(error: AppError) {
         AppError::State(msg) => log::warn!("State Error: {}", msg),
     }
 
-    // Print to stderr (this will be redundant with logging, but we'll keep it for now)
-    // TODO: Display error in UI
-    eprintln!("Error: {:?}", error);
+    // Note: This function is used as a fallback when the UI error popup system fails.
+    // In normal operation, errors are displayed in the UI via ErrorPopup component.
+    // This fallback ensures critical errors are still visible if the UI system is broken.
 }
