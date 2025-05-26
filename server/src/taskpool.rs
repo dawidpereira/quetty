@@ -46,7 +46,6 @@ impl TaskPool {
                     }
                     Err(e) => {
                         log::error!("TaskPool: Failed to acquire semaphore: {}", e);
-                        eprintln!("Failed to acquire semaphore: {}", e);
                     }
                 }
             };

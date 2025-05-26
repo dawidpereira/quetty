@@ -62,11 +62,7 @@ impl LoadingIndicator {
             self.component
                 .attr(Attribute::Text, AttrValue::String(display_text));
 
-            log::debug!(
-                "Updated animation frame to {} (index {})",
-                SPINNER_FRAMES[self.frame_index],
-                self.frame_index
-            );
+
         }
     }
 }
@@ -75,7 +71,6 @@ impl Component<Msg, NoUserEvent> for LoadingIndicator {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
         match ev {
             Event::Tick => {
-                log::debug!("LoadingIndicator received Tick event");
                 // Update animation on tick
                 self.update_animation();
                 Some(Msg::ForceRedraw)

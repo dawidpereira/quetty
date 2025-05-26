@@ -110,7 +110,7 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
                                         tuirealm::StateValue::String(s) => lines.push(s),
                                         _ => {
                                             // For non-string values, provide a fallback
-                                            eprintln!(
+                                            log::warn!(
                                                 "Unexpected state value type in message details"
                                             );
                                             lines.push(String::from("[Non-string content]"));
@@ -120,7 +120,7 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
                                 return Some(Msg::Submit(lines));
                             }
                             _ => {
-                                eprintln!("Unexpected state type in message details");
+                                log::warn!("Unexpected state type in message details");
                                 return None;
                             }
                         }

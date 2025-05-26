@@ -285,9 +285,7 @@ where
         let tx_to_main_err = tx_to_main.clone();
         taskpool.execute(async move {
             let result = async {
-                log::debug!("Acquiring consumer lock");
                 let mut consumer = consumer.lock().await;
-                log::debug!("Peeking messages");
 
                 let messages = consumer
                     .peek_messages(config::CONFIG.max_messages(), None)
