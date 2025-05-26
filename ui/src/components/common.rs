@@ -70,7 +70,7 @@ pub enum MessageActivityMsg {
     NewMessagesLoaded(Vec<MessageModel>), // New messages loaded from API
     PageChanged,                          // Just changed page within already loaded messages
     SendMessageToDLQ(usize),              // Send message at index to dead letter queue
-    ReloadMessages,                       // Reload messages from current queue
+    RemoveMessageFromState(String, i64), // Remove message by ID and sequence from local state (after DLQ)
 }
 
 #[derive(Debug, PartialEq)]

@@ -88,6 +88,55 @@ impl MessagePaginationState {
             Vec::new()
         }
     }
+
+    /// Remove a message by ID and sequence from the loaded messages and adjust pagination
+    pub fn remove_message_by_id_and_sequence(
+        &mut self,
+        message_id: &str,
+        message_sequence: i64,
+        page_size: usize,
+    ) -> bool {
+        // Find the message index in all loaded messages by both ID and sequence
+        if let Some(global_index) = self
+            .all_loaded_messages
+            .iter()
+            .position(|msg| msg.id == message_id && msg.sequence == message_sequence)
+        {
+            // Remove the message
+            self.all_loaded_messages.remove(global_index);
+
+            // Adjust pagination based on the removal
+            self.adjust_pagination_after_removal(global_index, page_size);
+
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Adjust pagination state after a message is removed
+    fn adjust_pagination_after_removal(&mut self, removed_global_index: usize, page_size: usize) {
+        let current_page_start = self.current_page * page_size;
+
+        // If the removed message was before the current page, no adjustment needed
+        if removed_global_index < current_page_start {
+            return;
+        }
+
+        // If the removed message was on the current page or after
+        if removed_global_index >= current_page_start {
+            // Check if current page now has fewer messages than expected
+            let messages_on_current_page = self.get_current_page_messages(page_size).len();
+
+            // If current page is empty and we're not on page 0, go back one page
+            if messages_on_current_page == 0 && self.current_page > 0 {
+                self.current_page -= 1;
+            }
+        }
+
+        // Update pagination flags
+        self.update(page_size);
+    }
 }
 
 impl<T> Model<T>
@@ -121,7 +170,9 @@ where
                 total_pages_loaded,
             ),
             MessageActivityMsg::SendMessageToDLQ(index) => self.handle_send_message_to_dlq(index),
-            MessageActivityMsg::ReloadMessages => self.handle_reload_messages(),
+            MessageActivityMsg::RemoveMessageFromState(message_id, message_sequence) => {
+                self.handle_remove_message_from_state(message_id, message_sequence)
+            }
         }
     }
 
@@ -594,7 +645,7 @@ where
 
             match result {
                 Ok(()) => {
-                    Self::handle_dlq_success(&tx_to_main, &message_id);
+                    Self::handle_dlq_success(&tx_to_main, &message_id, message_sequence);
                 }
                 Err(e) => {
                     Self::handle_dlq_error(&tx_to_main, &tx_to_main_err, e);
@@ -668,8 +719,12 @@ where
 
             for msg in received_messages {
                 if let Some(msg_id) = msg.message_id() {
-                    if msg_id == message_id {
-                        log::info!("Found target message with ID {}", message_id);
+                    if msg_id == message_id && msg.sequence_number() == message_sequence {
+                        log::info!(
+                            "Found target message with ID {} and sequence {}",
+                            message_id,
+                            message_sequence
+                        );
                         target_message = Some(msg);
                         break;
                     }
@@ -686,13 +741,14 @@ where
         // Return the target message or error
         target_message.ok_or_else(|| {
             log::error!(
-                "Could not find message with ID {} after {} attempts",
+                "Could not find message with ID {} and sequence {} after {} attempts",
                 message_id,
+                message_sequence,
                 attempts
             );
             crate::error::AppError::ServiceBus(format!(
-                "Could not find message with ID {} in received messages",
-                message_id
+                "Could not find message with ID {} and sequence {} in received messages",
+                message_id, message_sequence
             ))
         })
     }
@@ -714,10 +770,15 @@ where
     }
 
     /// Handles successful DLQ operation
-    fn handle_dlq_success(tx_to_main: &Sender<crate::components::common::Msg>, message_id: &str) {
+    fn handle_dlq_success(
+        tx_to_main: &Sender<crate::components::common::Msg>,
+        message_id: &str,
+        message_sequence: i64,
+    ) {
         log::info!(
-            "DLQ operation completed successfully for message {}",
-            message_id
+            "DLQ operation completed successfully for message {} (sequence {})",
+            message_id,
+            message_sequence
         );
 
         // Stop loading indicator
@@ -727,11 +788,14 @@ where
             log::error!("Failed to send loading stop message: {}", e);
         }
 
-        // Trigger a message reload to refresh the message list
+        // Remove the message from local state instead of reloading from server
         if let Err(e) = tx_to_main.send(crate::components::common::Msg::MessageActivity(
-            crate::components::common::MessageActivityMsg::ReloadMessages,
+            crate::components::common::MessageActivityMsg::RemoveMessageFromState(
+                message_id.to_string(),
+                message_sequence,
+            ),
         )) {
-            log::error!("Failed to send message reload message: {}", e);
+            log::error!("Failed to send remove message from state message: {}", e);
         }
     }
 
@@ -754,12 +818,50 @@ where
         let _ = tx_to_main_err.send(crate::components::common::Msg::Error(error));
     }
 
-    fn handle_reload_messages(&mut self) -> Option<Msg> {
-        // Reset pagination and reload messages from the current queue
-        self.reset_pagination_state();
-        if let Err(e) = self.load_messages() {
+    fn handle_remove_message_from_state(
+        &mut self,
+        message_id: String,
+        message_sequence: i64,
+    ) -> Option<Msg> {
+        let page_size = crate::config::CONFIG.max_messages() as usize;
+
+        // Remove the message from pagination state by both ID and sequence
+        let removed = self
+            .queue_state
+            .message_pagination
+            .remove_message_by_id_and_sequence(&message_id, message_sequence, page_size);
+
+        if !removed {
+            log::warn!(
+                "Message with ID {} and sequence {} not found in local state",
+                message_id,
+                message_sequence
+            );
+            return None;
+        }
+
+        log::info!(
+            "Removed message {} (sequence {}) from local state",
+            message_id,
+            message_sequence
+        );
+
+        // Update the current page view with the new state
+        if let Err(e) = self.update_current_page_view() {
             return Some(Msg::Error(e));
         }
+
+        // Update message details if we have messages
+        let current_page_messages = self
+            .queue_state
+            .message_pagination
+            .get_current_page_messages(page_size);
+        if !current_page_messages.is_empty() {
+            if let Err(e) = self.remount_message_details(0) {
+                return Some(Msg::Error(e));
+            }
+        }
+
         None
     }
 }
