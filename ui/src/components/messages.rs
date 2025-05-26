@@ -207,12 +207,19 @@ impl Component<Msg, NoUserEvent> for Messages {
                 code: Key::Char('d'),
                 modifiers: KeyModifiers::CONTROL,
             }) => {
-                return Some(Msg::MessageActivity(MessageActivityMsg::SendMessageToDLQ(
-                    match self.state() {
-                        tuirealm::State::One(StateValue::Usize(index)) => index,
-                        _ => 0,
-                    },
-                )));
+                let index = match self.state() {
+                    tuirealm::State::One(StateValue::Usize(index)) => index,
+                    _ => 0,
+                };
+                return Some(Msg::PopupActivity(
+                    super::common::PopupActivityMsg::ShowConfirmation {
+                        title: "Send Message to Dead Letter Queue".to_string(),
+                        message: "Are you sure you want to send this message to the dead letter queue?\nThis action cannot be undone.".to_string(),
+                        on_confirm: Box::new(Msg::MessageActivity(
+                            super::common::MessageActivityMsg::SendMessageToDLQ(index)
+                        )),
+                    }
+                ));
             }
             _ => CmdResult::None,
         };

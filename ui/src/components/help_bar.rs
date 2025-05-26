@@ -102,6 +102,12 @@ impl HelpBar {
                 ("[Enter/Esc]".to_string(), true),
                 (" Close ".to_string(), false),
             ],
+            ComponentId::ConfirmationPopup => vec![
+                ("[Y]".to_string(), true),
+                (" Yes ".to_string(), false),
+                ("[N/Esc]".to_string(), true),
+                (" No ".to_string(), false),
+            ],
             _ => vec![],
         }
     }

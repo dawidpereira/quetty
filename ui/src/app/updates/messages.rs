@@ -121,6 +121,7 @@ where
                 total_pages_loaded,
             ),
             MessageActivityMsg::SendMessageToDLQ(index) => self.handle_send_message_to_dlq(index),
+            MessageActivityMsg::ReloadMessages => self.handle_reload_messages(),
         }
     }
 
@@ -726,11 +727,11 @@ where
             log::error!("Failed to send loading stop message: {}", e);
         }
 
-        // Reload messages to refresh the view
+        // Trigger a message reload to refresh the message list
         if let Err(e) = tx_to_main.send(crate::components::common::Msg::MessageActivity(
-            crate::components::common::MessageActivityMsg::MessagesLoaded(Vec::new()),
+            crate::components::common::MessageActivityMsg::ReloadMessages,
         )) {
-            log::error!("Failed to send messages reload message: {}", e);
+            log::error!("Failed to send message reload message: {}", e);
         }
     }
 
@@ -751,5 +752,14 @@ where
 
         // Send error message
         let _ = tx_to_main_err.send(crate::components::common::Msg::Error(error));
+    }
+
+    fn handle_reload_messages(&mut self) -> Option<Msg> {
+        // Reset pagination and reload messages from the current queue
+        self.reset_pagination_state();
+        if let Err(e) = self.load_messages() {
+            return Some(Msg::Error(e));
+        }
+        None
     }
 }

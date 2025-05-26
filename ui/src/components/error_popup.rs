@@ -1,9 +1,9 @@
 use crate::error::AppError;
 use tui_realm_stdlib::Paragraph;
 use tuirealm::{
+    Component, Event, MockComponent, NoUserEvent,
     event::{Key, KeyEvent},
     props::{Alignment, BorderType, Borders, Color, TextModifiers, TextSpan},
-    Component, Event, MockComponent, NoUserEvent,
 };
 
 use super::common::Msg;
@@ -17,7 +17,7 @@ impl ErrorPopup {
     pub fn new(error: &AppError) -> Self {
         // Format error message
         let error_msg = format!("{}", error);
-        
+
         Self {
             component: Paragraph::default()
                 .borders(
@@ -40,8 +40,11 @@ impl Component<Msg, NoUserEvent> for ErrorPopup {
             Event::Keyboard(KeyEvent {
                 code: Key::Enter | Key::Esc,
                 ..
-            }) => Some(Msg::CloseErrorPopup),
+            }) => Some(Msg::PopupActivity(
+                super::common::PopupActivityMsg::CloseError,
+            )),
             _ => None,
         }
     }
-} 
+}
+
