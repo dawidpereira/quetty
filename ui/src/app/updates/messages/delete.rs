@@ -1,5 +1,6 @@
 use crate::app::model::Model;
-use crate::components::common::Msg;
+use crate::components::common::{LoadingActivityMsg, Msg, MessageActivityMsg};
+use crate::error::AppError;
 use server::consumer::Consumer;
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
@@ -38,13 +39,13 @@ where
                 msg.clone()
             } else {
                 log::error!("Message index {} out of bounds", index);
-                return Err(Msg::Error(crate::error::AppError::State(
+                return Err(Msg::Error(AppError::State(
                     "Message index out of bounds".to_string(),
                 )));
             }
         } else {
             log::error!("No messages available");
-            return Err(Msg::Error(crate::error::AppError::State(
+            return Err(Msg::Error(AppError::State(
                 "No messages available".to_string(),
             )));
         };
@@ -65,7 +66,7 @@ where
             Some(consumer) => Ok(consumer),
             None => {
                 log::error!("No consumer available");
-                Err(Msg::Error(crate::error::AppError::State(
+                Err(Msg::Error(AppError::State(
                     "No consumer available".to_string(),
                 )))
             }
@@ -82,8 +83,8 @@ where
         let tx_to_main = self.tx_to_main.clone();
 
         // Show loading indicator
-        if let Err(e) = tx_to_main.send(crate::components::common::Msg::LoadingActivity(
-            crate::components::common::LoadingActivityMsg::Start(
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
+            LoadingActivityMsg::Start(
                 "Deleting message from queue...".to_string(),
             ),
         )) {
@@ -114,7 +115,7 @@ where
         consumer: Arc<Mutex<Consumer>>,
         message_id: String,
         message_sequence: i64,
-    ) -> Result<(), crate::error::AppError> {
+    ) -> Result<(), AppError> {
         let mut consumer = consumer.lock().await;
 
         // Find the target message using shared utility
@@ -124,7 +125,7 @@ where
         log::info!("Deleting message {} from queue", message_id);
         consumer.complete_message(&target_msg).await.map_err(|e| {
             log::error!("Failed to delete message: {}", e);
-            crate::error::AppError::ServiceBus(e.to_string())
+            AppError::ServiceBus(e.to_string())
         })?;
 
         log::info!("Successfully deleted message {} from queue", message_id);
@@ -134,7 +135,7 @@ where
 
     /// Handles successful delete operation
     fn handle_delete_success(
-        tx_to_main: &Sender<crate::components::common::Msg>,
+        tx_to_main: &Sender<Msg>,
         message_id: &str,
         message_sequence: i64,
     ) {
@@ -145,15 +146,15 @@ where
         );
 
         // Stop loading indicator
-        if let Err(e) = tx_to_main.send(crate::components::common::Msg::LoadingActivity(
-            crate::components::common::LoadingActivityMsg::Stop,
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
+            LoadingActivityMsg::Stop,
         )) {
             log::error!("Failed to send loading stop message: {}", e);
         }
 
         // Remove the message from local state since it's been deleted
-        if let Err(e) = tx_to_main.send(crate::components::common::Msg::MessageActivity(
-            crate::components::common::MessageActivityMsg::RemoveMessageFromState(
+        if let Err(e) = tx_to_main.send(Msg::MessageActivity(
+            MessageActivityMsg::RemoveMessageFromState(
                 message_id.to_string(),
                 message_sequence,
             ),
@@ -164,20 +165,20 @@ where
 
     /// Handles delete operation errors
     fn handle_delete_error(
-        tx_to_main: &Sender<crate::components::common::Msg>,
-        tx_to_main_err: &Sender<crate::components::common::Msg>,
-        error: crate::error::AppError,
+        tx_to_main: &Sender<Msg>,
+        tx_to_main_err: &Sender<Msg>,
+        error: AppError,
     ) {
         log::error!("Error in delete operation: {}", error);
 
         // Stop loading indicator
-        if let Err(err) = tx_to_main.send(crate::components::common::Msg::LoadingActivity(
-            crate::components::common::LoadingActivityMsg::Stop,
+        if let Err(err) = tx_to_main.send(Msg::LoadingActivity(
+            LoadingActivityMsg::Stop,
         )) {
             log::error!("Failed to send loading stop message: {}", err);
         }
 
         // Send error message
-        let _ = tx_to_main_err.send(crate::components::common::Msg::Error(error));
+        let _ = tx_to_main_err.send(Msg::Error(error));
     }
 } 

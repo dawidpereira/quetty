@@ -1,5 +1,7 @@
 use crate::app::model::Model;
-use crate::components::common::Msg;
+use crate::components::common::{Msg, MessageActivityMsg};
+use crate::config::CONFIG;
+use crate::error::{AppError, AppResult};
 use server::model::MessageModel;
 use tuirealm::terminal::TerminalAdapter;
 
@@ -21,7 +23,8 @@ impl MessagePaginationState {
     }
 
     /// Calculate page bounds for the current page
-    pub fn calculate_page_bounds(&self, page_size: usize) -> (usize, usize) {
+    pub fn calculate_page_bounds(&self, page_size: u32) -> (usize, usize) {
+        let page_size = page_size as usize;
         let start_idx = self.current_page * page_size;
         let end_idx = std::cmp::min(start_idx + page_size, self.all_loaded_messages.len());
         (start_idx, end_idx)
@@ -33,13 +36,14 @@ impl MessagePaginationState {
     }
 
     /// Update pagination state based on current page and total loaded pages
-    pub fn update(&mut self, page_size: usize) {
+    pub fn update(&mut self, page_size: u32) {
         self.has_previous_page = self.current_page > 0;
         self.has_next_page = self.calculate_has_next_page(page_size);
     }
 
     /// Calculate if there's a next page available
-    fn calculate_has_next_page(&self, page_size: usize) -> bool {
+    fn calculate_has_next_page(&self, page_size: u32) -> bool {
+        let page_size = page_size as usize;
         let next_page_exists = self.current_page + 1 < self.total_pages_loaded;
         let might_have_more_to_load =
             self.total_pages_loaded > 0 && self.all_loaded_messages.len() % page_size == 0;
@@ -75,7 +79,7 @@ impl MessagePaginationState {
     }
 
     /// Get current page messages
-    pub fn get_current_page_messages(&self, page_size: usize) -> Vec<MessageModel> {
+    pub fn get_current_page_messages(&self, page_size: u32) -> Vec<MessageModel> {
         let (start_idx, end_idx) = self.calculate_page_bounds(page_size);
 
         if start_idx < self.all_loaded_messages.len() {
@@ -90,7 +94,7 @@ impl MessagePaginationState {
         &mut self,
         message_id: &str,
         message_sequence: i64,
-        page_size: usize,
+        page_size: u32,
     ) -> bool {
         // Find the message index in all loaded messages by both ID and sequence
         if let Some(global_index) = self
@@ -111,7 +115,8 @@ impl MessagePaginationState {
     }
 
     /// Adjust pagination state after a message is removed
-    fn adjust_pagination_after_removal(&mut self, removed_global_index: usize, page_size: usize) {
+    fn adjust_pagination_after_removal(&mut self, removed_global_index: usize, page_size: u32) {
+        let page_size = page_size as usize;
         let current_page_start = self.current_page * page_size;
 
         // If the removed message was before the current page, no adjustment needed
@@ -122,7 +127,7 @@ impl MessagePaginationState {
         // If the removed message was on the current page or after
         if removed_global_index >= current_page_start {
             // Check if current page now has fewer messages than expected
-            let messages_on_current_page = self.get_current_page_messages(page_size).len();
+            let messages_on_current_page = self.get_current_page_messages(page_size as u32).len();
 
             // If current page is empty and we're not on page 0, go back one page
             if messages_on_current_page == 0 && self.current_page > 0 {
@@ -131,7 +136,7 @@ impl MessagePaginationState {
         }
 
         // Update pagination flags
-        self.update(page_size);
+        self.update(page_size as u32);
     }
 }
 
@@ -159,7 +164,7 @@ where
     }
 
     // Pagination navigation methods
-    pub fn handle_next_page(&mut self) -> crate::error::AppResult<()> {
+    pub fn handle_next_page(&mut self) -> AppResult<()> {
         log::debug!(
             "Handle next page - current: {}, total_loaded: {}",
             self.queue_state.message_pagination.current_page,
@@ -182,7 +187,7 @@ where
         Ok(())
     }
 
-    pub fn handle_previous_page(&mut self) -> crate::error::AppResult<()> {
+    pub fn handle_previous_page(&mut self) -> AppResult<()> {
         log::debug!(
             "Handle previous page - current: {}",
             self.queue_state.message_pagination.current_page
@@ -233,8 +238,8 @@ where
     fn send_page_changed_message(&self) {
         if let Err(e) = self
             .tx_to_main
-            .send(crate::components::common::Msg::MessageActivity(
-                crate::components::common::MessageActivityMsg::PageChanged,
+            .send(Msg::MessageActivity(
+                MessageActivityMsg::PageChanged,
             ))
         {
             log::error!("Failed to send page changed message: {}", e);
@@ -242,8 +247,8 @@ where
     }
 
     fn update_pagination_state(&mut self) {
-        let page_size = crate::config::CONFIG.max_messages() as usize;
-        self.queue_state.message_pagination.update(page_size);
+        let page_size = CONFIG.max_messages() as usize;
+        self.queue_state.message_pagination.update(page_size as u32);
 
         log::debug!(
             "Updated pagination state: current={}, total_loaded={}, has_prev={}, has_next={}",
@@ -254,16 +259,16 @@ where
         );
     }
 
-    pub fn update_current_page_view(&mut self) -> crate::error::AppResult<()> {
-        let page_size = crate::config::CONFIG.max_messages() as usize;
+    pub fn update_current_page_view(&mut self) -> AppResult<()> {
+        let page_size = CONFIG.max_messages() as usize;
         let current_page_messages = self
             .queue_state
             .message_pagination
-            .get_current_page_messages(page_size);
+            .get_current_page_messages(page_size as u32);
         let (start_idx, end_idx) = self
             .queue_state
             .message_pagination
-            .calculate_page_bounds(page_size);
+            .calculate_page_bounds(page_size as u32);
 
         log::debug!(
             "Updating view for page {}: showing messages {}-{} of {}",
@@ -284,10 +289,10 @@ where
         Ok(())
     }
 
-    fn send_pagination_state_update(&self) -> crate::error::AppResult<()> {
+    fn send_pagination_state_update(&self) -> AppResult<()> {
         self.tx_to_main
-            .send(crate::components::common::Msg::MessageActivity(
-                crate::components::common::MessageActivityMsg::PaginationStateUpdated {
+            .send(Msg::MessageActivity(
+                MessageActivityMsg::PaginationStateUpdated {
                     has_next: self.queue_state.message_pagination.has_next_page,
                     has_previous: self.queue_state.message_pagination.has_previous_page,
                     current_page: self.queue_state.message_pagination.current_page,
@@ -296,7 +301,7 @@ where
             ))
             .map_err(|e| {
                 log::error!("Failed to send pagination state update: {}", e);
-                crate::error::AppError::Component(e.to_string())
+                AppError::Component(e.to_string())
             })
     }
 } 
