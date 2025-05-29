@@ -6,7 +6,7 @@ use tuirealm::props::{Alignment, BorderType, Borders, Color, TableBuilder, TextS
 use tuirealm::terminal::TerminalAdapter;
 use tuirealm::{Component, Event, MockComponent, NoUserEvent, StateValue};
 
-use super::common::{LoadingActivityMsg, MessageActivityMsg, Msg, QueueActivityMsg, QueueType};
+use crate::components::common::{LoadingActivityMsg, MessageActivityMsg, Msg, PopupActivityMsg, QueueActivityMsg, QueueType};
 use crate::error::{AppError, AppResult};
 
 use crate::app::model::Model;
@@ -212,11 +212,11 @@ impl Component<Msg, NoUserEvent> for Messages {
                     _ => 0,
                 };
                 return Some(Msg::PopupActivity(
-                    super::common::PopupActivityMsg::ShowConfirmation {
+                    PopupActivityMsg::ShowConfirmation {
                         title: "Send Message to Dead Letter Queue".to_string(),
                         message: "Are you sure you want to send this message to the dead letter queue?\nThis action cannot be undone.".to_string(),
                         on_confirm: Box::new(Msg::MessageActivity(
-                            super::common::MessageActivityMsg::SendMessageToDLQ(index)
+                            MessageActivityMsg::SendMessageToDLQ(index)
                         )),
                     }
                 ));
@@ -230,11 +230,11 @@ impl Component<Msg, NoUserEvent> for Messages {
                     _ => 0,
                 };
                 return Some(Msg::PopupActivity(
-                    super::common::PopupActivityMsg::ShowConfirmation {
+                    PopupActivityMsg::ShowConfirmation {
                         title: "Resend Message from Dead Letter Queue".to_string(),
                         message: "Are you sure you want to resend this message from the dead letter queue\nback to the main queue?".to_string(),
                         on_confirm: Box::new(Msg::MessageActivity(
-                            super::common::MessageActivityMsg::ResendMessageFromDLQ(index)
+                            MessageActivityMsg::ResendMessageFromDLQ(index)
                         )),
                     }
                 ));
@@ -251,11 +251,11 @@ impl Component<Msg, NoUserEvent> for Messages {
                     _ => 0,
                 };
                 return Some(Msg::PopupActivity(
-                    super::common::PopupActivityMsg::ShowConfirmation {
+                    PopupActivityMsg::ShowConfirmation {
                         title: "Delete Message from Queue".to_string(),
                         message: "Are you sure you want to delete this message from the queue?\nThis action will permanently remove the message and cannot be undone.".to_string(),
                         on_confirm: Box::new(Msg::MessageActivity(
-                            super::common::MessageActivityMsg::DeleteMessage(index)
+                            MessageActivityMsg::DeleteMessage(index)
                         )),
                     }
                 ));

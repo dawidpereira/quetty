@@ -1,4 +1,5 @@
 use crate::app::model::Model;
+use crate::app::updates::messages::utils::find_target_message;
 use crate::components::common::{LoadingActivityMsg, Msg, MessageActivityMsg};
 use crate::error::AppError;
 use server::consumer::Consumer;
@@ -119,7 +120,7 @@ where
         let mut consumer = consumer.lock().await;
 
         // Find the target message using shared utility
-        let target_msg = super::utils::find_target_message(&mut consumer, &message_id, message_sequence).await?;
+        let target_msg = find_target_message(&mut consumer, &message_id, message_sequence).await?;
 
         // Complete the message to remove it from the queue
         log::info!("Deleting message {} from queue", message_id);

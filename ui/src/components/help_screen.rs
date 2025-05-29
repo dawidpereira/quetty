@@ -1,11 +1,11 @@
-use tuirealm::event::{Key, KeyEvent, KeyModifiers};
-use tuirealm::props::{Alignment, BorderType, Color, Style};
-use tuirealm::ratatui::layout::{Constraint, Layout, Rect};
-use tuirealm::ratatui::text::{Line, Span, Text};
-use tuirealm::ratatui::widgets::{Block, Paragraph, Row, Table};
-use tuirealm::{Component, Event, Frame, MockComponent, NoUserEvent};
+use tui_realm_stdlib::Paragraph;
+use tuirealm::{
+    Component, Event, MockComponent, NoUserEvent,
+    event::{Key, KeyEvent},
+    props::{Alignment, BorderType, Borders, Color, TextModifiers, TextSpan},
+};
 
-use super::common::Msg;
+use crate::components::common::Msg;
 
 pub struct HelpScreen {}
 

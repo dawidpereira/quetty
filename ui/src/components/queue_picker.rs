@@ -13,7 +13,7 @@ use crate::app::model::Model;
 use crate::config::CONFIG;
 use crate::error::{AppError, AppResult};
 
-use super::common::{
+use crate::components::common::{
     LoadingActivityMsg, MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg,
 };
 

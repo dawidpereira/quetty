@@ -1,3 +1,4 @@
+use crate::components::common::{Msg, PopupActivityMsg};
 use crate::error::AppError;
 use tui_realm_stdlib::Paragraph;
 use tuirealm::{
@@ -5,8 +6,6 @@ use tuirealm::{
     event::{Key, KeyEvent},
     props::{Alignment, BorderType, Borders, Color, TextModifiers, TextSpan},
 };
-
-use super::common::Msg;
 
 #[derive(MockComponent)]
 pub struct ErrorPopup {
@@ -41,7 +40,7 @@ impl Component<Msg, NoUserEvent> for ErrorPopup {
                 code: Key::Enter | Key::Esc,
                 ..
             }) => Some(Msg::PopupActivity(
-                super::common::PopupActivityMsg::CloseError,
+                PopupActivityMsg::CloseError,
             )),
             _ => None,
         }

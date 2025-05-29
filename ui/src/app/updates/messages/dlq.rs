@@ -1,4 +1,5 @@
 use crate::app::model::Model;
+use crate::app::updates::messages::utils::find_target_message;
 use crate::components::common::{LoadingActivityMsg, Msg, MessageActivityMsg, QueueType};
 use crate::config::CONFIG;
 use crate::error::AppError;
@@ -122,7 +123,7 @@ where
         let mut consumer = consumer.lock().await;
 
         // Find the target message using shared utility
-        let target_msg = super::utils::find_target_message(&mut consumer, &message_id, message_sequence).await?;
+        let target_msg = find_target_message(&mut consumer, &message_id, message_sequence).await?;
 
         // Send the message to dead letter queue
         log::info!("Sending message {} to dead letter queue", message_id);
@@ -354,7 +355,7 @@ where
 
         // Find the target message in DLQ using shared utility
         log::debug!("Searching for target message in DLQ");
-        let target_msg = super::utils::find_target_message(&mut consumer, &message_id, message_sequence).await?;
+        let target_msg = find_target_message(&mut consumer, &message_id, message_sequence).await?;
 
         // Get the message body and properties for resending
         log::debug!("Extracting message body for resending");

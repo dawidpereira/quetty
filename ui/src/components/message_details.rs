@@ -9,8 +9,9 @@ use tuirealm::{
     event::{Event, Key, KeyEvent, KeyModifiers},
     props::{Alignment, BorderType, Borders, Color, Style, TextModifiers},
 };
+use tui_realm_stdlib::Paragraph;
 
-use super::common::{MessageActivityMsg, Msg};
+use crate::components::common::{MessageActivityMsg, Msg};
 
 #[derive(MockComponent)]
 pub struct MessageDetails {

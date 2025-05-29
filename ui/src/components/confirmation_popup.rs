@@ -11,7 +11,7 @@ use tuirealm::{
     },
 };
 
-use super::common::Msg;
+use crate::components::common::{Msg, PopupActivityMsg};
 
 pub struct ConfirmationPopup {
     component: Paragraph,
@@ -118,13 +118,13 @@ impl Component<Msg, NoUserEvent> for ConfirmationPopup {
                 code: Key::Char('y') | Key::Char('Y'),
                 ..
             }) => Some(Msg::PopupActivity(
-                super::common::PopupActivityMsg::ConfirmationResult(true),
+                PopupActivityMsg::ConfirmationResult(true),
             )),
             Event::Keyboard(KeyEvent {
                 code: Key::Char('n') | Key::Char('N') | Key::Esc,
                 ..
             }) => Some(Msg::PopupActivity(
-                super::common::PopupActivityMsg::ConfirmationResult(false),
+                PopupActivityMsg::ConfirmationResult(false),
             )),
             _ => None,
         }

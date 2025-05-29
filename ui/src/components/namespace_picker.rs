@@ -13,7 +13,7 @@ use crate::app::model::Model;
 use crate::config::CONFIG;
 use crate::error::{AppError, AppResult};
 
-use super::common::{LoadingActivityMsg, Msg, NamespaceActivityMsg};
+use crate::components::common::{LoadingActivityMsg, Msg, NamespaceActivityMsg};
 
 const CMD_RESULT_NAMESPACE_SELECTED: &str = "NamespaceSelected";
 

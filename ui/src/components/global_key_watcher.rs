@@ -2,7 +2,7 @@ use tui_realm_stdlib::Phantom;
 use tuirealm::event::{Key, KeyEvent, KeyModifiers};
 use tuirealm::{Component, Event, MockComponent, NoUserEvent};
 
-use super::common::Msg;
+use crate::components::common::Msg;
 
 #[derive(MockComponent, Default)]
 pub struct GlobalKeyWatcher {
