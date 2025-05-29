@@ -239,6 +239,27 @@ impl Component<Msg, NoUserEvent> for Messages {
                     }
                 ));
             }
+            Event::Keyboard(KeyEvent {
+                code: Key::Delete,
+                modifiers: KeyModifiers::NONE,
+            }) | Event::Keyboard(KeyEvent {
+                code: Key::Char('x'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => {
+                let index = match self.state() {
+                    tuirealm::State::One(StateValue::Usize(index)) => index,
+                    _ => 0,
+                };
+                return Some(Msg::PopupActivity(
+                    super::common::PopupActivityMsg::ShowConfirmation {
+                        title: "Delete Message from Queue".to_string(),
+                        message: "Are you sure you want to delete this message from the queue?\nThis action will permanently remove the message and cannot be undone.".to_string(),
+                        on_confirm: Box::new(Msg::MessageActivity(
+                            super::common::MessageActivityMsg::DeleteMessage(index)
+                        )),
+                    }
+                ));
+            }
             _ => CmdResult::None,
         };
         match cmd_result {

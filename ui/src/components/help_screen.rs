@@ -72,6 +72,11 @@ impl MockComponent for HelpScreen {
                 "r",
                 "Resend from DLQ to main queue (DLQ only, DEV)",
             ],
+            vec![
+                "Messages",
+                "Delete/Ctrl+X",
+                "Delete message from queue (with confirmation)",
+            ],
             vec!["Messages", "Enter", "View message details"],
             // Message details
             vec!["Details", "←/→", "Move cursor"],

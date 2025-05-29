@@ -1,6 +1,8 @@
 pub mod dlq;
 pub mod loading;
 pub mod pagination;
+pub mod delete;
+pub mod utils;
 
 // Re-export commonly used types
 pub use pagination::MessagePaginationState;
@@ -50,6 +52,7 @@ where
             MessageActivityMsg::ResendMessageFromDLQ(index) => {
                 self.handle_resend_message_from_dlq(index)
             }
+            MessageActivityMsg::DeleteMessage(index) => self.handle_delete_message(index),
             MessageActivityMsg::RemoveMessageFromState(message_id, message_sequence) => {
                 self.handle_remove_message_from_state(message_id, message_sequence)
             }
@@ -197,4 +200,6 @@ where
         self.queue_state.current_queue_name = Some(queue_name);
         None
     }
+
+    // Note: handle_delete_message is implemented in the delete module
 }

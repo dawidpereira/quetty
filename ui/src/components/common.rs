@@ -72,6 +72,7 @@ pub enum MessageActivityMsg {
     PageChanged,                          // Just changed page within already loaded messages
     SendMessageToDLQ(usize),              // Send message at index to dead letter queue
     ResendMessageFromDLQ(usize),          // Resend message from DLQ back to main queue
+    DeleteMessage(usize),                 // Delete message from queue (complete message)
     RemoveMessageFromState(String, i64), // Remove message by ID and sequence from local state (after DLQ)
 }
 
