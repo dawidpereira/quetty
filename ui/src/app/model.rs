@@ -1,9 +1,10 @@
 use crate::app::queue_state::QueueState;
 use crate::app::view::*;
-use crate::components::common::{ComponentId, LoadingActivityMsg, Msg};
+use crate::components::common::{ComponentId, LoadingActivityMsg, Msg, PopupActivityMsg};
 use crate::components::confirmation_popup::ConfirmationPopup;
 use crate::components::error_popup::ErrorPopup;
 use crate::components::global_key_watcher::GlobalKeyWatcher;
+use crate::components::help_bar::HelpBar;
 use crate::components::loading_indicator::LoadingIndicator;
 use crate::components::message_details::MessageDetails;
 use crate::components::messages::Messages;
@@ -11,7 +12,7 @@ use crate::components::namespace_picker::NamespacePicker;
 use crate::components::queue_picker::QueuePicker;
 use crate::components::text_label::TextLabel;
 use crate::config;
-use crate::error::{AppError, AppResult};
+use crate::error::{handle_error, AppError, AppResult};
 use azservicebus::core::BasicRetryPolicy;
 use azservicebus::{ServiceBusClient, ServiceBusClientOptions};
 use copypasta::{ClipboardContext, ClipboardProvider};
@@ -194,7 +195,7 @@ where
                 && !self.app.mounted(&ComponentId::ConfirmationPopup)
             {
                 // Create a temporary help bar with the active component
-                let mut help_bar = crate::components::help_bar::HelpBar::new();
+                let mut help_bar = HelpBar::new();
 
                 // Directly render the help bar with the active component and queue type
                 let queue_type = if self.active_component == ComponentId::Messages {
@@ -474,7 +475,7 @@ where
                 Msg::PopupActivity(msg) => self.update_popup(msg),
                 Msg::Error(e) => {
                     log::error!("Error received: {}", e);
-                    self.update_popup(crate::components::common::PopupActivityMsg::ShowError(e))
+                    self.update_popup(PopupActivityMsg::ShowError(e))
                 }
                 Msg::ToggleHelpScreen => self.update_help(),
                 _ => None,
@@ -484,7 +485,7 @@ where
                 log::error!("Error from message processing: {}", e);
                 if let Err(err) = self.mount_error_popup(&e) {
                     log::error!("Failed to mount error popup: {}", err);
-                    crate::error::handle_error(e);
+                    handle_error(e);
                 }
                 None
             } else {

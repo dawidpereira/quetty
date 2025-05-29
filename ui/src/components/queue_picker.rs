@@ -11,7 +11,7 @@ use tuirealm::{Component, Event, Frame, MockComponent, NoUserEvent};
 
 use crate::app::model::Model;
 use crate::config::CONFIG;
-use crate::error::AppError;
+use crate::error::{AppError, AppResult};
 
 use super::common::{
     LoadingActivityMsg, MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg,
@@ -142,7 +142,7 @@ impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
-    pub fn new_consumer_for_queue(&mut self) -> crate::error::AppResult<()> {
+    pub fn new_consumer_for_queue(&mut self) -> AppResult<()> {
         log::debug!("Creating new consumer for queue");
         let queue = self
             .queue_state
@@ -215,7 +215,7 @@ where
         Ok(())
     }
 
-    pub fn load_queues(&mut self) -> crate::error::AppResult<()> {
+    pub fn load_queues(&mut self) -> AppResult<()> {
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
         let selected_namespace = self.selected_namespace.clone();

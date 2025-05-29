@@ -9,6 +9,7 @@ pub use pagination::MessagePaginationState;
 
 use crate::app::model::{AppState, Model};
 use crate::components::common::{MessageActivityMsg, Msg};
+use crate::config::CONFIG;
 use server::consumer::Consumer;
 use server::model::MessageModel;
 use std::sync::Arc;
@@ -154,7 +155,7 @@ where
         message_id: String,
         message_sequence: i64,
     ) -> Option<Msg> {
-        let page_size = crate::config::CONFIG.max_messages() as usize;
+        let page_size = CONFIG.max_messages() as usize;
 
         // Remove the message from pagination state by both ID and sequence
         let removed = self

@@ -1,4 +1,7 @@
 use crate::app::model::Model;
+use crate::components::common::{LoadingActivityMsg, Msg, MessageActivityMsg};
+use crate::config::CONFIG;
+use crate::error::{AppError, AppResult};
 use server::consumer::Consumer;
 use server::model::MessageModel;
 use std::sync::Arc;
@@ -10,7 +13,7 @@ impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
-    pub fn load_new_messages_from_api(&mut self) -> crate::error::AppResult<()> {
+    pub fn load_new_messages_from_api(&mut self) -> AppResult<()> {
         log::debug!(
             "Loading new messages from API, last_sequence: {:?}",
             self.queue_state.message_pagination.last_loaded_sequence
@@ -37,9 +40,9 @@ where
         Ok(())
     }
 
-    fn send_loading_start_message(&self, tx_to_main: &Sender<crate::components::common::Msg>) {
-        if let Err(e) = tx_to_main.send(crate::components::common::Msg::LoadingActivity(
-            crate::components::common::LoadingActivityMsg::Start(
+    fn send_loading_start_message(&self, tx_to_main: &Sender<Msg>) {
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
+            LoadingActivityMsg::Start(
                 "Loading more messages...".to_string(),
             ),
         )) {
@@ -47,16 +50,16 @@ where
         }
     }
 
-    fn get_consumer(&self) -> crate::error::AppResult<Arc<Mutex<Consumer>>> {
+    fn get_consumer(&self) -> AppResult<Arc<Mutex<Consumer>>> {
         self.queue_state.consumer.clone().ok_or_else(|| {
             log::error!("No consumer available");
-            crate::error::AppError::State("No consumer available".to_string())
+            AppError::State("No consumer available".to_string())
         })
     }
 
     async fn execute_message_loading_task(
-        tx_to_main: Sender<crate::components::common::Msg>,
-        tx_to_main_err: Sender<crate::components::common::Msg>,
+        tx_to_main: Sender<Msg>,
+        tx_to_main_err: Sender<Msg>,
         consumer: Arc<Mutex<Consumer>>,
         from_sequence: Option<i64>,
     ) {
@@ -69,18 +72,18 @@ where
     }
 
     async fn load_messages_from_consumer(
-        tx_to_main: Sender<crate::components::common::Msg>,
+        tx_to_main: Sender<Msg>,
         consumer: Arc<Mutex<Consumer>>,
         from_sequence: Option<i64>,
-    ) -> Result<(), crate::error::AppError> {
+    ) -> Result<(), AppError> {
         let mut consumer = consumer.lock().await;
 
         let messages = consumer
-            .peek_messages(crate::config::CONFIG.max_messages(), from_sequence)
+            .peek_messages(CONFIG.max_messages(), from_sequence)
             .await
             .map_err(|e| {
                 log::error!("Failed to peek messages: {}", e);
-                crate::error::AppError::ServiceBus(e.to_string())
+                AppError::ServiceBus(e.to_string())
             })?;
 
         log::info!("Loaded {} new messages from API", messages.len());
@@ -91,26 +94,26 @@ where
         Ok(())
     }
 
-    fn send_loading_stop_message(tx_to_main: &Sender<crate::components::common::Msg>) {
-        if let Err(e) = tx_to_main.send(crate::components::common::Msg::LoadingActivity(
-            crate::components::common::LoadingActivityMsg::Stop,
+    fn send_loading_stop_message(tx_to_main: &Sender<Msg>) {
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
+            LoadingActivityMsg::Stop,
         )) {
             log::error!("Failed to send loading stop message: {}", e);
         }
     }
 
     fn send_loaded_messages(
-        tx_to_main: &Sender<crate::components::common::Msg>,
+        tx_to_main: &Sender<Msg>,
         messages: Vec<MessageModel>,
-    ) -> Result<(), crate::error::AppError> {
+    ) -> Result<(), AppError> {
         if !messages.is_empty() {
             tx_to_main
-                .send(crate::components::common::Msg::MessageActivity(
-                    crate::components::common::MessageActivityMsg::NewMessagesLoaded(messages),
+                .send(Msg::MessageActivity(
+                    MessageActivityMsg::NewMessagesLoaded(messages),
                 ))
                 .map_err(|e| {
                     log::error!("Failed to send new messages loaded message: {}", e);
-                    crate::error::AppError::Component(e.to_string())
+                    AppError::Component(e.to_string())
                 })?;
         } else {
             Self::send_page_changed_fallback(tx_to_main)?;
@@ -119,27 +122,27 @@ where
     }
 
     fn send_page_changed_fallback(
-        tx_to_main: &Sender<crate::components::common::Msg>,
-    ) -> Result<(), crate::error::AppError> {
+        tx_to_main: &Sender<Msg>,
+    ) -> Result<(), AppError> {
         tx_to_main
-            .send(crate::components::common::Msg::MessageActivity(
-                crate::components::common::MessageActivityMsg::PageChanged,
+            .send(Msg::MessageActivity(
+                MessageActivityMsg::PageChanged,
             ))
             .map_err(|e| {
                 log::error!("Failed to send page changed message: {}", e);
-                crate::error::AppError::Component(e.to_string())
+                AppError::Component(e.to_string())
             })
     }
 
     fn handle_loading_error(
-        tx_to_main: Sender<crate::components::common::Msg>,
-        tx_to_main_err: Sender<crate::components::common::Msg>,
-        error: crate::error::AppError,
+        tx_to_main: Sender<Msg>,
+        tx_to_main_err: Sender<Msg>,
+        error: AppError,
     ) {
         log::error!("Error in message loading task: {}", error);
 
         Self::send_loading_stop_message(&tx_to_main);
-        let _ = tx_to_main_err.send(crate::components::common::Msg::Error(error));
+        let _ = tx_to_main_err.send(Msg::Error(error));
     }
 } 
  

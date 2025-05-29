@@ -1,3 +1,5 @@
+use crate::config::CONFIG;
+use crate::error::AppError;
 use server::consumer::Consumer;
 
 /// Finds the target message by receiving messages and searching by ID
@@ -5,7 +7,7 @@ pub async fn find_target_message(
     consumer: &mut Consumer,
     message_id: &str,
     message_sequence: i64,
-) -> Result<azservicebus::ServiceBusReceivedMessage, crate::error::AppError> {
+) -> Result<azservicebus::ServiceBusReceivedMessage, AppError> {
     log::debug!(
         "Looking for message with ID {} and sequence {}",
         message_id,
@@ -13,7 +15,7 @@ pub async fn find_target_message(
     );
 
     let mut attempts = 0;
-    let dlq_config = crate::config::CONFIG.dlq();
+    let dlq_config = CONFIG.dlq();
     let max_attempts = dlq_config.max_attempts();
     let receive_timeout_secs = dlq_config
         .receive_timeout_secs()
@@ -34,14 +36,14 @@ pub async fn find_target_message(
             Ok(Ok(messages)) => messages,
             Ok(Err(e)) => {
                 log::error!("Failed to receive messages: {}", e);
-                return Err(crate::error::AppError::ServiceBus(e.to_string()));
+                return Err(AppError::ServiceBus(e.to_string()));
             }
             Err(_) => {
                 log::error!(
                     "Timeout while receiving messages after {} seconds",
                     receive_timeout_secs
                 );
-                return Err(crate::error::AppError::ServiceBus(format!(
+                return Err(AppError::ServiceBus(format!(
                     "Timeout while receiving messages after {} seconds",
                     receive_timeout_secs
                 )));
@@ -110,7 +112,7 @@ pub async fn find_target_message(
             message_sequence,
             attempts
         );
-        crate::error::AppError::ServiceBus(format!(
+        AppError::ServiceBus(format!(
             "Could not find message with ID {} and sequence {} in received messages after {} attempts",
             message_id, message_sequence, attempts
         ))

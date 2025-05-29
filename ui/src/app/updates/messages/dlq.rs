@@ -1,5 +1,7 @@
 use crate::app::model::Model;
-use crate::components::common::Msg;
+use crate::components::common::{LoadingActivityMsg, Msg, MessageActivityMsg, QueueType};
+use crate::config::CONFIG;
+use crate::error::AppError;
 use server::consumer::Consumer;
 use server::producer::{Producer, ServiceBusClientProducerExt};
 use std::sync::Arc;
@@ -39,21 +41,21 @@ where
                 msg.clone()
             } else {
                 log::error!("Message index {} out of bounds", index);
-                return Err(Msg::Error(crate::error::AppError::State(
+                return Err(Msg::Error(AppError::State(
                     "Message index out of bounds".to_string(),
                 )));
             }
         } else {
             log::error!("No messages available");
-            return Err(Msg::Error(crate::error::AppError::State(
+            return Err(Msg::Error(AppError::State(
                 "No messages available".to_string(),
             )));
         };
 
         // Only allow sending to DLQ from main queue (not from DLQ itself)
-        if self.queue_state.current_queue_type != crate::components::common::QueueType::Main {
+        if self.queue_state.current_queue_type != QueueType::Main {
             log::warn!("Cannot send message to DLQ from dead letter queue");
-            return Err(Msg::Error(crate::error::AppError::State(
+            return Err(Msg::Error(AppError::State(
                 "Cannot send message to DLQ from dead letter queue".to_string(),
             )));
         }
@@ -67,7 +69,7 @@ where
             Some(consumer) => Ok(consumer),
             None => {
                 log::error!("No consumer available");
-                Err(Msg::Error(crate::error::AppError::State(
+                Err(Msg::Error(AppError::State(
                     "No consumer available".to_string(),
                 )))
             }
@@ -84,8 +86,8 @@ where
         let tx_to_main = self.tx_to_main.clone();
 
         // Show loading indicator
-        if let Err(e) = tx_to_main.send(crate::components::common::Msg::LoadingActivity(
-            crate::components::common::LoadingActivityMsg::Start(
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
+            LoadingActivityMsg::Start(
                 "Sending message to dead letter queue...".to_string(),
             ),
         )) {
@@ -116,7 +118,7 @@ where
         consumer: Arc<Mutex<Consumer>>,
         message_id: String,
         message_sequence: i64,
-    ) -> Result<(), crate::error::AppError> {
+    ) -> Result<(), AppError> {
         let mut consumer = consumer.lock().await;
 
         // Find the target message using shared utility
@@ -133,7 +135,7 @@ where
             .await
             .map_err(|e| {
                 log::error!("Failed to dead letter message: {}", e);
-                crate::error::AppError::ServiceBus(e.to_string())
+                AppError::ServiceBus(e.to_string())
             })?;
 
         log::info!(
@@ -146,7 +148,7 @@ where
 
     /// Handles successful DLQ operation
     fn handle_dlq_success(
-        tx_to_main: &Sender<crate::components::common::Msg>,
+        tx_to_main: &Sender<Msg>,
         message_id: &str,
         message_sequence: i64,
     ) {
@@ -157,15 +159,15 @@ where
         );
 
         // Stop loading indicator
-        if let Err(e) = tx_to_main.send(crate::components::common::Msg::LoadingActivity(
-            crate::components::common::LoadingActivityMsg::Stop,
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
+            LoadingActivityMsg::Stop,
         )) {
             log::error!("Failed to send loading stop message: {}", e);
         }
 
         // Remove the message from local state instead of reloading from server
-        if let Err(e) = tx_to_main.send(crate::components::common::Msg::MessageActivity(
-            crate::components::common::MessageActivityMsg::RemoveMessageFromState(
+        if let Err(e) = tx_to_main.send(Msg::MessageActivity(
+            MessageActivityMsg::RemoveMessageFromState(
                 message_id.to_string(),
                 message_sequence,
             ),
@@ -176,21 +178,21 @@ where
 
     /// Handles DLQ operation errors
     fn handle_dlq_error(
-        tx_to_main: &Sender<crate::components::common::Msg>,
-        tx_to_main_err: &Sender<crate::components::common::Msg>,
-        error: crate::error::AppError,
+        tx_to_main: &Sender<Msg>,
+        tx_to_main_err: &Sender<Msg>,
+        error: AppError,
     ) {
         log::error!("Error in DLQ operation: {}", error);
 
         // Stop loading indicator
-        if let Err(err) = tx_to_main.send(crate::components::common::Msg::LoadingActivity(
-            crate::components::common::LoadingActivityMsg::Stop,
+        if let Err(err) = tx_to_main.send(Msg::LoadingActivity(
+            LoadingActivityMsg::Stop,
         )) {
             log::error!("Failed to send loading stop message: {}", err);
         }
 
         // Send error message
-        let _ = tx_to_main_err.send(crate::components::common::Msg::Error(error));
+        let _ = tx_to_main_err.send(Msg::Error(error));
     }
 
     pub fn handle_resend_message_from_dlq(&mut self, index: usize) -> Option<Msg> {
@@ -220,21 +222,21 @@ where
                 msg.clone()
             } else {
                 log::error!("Message index {} out of bounds", index);
-                return Err(Msg::Error(crate::error::AppError::State(
+                return Err(Msg::Error(AppError::State(
                     "Message index out of bounds".to_string(),
                 )));
             }
         } else {
             log::error!("No messages available");
-            return Err(Msg::Error(crate::error::AppError::State(
+            return Err(Msg::Error(AppError::State(
                 "No messages available".to_string(),
             )));
         };
 
         // Only allow resending from DLQ (not from main queue)
-        if self.queue_state.current_queue_type != crate::components::common::QueueType::DeadLetter {
+        if self.queue_state.current_queue_type != QueueType::DeadLetter {
             log::warn!("Cannot resend message from main queue - only from dead letter queue");
-            return Err(Msg::Error(crate::error::AppError::State(
+            return Err(Msg::Error(AppError::State(
                 "Cannot resend message from main queue - only from dead letter queue".to_string(),
             )));
         }
@@ -252,8 +254,8 @@ where
         let tx_to_main = self.tx_to_main.clone();
 
         // Show loading indicator
-        if let Err(e) = tx_to_main.send(crate::components::common::Msg::LoadingActivity(
-            crate::components::common::LoadingActivityMsg::Start(
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
+            LoadingActivityMsg::Start(
                 "Resending message from dead letter queue...".to_string(),
             ),
         )) {
@@ -285,7 +287,7 @@ where
             log::debug!("Executing resend operation in background task");
 
             // Add overall timeout to the entire resend operation
-            let dlq_config = crate::config::CONFIG.dlq();
+            let dlq_config = CONFIG.dlq();
             let overall_timeout_secs = (dlq_config.receive_timeout_secs()
                 + dlq_config.send_timeout_secs())
             .min(dlq_config.overall_timeout_cap_secs());
@@ -323,7 +325,7 @@ where
                         "Overall timeout for resend operation after {} seconds",
                         overall_timeout_secs
                     );
-                    let timeout_error = crate::error::AppError::ServiceBus(format!(
+                    let timeout_error = AppError::ServiceBus(format!(
                         "Resend operation timed out after {} seconds",
                         overall_timeout_secs
                     ));
@@ -346,7 +348,7 @@ where
         service_bus_client: Arc<
             Mutex<azservicebus::ServiceBusClient<azservicebus::core::BasicRetryPolicy>>,
         >,
-    ) -> Result<(), crate::error::AppError> {
+    ) -> Result<(), AppError> {
         log::debug!("Acquiring consumer lock for resend operation");
         let mut consumer = consumer.lock().await;
 
@@ -358,7 +360,7 @@ where
         log::debug!("Extracting message body for resending");
         let message_body = target_msg.body().map_err(|e| {
             log::error!("Failed to get message body: {}", e);
-            crate::error::AppError::ServiceBus(e.to_string())
+            AppError::ServiceBus(e.to_string())
         })?;
 
         // Create a new message with the same content using Producer helper
@@ -380,7 +382,7 @@ where
         );
         consumer.complete_message(&target_msg).await.map_err(|e| {
             log::error!("Failed to complete DLQ message: {}", e);
-            crate::error::AppError::ServiceBus(e.to_string())
+            AppError::ServiceBus(e.to_string())
         })?;
 
         log::info!(
@@ -392,10 +394,10 @@ where
     }
 
     /// Get the main queue name from the current DLQ queue name
-    fn get_main_queue_name_from_current_dlq(&self) -> Result<String, crate::error::AppError> {
+    fn get_main_queue_name_from_current_dlq(&self) -> Result<String, AppError> {
         if let Some(current_queue_name) = &self.queue_state.current_queue_name {
             if self.queue_state.current_queue_type
-                == crate::components::common::QueueType::DeadLetter
+                == QueueType::DeadLetter
             {
                 // Remove the /$deadletterqueue suffix to get the main queue name
                 if let Some(main_name) = current_queue_name.strip_suffix("/$deadletterqueue") {
@@ -405,7 +407,7 @@ where
                         "Current queue name '{}' doesn't have expected DLQ suffix '/$deadletterqueue'",
                         current_queue_name
                     );
-                    Err(crate::error::AppError::State(
+                    Err(AppError::State(
                         "Current queue name doesn't have expected DLQ suffix".to_string(),
                     ))
                 }
@@ -414,13 +416,13 @@ where
                     "Cannot resend from main queue - current queue type is {:?}",
                     self.queue_state.current_queue_type
                 );
-                Err(crate::error::AppError::State(
+                Err(AppError::State(
                     "Cannot resend from main queue - only from dead letter queue".to_string(),
                 ))
             }
         } else {
             log::error!("No current queue name available");
-            Err(crate::error::AppError::State(
+            Err(AppError::State(
                 "No current queue name available".to_string(),
             ))
         }
@@ -433,9 +435,9 @@ where
         service_bus_client: Arc<
             Mutex<azservicebus::ServiceBusClient<azservicebus::core::BasicRetryPolicy>>,
         >,
-    ) -> Result<(), crate::error::AppError> {
+    ) -> Result<(), AppError> {
         // Use configurable timeout with cap to avoid hanging - Azure Service Bus might have internal timeouts
-        let dlq_config = crate::config::CONFIG.dlq();
+        let dlq_config = CONFIG.dlq();
         let send_timeout_secs = dlq_config
             .send_timeout_secs()
             .min(dlq_config.send_timeout_cap_secs());
@@ -463,7 +465,7 @@ where
                     .await
                     .map_err(|e| {
                         log::error!("Failed to create producer for queue {}: {}", queue_name, e);
-                        crate::error::AppError::ServiceBus(e.to_string())
+                        AppError::ServiceBus(e.to_string())
                     })?;
 
                 log::debug!("Sending message to queue: {}", queue_name);
@@ -471,7 +473,7 @@ where
                 // Send the message using the producer
                 producer.send_message(message).await.map_err(|e| {
                     log::error!("Failed to send message to queue {}: {}", queue_name, e);
-                    crate::error::AppError::ServiceBus(e.to_string())
+                    AppError::ServiceBus(e.to_string())
                 })?;
 
                 log::debug!("Message sent successfully, disposing producer");
@@ -479,11 +481,11 @@ where
                 // Dispose the producer
                 producer.dispose().await.map_err(|e| {
                     log::warn!("Failed to dispose producer for queue {}: {}", queue_name, e);
-                    crate::error::AppError::ServiceBus(e.to_string())
+                    AppError::ServiceBus(e.to_string())
                 })?;
 
                 log::debug!("Producer disposed successfully");
-                Ok::<(), crate::error::AppError>(())
+                Ok::<(), AppError>(())
             })
             .await;
 
@@ -499,7 +501,7 @@ where
                     queue_name,
                     send_timeout_secs
                 );
-                Err(crate::error::AppError::ServiceBus(format!(
+                Err(AppError::ServiceBus(format!(
                     "Timeout while sending message to queue {} after {} seconds",
                     queue_name, send_timeout_secs
                 )))
@@ -509,7 +511,7 @@ where
 
     /// Handles successful resend operation
     fn handle_resend_success(
-        tx_to_main: &Sender<crate::components::common::Msg>,
+        tx_to_main: &Sender<Msg>,
         message_id: &str,
         message_sequence: i64,
     ) {
@@ -520,15 +522,15 @@ where
         );
 
         // Stop loading indicator
-        if let Err(e) = tx_to_main.send(crate::components::common::Msg::LoadingActivity(
-            crate::components::common::LoadingActivityMsg::Stop,
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
+            LoadingActivityMsg::Stop,
         )) {
             log::error!("Failed to send loading stop message: {}", e);
         }
 
         // Remove the message from local state since it's been resent
-        if let Err(e) = tx_to_main.send(crate::components::common::Msg::MessageActivity(
-            crate::components::common::MessageActivityMsg::RemoveMessageFromState(
+        if let Err(e) = tx_to_main.send(Msg::MessageActivity(
+            MessageActivityMsg::RemoveMessageFromState(
                 message_id.to_string(),
                 message_sequence,
             ),
@@ -539,20 +541,20 @@ where
 
     /// Handles resend operation errors
     fn handle_resend_error(
-        tx_to_main: &Sender<crate::components::common::Msg>,
-        tx_to_main_err: &Sender<crate::components::common::Msg>,
-        error: crate::error::AppError,
+        tx_to_main: &Sender<Msg>,
+        tx_to_main_err: &Sender<Msg>,
+        error: AppError,
     ) {
         log::error!("Error in resend operation: {}", error);
 
         // Stop loading indicator
-        if let Err(err) = tx_to_main.send(crate::components::common::Msg::LoadingActivity(
-            crate::components::common::LoadingActivityMsg::Stop,
+        if let Err(err) = tx_to_main.send(Msg::LoadingActivity(
+            LoadingActivityMsg::Stop,
         )) {
             log::error!("Failed to send loading stop message: {}", err);
         }
 
         // Send error message
-        let _ = tx_to_main_err.send(crate::components::common::Msg::Error(error));
+        let _ = tx_to_main_err.send(Msg::Error(error));
     }
 } 
