@@ -59,6 +59,8 @@ pub struct DLQConfig {
     dlq_send_timeout_cap_secs: Option<u64>,
     /// Delay between retry attempts when no messages found (default: 500ms)
     dlq_retry_delay_ms: Option<u64>,
+    /// Batch size for receiving messages in DLQ operations (default: 10)
+    dlq_batch_size: Option<u32>,
 }
 
 impl Default for LoggingConfig {
@@ -79,6 +81,7 @@ impl AppConfig {
     pub fn max_messages(&self) -> u32 {
         self.max_messages
     }
+    
     pub fn crossterm_input_listener_interval(&self) -> Duration {
         Duration::from_millis(self.crossterm_input_listener_interval_ms)
     }
@@ -145,6 +148,11 @@ impl DLQConfig {
     /// Get the delay between retry attempts when no messages found
     pub fn retry_delay_ms(&self) -> u64 {
         self.dlq_retry_delay_ms.unwrap_or(500)
+    }
+
+    /// Get the batch size for receiving messages in DLQ operations
+    pub fn batch_size(&self) -> u32 {
+        self.dlq_batch_size.unwrap_or(10)
     }
 }
 
