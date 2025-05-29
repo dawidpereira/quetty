@@ -27,7 +27,7 @@ pub async fn find_target_message(
         // Add timeout to prevent hanging indefinitely
         let received_messages = match tokio::time::timeout(
             std::time::Duration::from_secs(receive_timeout_secs),
-            consumer.receive_messages(5),
+            consumer.receive_messages(dlq_config.batch_size()),
         )
         .await
         {
