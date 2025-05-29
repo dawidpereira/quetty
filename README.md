@@ -13,6 +13,7 @@ Quetty is a terminal-based queue manager designed to help you manage and interac
 - **Message Pagination**: Efficiently browse through large message queues with client-side pagination.
 - **Smart Caching**: Previously viewed pages are cached for instant navigation.
 - **Dead Letter Queue (DLQ) Support**: Switch between main queue and DLQ, send messages to DLQ.
+- **Message Operations**: Delete messages from queue with confirmation dialogs.
 - **Smart State Management**: Local state updates for instant UI refresh without server calls.
 
 ## Installation
@@ -50,6 +51,8 @@ cargo run
 - **Message Pagination**
   - **n/]**: Go to next page of messages
   - **p/[**: Go to previous page of messages
+- **Message Operations**
+  - **Delete/Ctrl+X**: Delete selected message from queue (with confirmation)
 - **Dead Letter Queue**
   - **d**: Toggle between main queue and dead letter queue
   - **Ctrl+D**: Send selected message to dead letter queue (with confirmation)
@@ -123,6 +126,37 @@ Quetty provides comprehensive support for Azure Service Bus Dead Letter Queues:
 - ⚠️ **DLQ operations error recovery** - Limited testing
 - ⚠️ **DLQ operations edge cases** - May not handle all scenarios
 
+## Message Operations
+
+### Delete Messages
+
+Quetty allows you to permanently delete messages from both main queues and dead letter queues:
+
+#### Features:
+- **Safe Deletion**: Confirmation dialog prevents accidental deletions
+- **Dual Shortcuts**: Use either `Delete` key or `Ctrl+X` for deletion
+- **Queue Support**: Works on both main queue and dead letter queue messages
+- **Instant Feedback**: Loading indicators and immediate UI updates
+- **Error Handling**: Comprehensive error reporting for failed operations
+
+#### How it works:
+1. **Select Message**: Navigate to the message you want to delete
+2. **Trigger Delete**: Press `Delete` key or `Ctrl+X`
+3. **Confirm Action**: A popup asks "Are you sure you want to delete this message from the queue?"
+4. **Loading Indicator**: Shows "Deleting message from queue..." during operation
+5. **State Update**: Message is immediately removed from the UI upon success
+
+#### Safety Features:
+- **Confirmation Required**: Cannot delete without explicit confirmation
+- **Clear Warning**: Popup clearly states the action is permanent and cannot be undone
+- **Precise Targeting**: Messages are identified by both ID and sequence number
+- **Error Recovery**: Failed deletions are reported with detailed error messages
+
+#### Technical Details:
+- **Operation**: Uses Azure Service Bus `complete_message` to permanently remove messages
+- **State Management**: Local message list is updated immediately upon successful deletion
+- **Shared Utilities**: Uses the same message finding logic as DLQ operations for consistency
+
 ## Configuration
 
 Edit `ui/config.toml` to customize pagination:
@@ -151,12 +185,12 @@ max_messages = 10
 ##### Message management
 - [x] DQL message
 - [x] Resend message from DLQ (development)
+- [x] Delete message
 - [ ] Bulk DLQ
-- [ ] Delete message
 - [ ] Bulk delete
 - [ ] Bulk resend
 - [ ] Edit message
 - [ ] Send new message
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. 
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

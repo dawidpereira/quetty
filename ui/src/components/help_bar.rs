@@ -48,6 +48,8 @@ impl HelpBar {
                     (" Next page ".to_string(), false),
                     ("[p/[]".to_string(), true),
                     (" Prev page ".to_string(), false),
+                    ("[Del/Ctrl+X]".to_string(), true),
+                    (" Delete msg ".to_string(), false),
                 ];
 
                 // Add DLQ toggle shortcut based on current queue type
