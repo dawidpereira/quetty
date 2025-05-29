@@ -1,9 +1,11 @@
 use tuirealm::props::{Alignment, Color, Style};
-use tuirealm::ratatui::layout::Rect;
+use tuirealm::ratatui::layout::{Constraint, Direction, Layout, Rect};
+use tuirealm::ratatui::style::{Modifier, Style};
 use tuirealm::ratatui::text::{Line, Span, Text};
+use tuirealm::ratatui::widgets::Paragraph;
 use tuirealm::{Component, Event, Frame, MockComponent, NoUserEvent};
 
-use super::common::{ComponentId, Msg, QueueType};
+use crate::components::common::{ComponentId, Msg, QueueType};
 
 /// Help bar that shows keyboard shortcuts based on the current active component
 pub struct HelpBar {
