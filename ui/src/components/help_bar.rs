@@ -18,7 +18,7 @@ impl HelpBar {
         }
     }
 
-    /// Get global shortcuts that should appear in all contexts
+    /// Get the global shortcuts that are always available
     fn get_global_shortcuts(&self) -> Vec<(String, bool)> {
         vec![
             ("[h]".to_string(), true),
@@ -39,54 +39,45 @@ impl HelpBar {
         match active_component {
             ComponentId::Messages => {
                 let mut shortcuts = vec![
-                    ("[↑/k]".to_string(), true),
-                    (" Up ".to_string(), false),
-                    ("[↓/j]".to_string(), true),
-                    (" Down ".to_string(), false),
+                    ("[↑/↓]".to_string(), true),
+                    (" Navigate ".to_string(), false),
                     ("[Enter]".to_string(), true),
-                    (" Select ".to_string(), false),
+                    (" View ".to_string(), false),
                 ];
 
-                // Add bulk selection shortcuts if in bulk mode
+                // Add bulk mode shortcuts - simplified
                 if bulk_mode.unwrap_or(false) {
                     shortcuts.push(("[Space]".to_string(), true));
-                    shortcuts.push((" Toggle ".to_string(), false));
-                    shortcuts.push(("[Ctrl+A]".to_string(), true));
-                    shortcuts.push((" Select All ".to_string(), false));
-                    shortcuts.push(("[Esc]".to_string(), true));
+                    shortcuts.push((" Select ".to_string(), false));
+                    
                     if selected_count.unwrap_or(0) > 0 {
+                        shortcuts.push(("[Del]".to_string(), true));
+                        shortcuts.push((" Delete ".to_string(), false));
+                        shortcuts.push(("[Esc]".to_string(), true));
                         shortcuts.push((" Clear ".to_string(), false));
                     } else {
-                        shortcuts.push((" Exit Bulk ".to_string(), false));
+                        shortcuts.push(("[Ctrl+A]".to_string(), true));
+                        shortcuts.push((" All ".to_string(), false));
+                        shortcuts.push(("[Esc]".to_string(), true));
+                        shortcuts.push((" Exit ".to_string(), false));
                     }
                 } else {
                     shortcuts.push(("[Space]".to_string(), true));
-                    shortcuts.push((" Start Bulk ".to_string(), false));
-                    shortcuts.push(("[Esc]".to_string(), true));
-                    shortcuts.push((" Back ".to_string(), false));
+                    shortcuts.push((" Bulk ".to_string(), false));
+                    shortcuts.push(("[n/p]".to_string(), true));
+                    shortcuts.push((" Page ".to_string(), false));
                 }
 
-                shortcuts.push(("[n/]]".to_string(), true));
-                shortcuts.push((" Next page ".to_string(), false));
-                shortcuts.push(("[p/[]".to_string(), true));
-                shortcuts.push((" Prev page ".to_string(), false));
-                shortcuts.push(("[Del/Ctrl+X]".to_string(), true));
-                shortcuts.push((" Delete msg ".to_string(), false));
-
-                // Add DLQ toggle shortcut based on current queue type
+                // Add queue toggle - simplified
                 if let Some(queue_type) = queue_type {
                     match queue_type {
                         QueueType::Main => {
                             shortcuts.push(("[d]".to_string(), true));
-                            shortcuts.push((" Switch to DLQ".to_string(), false));
-                            shortcuts.push(("[Ctrl+d]".to_string(), true));
-                            shortcuts.push((" Send to DLQ ⚠️".to_string(), false));
+                            shortcuts.push((" DLQ".to_string(), false));
                         }
                         QueueType::DeadLetter => {
                             shortcuts.push(("[d]".to_string(), true));
-                            shortcuts.push((" Switch to Main".to_string(), false));
-                            shortcuts.push(("[r]".to_string(), true));
-                            shortcuts.push((" Resend from DLQ ⚠️".to_string(), false));
+                            shortcuts.push((" Main".to_string(), false));
                         }
                     }
                 }
@@ -94,33 +85,25 @@ impl HelpBar {
                 shortcuts
             }
             ComponentId::MessageDetails => vec![
-                ("[↑/k]".to_string(), true),
-                (" Up ".to_string(), false),
-                ("[↓/j]".to_string(), true),
-                (" Down ".to_string(), false),
                 ("[←/→]".to_string(), true),
-                (" Move cursor ".to_string(), false),
+                (" Move ".to_string(), false),
+                ("[↑/↓]".to_string(), true),
+                (" Scroll ".to_string(), false),
                 ("[Esc]".to_string(), true),
                 (" Back ".to_string(), false),
-                ("[PgUp/PgDn]".to_string(), true),
-                (" Scroll ".to_string(), false),
             ],
             ComponentId::QueuePicker => vec![
-                ("[↑/k]".to_string(), true),
-                (" Up ".to_string(), false),
-                ("[↓/j]".to_string(), true),
-                (" Down ".to_string(), false),
-                ("[Enter/o]".to_string(), true),
+                ("[↑/↓]".to_string(), true),
+                (" Navigate ".to_string(), false),
+                ("[Enter]".to_string(), true),
                 (" Select ".to_string(), false),
                 ("[Esc]".to_string(), true),
                 (" Back ".to_string(), false),
             ],
             ComponentId::NamespacePicker => vec![
-                ("[↑/k]".to_string(), true),
-                (" Up ".to_string(), false),
-                ("[↓/j]".to_string(), true),
-                (" Down ".to_string(), false),
-                ("[Enter/o]".to_string(), true),
+                ("[↑/↓]".to_string(), true),
+                (" Navigate ".to_string(), false),
+                ("[Enter]".to_string(), true),
                 (" Select ".to_string(), false),
             ],
             ComponentId::ErrorPopup => vec![
