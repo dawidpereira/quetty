@@ -1,16 +1,22 @@
 use server::model::MessageModel;
 use tui_realm_stdlib::Table;
+use tuirealm::Frame;
 use tuirealm::command::{Cmd, CmdResult, Direction};
 use tuirealm::event::{Key, KeyEvent, KeyModifiers};
 use tuirealm::props::{Alignment, BorderType, Borders, Color, TableBuilder, TextSpan};
+use tuirealm::ratatui::layout::Rect;
 use tuirealm::terminal::TerminalAdapter;
-use tuirealm::{Component, Event, MockComponent, NoUserEvent, StateValue};
-
-use crate::components::common::{LoadingActivityMsg, MessageActivityMsg, Msg, PopupActivityMsg, QueueActivityMsg, QueueType};
-use crate::error::{AppError, AppResult};
+use tuirealm::{
+    AttrValue, Attribute, Component, Event, MockComponent, NoUserEvent, State, StateValue,
+};
 
 use crate::app::model::Model;
+use crate::app::queue_state::MessageIdentifier;
+use crate::components::common::{
+    LoadingActivityMsg, MessageActivityMsg, Msg, QueueActivityMsg, QueueType,
+};
 use crate::config;
+use crate::error::{AppError, AppResult};
 
 #[derive(Debug, Clone)]
 pub struct PaginationInfo {
@@ -22,11 +28,15 @@ pub struct PaginationInfo {
     pub has_previous_page: bool,
     pub queue_name: Option<String>,
     pub queue_type: QueueType,
+    // Bulk selection info
+    pub bulk_mode: bool,
+    pub selected_count: usize,
 }
 
-#[derive(MockComponent)]
 pub struct Messages {
     component: Table,
+    // Store selection info for building the table
+    selected_messages: Vec<MessageIdentifier>,
 }
 
 const CMD_RESULT_MESSAGE_SELECTED: &str = "MessageSelected";
@@ -42,23 +52,56 @@ impl Messages {
         messages: Option<&Vec<MessageModel>>,
         pagination_info: Option<PaginationInfo>,
     ) -> Self {
-        let title = if let Some(info) = pagination_info {
-            let queue_display = Self::format_queue_display(&info);
-            if info.total_messages_loaded == 0 {
+        Self::new_with_pagination_and_selections(messages, pagination_info, Vec::new())
+    }
+
+    pub fn new_with_pagination_and_selections(
+        messages: Option<&Vec<MessageModel>>,
+        pagination_info: Option<PaginationInfo>,
+        selected_messages: Vec<MessageIdentifier>,
+    ) -> Self {
+        let (title, _) = if let Some(info) = &pagination_info {
+            let queue_display = Self::format_queue_display(info);
+            let bulk_info = Self::format_bulk_info(info);
+            let title = if info.total_messages_loaded == 0 {
                 format!(" {} - No messages available ", queue_display)
             } else {
                 format!(
-                    " {} - Page {}/{} • {} total • {} on page {} ",
+                    " {} - Page {}/{} • {} total • {} on page {} {} ",
                     queue_display,
                     info.current_page + 1, // Display as 1-based
                     info.total_pages_loaded.max(1),
                     info.total_messages_loaded,
                     info.current_page_size,
-                    Self::format_navigation_hints(&info)
+                    Self::format_navigation_hints(info),
+                    bulk_info
                 )
-            }
+            };
+            (title, Vec::<MessageIdentifier>::new())
         } else {
-            " Messages ".to_string()
+            (" Messages ".to_string(), Vec::<MessageIdentifier>::new())
+        };
+
+        let (headers, widths) = if pagination_info
+            .as_ref()
+            .map_or(false, |info| info.bulk_mode)
+        {
+            // In bulk mode, add checkbox column with ASCII-style checkboxes
+            (
+                vec![
+                    "[x]",
+                    "Sequence",
+                    "Message ID",
+                    "Enqueued At",
+                    "Delivery Count",
+                ],
+                vec![5, 9, 28, 24, 15],
+            )
+        } else {
+            (
+                vec!["Sequence", "Message ID", "Enqueued At", "Delivery Count"],
+                vec![10, 30, 25, 16],
+            )
         };
 
         let component = {
@@ -77,13 +120,20 @@ impl Messages {
                 .rewind(false)
                 .step(4)
                 .row_height(1)
-                .headers(&["Sequence", "Message ID", "Enqueued At ", "Delivery Count"])
+                .headers(&headers)
                 .column_spacing(2)
-                .widths(&[10, 30, 25, 16])
-                .table(Self::build_table_from_messages(messages))
+                .widths(&widths)
+                .table(Self::build_table_from_messages(
+                    messages,
+                    pagination_info.as_ref(),
+                    &selected_messages,
+                ))
         };
 
-        Self { component }
+        Self {
+            component,
+            selected_messages: selected_messages,
+        }
     }
 
     fn format_queue_display(info: &PaginationInfo) -> String {
@@ -91,6 +141,19 @@ impl Messages {
         match info.queue_type {
             QueueType::Main => format!("Messages ({}) [Main - d→DLQ]", queue_name),
             QueueType::DeadLetter => format!("Dead Letter Queue ({}) [DLQ - d→Main]", queue_name),
+        }
+    }
+
+    fn format_bulk_info(info: &PaginationInfo) -> String {
+        if info.bulk_mode && info.selected_count > 0 {
+            format!(
+                "• {} selected [Space=toggle, Ctrl+A=page, Ctrl+Shift+A=all, Esc=clear]",
+                info.selected_count
+            )
+        } else if info.bulk_mode {
+            "• Bulk mode [Space=select, Ctrl+A=page, Ctrl+Shift+A=all, Esc=exit]".to_string()
+        } else {
+            "".to_string()
         }
     }
 
@@ -111,11 +174,27 @@ impl Messages {
         }
     }
 
-    fn build_table_from_messages(messages: Option<&Vec<MessageModel>>) -> Vec<Vec<TextSpan>> {
+    fn build_table_from_messages(
+        messages: Option<&Vec<MessageModel>>,
+        pagination_info: Option<&PaginationInfo>,
+        selected_messages: &[MessageIdentifier],
+    ) -> Vec<Vec<TextSpan>> {
         if let Some(messages) = messages {
             let mut builder = TableBuilder::default();
+            let bulk_mode = pagination_info.map_or(false, |info| info.bulk_mode);
 
             for msg in messages {
+                if bulk_mode {
+                    // Add checkbox column in bulk mode with ASCII-style checkboxes
+                    let message_id = MessageIdentifier::from_message(msg);
+                    let checkbox = if selected_messages.contains(&message_id) {
+                        "[x]" // Checked box - ASCII style
+                    } else {
+                        "[ ]" // Unchecked box - ASCII style
+                    };
+                    builder.add_col(TextSpan::from(checkbox));
+                }
+
                 builder
                     .add_col(TextSpan::from(msg.sequence.to_string()))
                     .add_col(TextSpan::from(msg.id.to_string()))
@@ -127,12 +206,91 @@ impl Messages {
         }
         Vec::new()
     }
+
+    /// Create a message identifier from index - this will send a message to get the actual message data
+    fn create_toggle_message_selection(index: usize) -> Msg {
+        // Send a special message that includes the index, so the handler can look up the actual message
+        Msg::MessageActivity(MessageActivityMsg::ToggleMessageSelectionByIndex(index))
+    }
 }
 
 impl Component<Msg, NoUserEvent> for Messages {
     #[allow(clippy::too_many_lines)]
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
         let cmd_result = match ev {
+            // Bulk selection key bindings
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(' '),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                // Toggle selection for current message
+                let index = match self.state() {
+                    tuirealm::State::One(StateValue::Usize(index)) => index,
+                    _ => 0,
+                };
+
+                return Some(Self::create_toggle_message_selection(index));
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('a'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => {
+                // Select all messages on current page
+                return Some(Msg::MessageActivity(
+                    MessageActivityMsg::SelectAllCurrentPage,
+                ));
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('A'),
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            }) => {
+                // Select all loaded messages across all pages
+                return Some(Msg::MessageActivity(
+                    MessageActivityMsg::SelectAllLoadedMessages,
+                ));
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Esc,
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                // In bulk mode, clear selections. Otherwise, go back
+                // We'll let the handler decide based on current state
+                return Some(Msg::MessageActivity(MessageActivityMsg::ClearAllSelections));
+            }
+
+            // Enhanced existing operations for bulk mode
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('d'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => {
+                // Check if we should do bulk operation or single message operation
+                // We'll send the bulk message and let the handler decide
+                return Some(Msg::MessageActivity(
+                    MessageActivityMsg::BulkSendSelectedToDLQ,
+                ));
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('r'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                // Check if we should do bulk operation or single message operation
+                return Some(Msg::MessageActivity(
+                    MessageActivityMsg::BulkResendSelectedFromDLQ,
+                ));
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Delete,
+                modifiers: KeyModifiers::NONE,
+            })
+            | Event::Keyboard(KeyEvent {
+                code: Key::Char('x'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => {
+                // Check if we should do bulk operation or single message operation
+                return Some(Msg::MessageActivity(MessageActivityMsg::BulkDeleteSelected));
+            }
+
+            // Navigation keys
             Event::Keyboard(KeyEvent {
                 code: Key::Down,
                 modifiers: KeyModifiers::NONE,
@@ -179,10 +337,8 @@ impl Component<Msg, NoUserEvent> for Messages {
                 code: Key::Enter,
                 modifiers: KeyModifiers::NONE,
             }) => CmdResult::Custom(CMD_RESULT_MESSAGE_SELECTED, self.state()),
-            Event::Keyboard(KeyEvent {
-                code: Key::Esc,
-                modifiers: KeyModifiers::NONE,
-            }) => CmdResult::Custom(CMD_RESULT_QUEUE_UNSELECTED, self.state()),
+
+            // Pagination
             Event::Keyboard(KeyEvent {
                 code: Key::Char('n'),
                 modifiers: KeyModifiers::NONE,
@@ -203,65 +359,10 @@ impl Component<Msg, NoUserEvent> for Messages {
                 code: Key::Char('d'),
                 modifiers: KeyModifiers::NONE,
             }) => return Some(Msg::QueueActivity(QueueActivityMsg::ToggleDeadLetterQueue)),
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('d'),
-                modifiers: KeyModifiers::CONTROL,
-            }) => {
-                let index = match self.state() {
-                    tuirealm::State::One(StateValue::Usize(index)) => index,
-                    _ => 0,
-                };
-                return Some(Msg::PopupActivity(
-                    PopupActivityMsg::ShowConfirmation {
-                        title: "Send Message to Dead Letter Queue".to_string(),
-                        message: "Are you sure you want to send this message to the dead letter queue?\nThis action cannot be undone.".to_string(),
-                        on_confirm: Box::new(Msg::MessageActivity(
-                            MessageActivityMsg::SendMessageToDLQ(index)
-                        )),
-                    }
-                ));
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('r'),
-                modifiers: KeyModifiers::NONE,
-            }) => {
-                let index = match self.state() {
-                    tuirealm::State::One(StateValue::Usize(index)) => index,
-                    _ => 0,
-                };
-                return Some(Msg::PopupActivity(
-                    PopupActivityMsg::ShowConfirmation {
-                        title: "Resend Message from Dead Letter Queue".to_string(),
-                        message: "Are you sure you want to resend this message from the dead letter queue\nback to the main queue?".to_string(),
-                        on_confirm: Box::new(Msg::MessageActivity(
-                            MessageActivityMsg::ResendMessageFromDLQ(index)
-                        )),
-                    }
-                ));
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Delete,
-                modifiers: KeyModifiers::NONE,
-            }) | Event::Keyboard(KeyEvent {
-                code: Key::Char('x'),
-                modifiers: KeyModifiers::CONTROL,
-            }) => {
-                let index = match self.state() {
-                    tuirealm::State::One(StateValue::Usize(index)) => index,
-                    _ => 0,
-                };
-                return Some(Msg::PopupActivity(
-                    PopupActivityMsg::ShowConfirmation {
-                        title: "Delete Message from Queue".to_string(),
-                        message: "Are you sure you want to delete this message from the queue?\nThis action will permanently remove the message and cannot be undone.".to_string(),
-                        on_confirm: Box::new(Msg::MessageActivity(
-                            MessageActivityMsg::DeleteMessage(index)
-                        )),
-                    }
-                ));
-            }
+
             _ => CmdResult::None,
         };
+
         match cmd_result {
             CmdResult::Custom(CMD_RESULT_MESSAGE_SELECTED, state) => match state {
                 tuirealm::State::One(StateValue::Usize(index)) => {
@@ -362,5 +463,46 @@ where
         });
 
         Ok(())
+    }
+}
+
+impl MockComponent for Messages {
+    fn view(&mut self, frame: &mut Frame, area: Rect) {
+        self.component.view(frame, area)
+    }
+
+    fn query(&self, attr: Attribute) -> Option<AttrValue> {
+        self.component.query(attr)
+    }
+
+    fn attr(&mut self, attr: Attribute, value: AttrValue) {
+        match attr {
+            Attribute::Custom("cursor_position") => {
+                if let AttrValue::Number(position) = value {
+                    log::debug!("Received cursor position attribute: {}", position);
+                    // Try to set the cursor position using the Table component's perform method
+                    let target_position = position as usize;
+
+                    // Move cursor to target position by performing multiple Down movements
+                    // This is a workaround since we can't directly set cursor position
+                    for _ in 0..target_position {
+                        self.component.perform(Cmd::Move(Direction::Down));
+                    }
+
+                    log::debug!("Attempted to move cursor to position: {}", target_position);
+                }
+            }
+            _ => {
+                self.component.attr(attr, value);
+            }
+        }
+    }
+
+    fn state(&self) -> State {
+        self.component.state()
+    }
+
+    fn perform(&mut self, cmd: Cmd) -> CmdResult {
+        self.component.perform(cmd)
     }
 }

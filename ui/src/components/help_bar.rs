@@ -33,6 +33,8 @@ impl HelpBar {
         &self,
         active_component: &ComponentId,
         queue_type: Option<&QueueType>,
+        bulk_mode: Option<bool>,
+        selected_count: Option<usize>,
     ) -> Vec<(String, bool)> {
         match active_component {
             ComponentId::Messages => {
@@ -43,15 +45,33 @@ impl HelpBar {
                     (" Down ".to_string(), false),
                     ("[Enter]".to_string(), true),
                     (" Select ".to_string(), false),
-                    ("[Esc]".to_string(), true),
-                    (" Back ".to_string(), false),
-                    ("[n/]]".to_string(), true),
-                    (" Next page ".to_string(), false),
-                    ("[p/[]".to_string(), true),
-                    (" Prev page ".to_string(), false),
-                    ("[Del/Ctrl+X]".to_string(), true),
-                    (" Delete msg ".to_string(), false),
                 ];
+
+                // Add bulk selection shortcuts if in bulk mode
+                if bulk_mode.unwrap_or(false) {
+                    shortcuts.push(("[Space]".to_string(), true));
+                    shortcuts.push((" Toggle ".to_string(), false));
+                    shortcuts.push(("[Ctrl+A]".to_string(), true));
+                    shortcuts.push((" Select All ".to_string(), false));
+                    shortcuts.push(("[Esc]".to_string(), true));
+                    if selected_count.unwrap_or(0) > 0 {
+                        shortcuts.push((" Clear ".to_string(), false));
+                    } else {
+                        shortcuts.push((" Exit Bulk ".to_string(), false));
+                    }
+                } else {
+                    shortcuts.push(("[Space]".to_string(), true));
+                    shortcuts.push((" Start Bulk ".to_string(), false));
+                    shortcuts.push(("[Esc]".to_string(), true));
+                    shortcuts.push((" Back ".to_string(), false));
+                }
+
+                shortcuts.push(("[n/]]".to_string(), true));
+                shortcuts.push((" Next page ".to_string(), false));
+                shortcuts.push(("[p/[]".to_string(), true));
+                shortcuts.push((" Prev page ".to_string(), false));
+                shortcuts.push(("[Del/Ctrl+X]".to_string(), true));
+                shortcuts.push((" Delete msg ".to_string(), false));
 
                 // Add DLQ toggle shortcut based on current queue type
                 if let Some(queue_type) = queue_type {
@@ -122,8 +142,11 @@ impl HelpBar {
         &self,
         active_component: &ComponentId,
         queue_type: Option<&QueueType>,
+        bulk_mode: Option<bool>,
+        selected_count: Option<usize>,
     ) -> Vec<(String, bool)> {
-        let mut shortcuts = self.get_context_shortcuts(active_component, queue_type);
+        let mut shortcuts =
+            self.get_context_shortcuts(active_component, queue_type, bulk_mode, selected_count);
         let global_shortcuts = self.get_global_shortcuts();
 
         // Add global shortcuts
@@ -138,7 +161,7 @@ impl HelpBar {
         area: Rect,
         active_component: &ComponentId,
     ) {
-        self.view_with_active_and_queue_type(frame, area, active_component, None);
+        self.view_with_active_and_queue_type(frame, area, active_component, None, None, None);
     }
 
     pub fn view_with_active_and_queue_type(
@@ -147,8 +170,10 @@ impl HelpBar {
         area: Rect,
         active_component: &ComponentId,
         queue_type: Option<&QueueType>,
+        bulk_mode: Option<bool>,
+        selected_count: Option<usize>,
     ) {
-        let help_text = self.get_help_text(active_component, queue_type);
+        let help_text = self.get_help_text(active_component, queue_type, bulk_mode, selected_count);
         let mut spans: Vec<Span> = Vec::new();
 
         // Add each shortcut pair with separators

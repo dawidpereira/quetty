@@ -64,13 +64,45 @@ where
             MessageActivityMsg::ToggleMessageSelection(message_id) => {
                 self.handle_toggle_message_selection(message_id)
             }
+            MessageActivityMsg::ToggleMessageSelectionByIndex(index) => {
+                self.handle_toggle_message_selection_by_index(index)
+            }
             MessageActivityMsg::SelectAllCurrentPage => self.handle_select_all_current_page(),
             MessageActivityMsg::SelectAllLoadedMessages => self.handle_select_all_loaded_messages(),
             MessageActivityMsg::ClearAllSelections => self.handle_clear_all_selections(),
             MessageActivityMsg::EnterBulkMode => self.handle_enter_bulk_mode(),
             MessageActivityMsg::ExitBulkMode => self.handle_exit_bulk_mode(),
 
-            // Bulk operation handlers
+            // Bulk operation handlers - with selected items
+            MessageActivityMsg::BulkDeleteSelected => {
+                if let Some(msg) = self.handle_bulk_delete_selected() {
+                    Some(msg)
+                } else {
+                    // Fall back to single message delete using current cursor position
+                    let index = 0; // We'd need to get the actual cursor position
+                    self.handle_delete_message(index)
+                }
+            }
+            MessageActivityMsg::BulkSendSelectedToDLQ => {
+                if let Some(msg) = self.handle_bulk_send_selected_to_dlq() {
+                    Some(msg)
+                } else {
+                    // Fall back to single message DLQ using current cursor position
+                    let index = 0; // We'd need to get the actual cursor position
+                    self.handle_send_message_to_dlq(index)
+                }
+            }
+            MessageActivityMsg::BulkResendSelectedFromDLQ => {
+                if let Some(msg) = self.handle_bulk_resend_selected_from_dlq() {
+                    Some(msg)
+                } else {
+                    // Fall back to single message resend using current cursor position
+                    let index = 0; // We'd need to get the actual cursor position
+                    self.handle_resend_message_from_dlq(index)
+                }
+            }
+
+            // Bulk operation handlers - with specific message lists
             MessageActivityMsg::BulkDeleteMessages(message_ids) => {
                 self.handle_bulk_delete_messages(message_ids)
             }

@@ -30,19 +30,68 @@ where
     }
 
     pub fn remount_messages(&mut self) -> AppResult<()> {
+        self.remount_messages_with_cursor_control(true)
+    }
+
+    pub fn remount_messages_with_cursor_control(&mut self, preserve_cursor: bool) -> AppResult<()> {
+        log::debug!(
+            "Remounting messages component, preserve_cursor: {}",
+            preserve_cursor
+        );
+
+        // Preserve the current cursor position only if requested
+        let current_position = if preserve_cursor && self.app.mounted(&ComponentId::Messages) {
+            match self.app.state(&ComponentId::Messages) {
+                Ok(tuirealm::State::One(tuirealm::StateValue::Usize(index))) => {
+                    log::debug!("Preserving cursor position: {}", index);
+                    Some(index)
+                }
+                _ => {
+                    log::debug!("No cursor position to preserve");
+                    None
+                }
+            }
+        } else {
+            if !preserve_cursor {
+                log::debug!("Resetting cursor to position 0");
+            } else {
+                log::debug!("Messages component not mounted");
+            }
+            None
+        };
+
         let pagination_info = self.create_pagination_info();
+
+        // Get current selections for display
+        let selected_messages = self.queue_state.bulk_selection.get_selected_messages();
 
         self.app
             .remount(
                 ComponentId::Messages,
-                Box::new(Messages::new_with_pagination(
+                Box::new(Messages::new_with_pagination_and_selections(
                     self.queue_state.messages.as_ref(),
                     Some(pagination_info),
+                    selected_messages,
                 )),
                 Vec::default(),
             )
             .map_err(|e| AppError::Component(e.to_string()))?;
 
+        // Restore cursor position using the Application's attr method (or reset to 0)
+        let target_position = current_position.unwrap_or(0);
+        if target_position > 0 || !preserve_cursor {
+            log::debug!("Setting cursor position to: {}", target_position);
+            match self.app.attr(
+                &ComponentId::Messages,
+                tuirealm::Attribute::Custom("cursor_position"),
+                tuirealm::AttrValue::Number(target_position as isize),
+            ) {
+                Ok(_) => log::debug!("Successfully set cursor position attribute"),
+                Err(e) => log::warn!("Failed to set cursor position attribute: {}", e),
+            }
+        }
+
+        self.redraw = true;
         Ok(())
     }
 
@@ -51,7 +100,7 @@ where
             .queue_state
             .messages
             .as_ref()
-            .map(|m| m.len())
+            .map(|msgs| msgs.len())
             .unwrap_or(0);
 
         PaginationInfo {
@@ -67,6 +116,8 @@ where
             has_previous_page: self.queue_state.message_pagination.has_previous_page,
             queue_name: self.queue_state.current_queue_name.clone(),
             queue_type: self.queue_state.current_queue_type.clone(),
+            bulk_mode: self.queue_state.bulk_selection.selection_mode,
+            selected_count: self.queue_state.bulk_selection.selection_count(),
         }
     }
 

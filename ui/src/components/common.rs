@@ -78,13 +78,19 @@ pub enum MessageActivityMsg {
 
     // Bulk selection messages
     ToggleMessageSelection(MessageIdentifier),
+    ToggleMessageSelectionByIndex(usize), // Helper for UI components
     SelectAllCurrentPage,
     SelectAllLoadedMessages,
     ClearAllSelections,
     EnterBulkMode,
     ExitBulkMode,
 
-    // Bulk operations
+    // Bulk operations - use currently selected messages
+    BulkDeleteSelected,
+    BulkSendSelectedToDLQ,
+    BulkResendSelectedFromDLQ,
+
+    // Bulk operations - with specific message lists
     BulkDeleteMessages(Vec<MessageIdentifier>),
     BulkSendToDLQ(Vec<MessageIdentifier>),
     BulkResendFromDLQ(Vec<MessageIdentifier>),
