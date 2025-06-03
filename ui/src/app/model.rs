@@ -12,7 +12,7 @@ use crate::components::namespace_picker::NamespacePicker;
 use crate::components::queue_picker::QueuePicker;
 use crate::components::text_label::TextLabel;
 use crate::config;
-use crate::error::{handle_error, AppError, AppResult};
+use crate::error::{AppError, AppResult, handle_error};
 use azservicebus::core::BasicRetryPolicy;
 use azservicebus::{ServiceBusClient, ServiceBusClientOptions};
 use copypasta::{ClipboardContext, ClipboardProvider};
@@ -203,11 +203,25 @@ where
                 } else {
                     None
                 };
+
+                // Get bulk mode information for Messages component
+                let (bulk_mode, selected_count) = if self.active_component == ComponentId::Messages
+                {
+                    (
+                        Some(self.queue_state.bulk_selection.selection_mode),
+                        Some(self.queue_state.bulk_selection.selection_count()),
+                    )
+                } else {
+                    (None, None)
+                };
+
                 help_bar.view_with_active_and_queue_type(
                     f,
                     chunks[4],
                     &self.active_component,
                     queue_type,
+                    bulk_mode,
+                    selected_count,
                 );
             }
         });

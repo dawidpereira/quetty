@@ -282,7 +282,9 @@ where
         self.queue_state.messages = Some(current_page_messages);
         self.update_pagination_state();
         self.send_pagination_state_update()?;
-        self.remount_messages()?;
+
+        // Reset cursor to position 0 when changing pages
+        self.remount_messages_with_cursor_control(false)?;
 
         Ok(())
     }
@@ -303,4 +305,3 @@ where
             })
     }
 }
-
