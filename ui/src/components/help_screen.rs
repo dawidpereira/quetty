@@ -6,7 +6,7 @@ use tuirealm::{
         layout::{Constraint, Layout, Rect},
         style::Style,
         text::{Line, Span, Text},
-        widgets::{Block, Paragraph as RatatuiParagraph, Row, Table},
+        widgets::{Block, Paragraph as RatatuiParagraph},
     },
 };
 
@@ -22,28 +22,27 @@ impl HelpScreen {
 
 impl MockComponent for HelpScreen {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        // Create a layout with a table of keyboard shortcuts
         let block = Block::default()
-            .title("Keyboard Shortcuts Help")
+            .title("📖 Keyboard Shortcuts Help")
             .borders(tuirealm::ratatui::widgets::Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(Color::Cyan));
 
-        // Define the layout for the help content
+        // Create layout with header and scrollable content
         let chunks = Layout::default()
-            .constraints([Constraint::Length(3), Constraint::Min(5)])
+            .constraints([Constraint::Length(3), Constraint::Min(0)])
             .margin(1)
             .split(area);
 
-        // Create a header section with general info
+        // Header section
         let header_text = Text::from(vec![
             Line::from(vec![Span::styled(
-                "Quetty Help",
+                "Quetty - Azure Service Bus Queue Manager",
                 Style::default().fg(Color::Yellow),
             )]),
-            Line::from(Span::raw("Press Esc or h to close this help screen")),
+            Line::from(Span::raw("Press [Esc] or [h] to close this help screen")),
             Line::from(vec![Span::styled(
-                "⚠️ DLQ message sending is in development - not for production use",
+                "⚠️  DLQ operations are in development - use with caution",
                 Style::default().fg(Color::Red),
             )]),
         ]);
@@ -52,71 +51,90 @@ impl MockComponent for HelpScreen {
             .alignment(tuirealm::ratatui::layout::Alignment::Center)
             .block(Block::default());
 
-        // Define the keyboard shortcut data
-        let shortcuts = vec![
-            // Global shortcuts
-            vec!["Global", "q", "Quit application"],
-            vec!["Global", "h", "Toggle help screen"],
+        // Help content with organized sections
+        let help_content = Text::from(vec![
+            // Global Actions
+            Line::from(vec![Span::styled(
+                "🌐 GLOBAL ACTIONS",
+                Style::default().fg(Color::Green),
+            )]),
+            Line::from(""),
+            Line::from("  [q]              Quit application"),
+            Line::from("  [h]              Toggle this help screen"),
+            Line::from("  [Esc]            Go back / Cancel operation"),
+            Line::from(""),
             // Navigation
-            vec!["Navigation", "↑/k", "Move up"],
-            vec!["Navigation", "↓/j", "Move down"],
-            vec!["Navigation", "Enter/o", "Select item"],
-            vec!["Navigation", "Esc", "Go back/cancel"],
-            // Message list
-            vec!["Messages", "PgUp/PgDown", "Scroll list"],
-            vec!["Messages", "n/]", "Next page"],
-            vec!["Messages", "p/[", "Previous page"],
-            vec!["Messages", "d", "Toggle Dead Letter Queue"],
-            vec![
-                "Messages",
-                "Ctrl+d",
-                "Send message to DLQ (DEV - with confirmation)",
-            ],
-            vec![
-                "Messages",
-                "r",
-                "Resend from DLQ to main queue (DLQ only, DEV)",
-            ],
-            vec![
-                "Messages",
-                "Delete/Ctrl+X",
-                "Delete message from queue (with confirmation)",
-            ],
-            vec!["Messages", "Enter", "View message details"],
-            // Message details
-            vec!["Details", "←/→", "Move cursor"],
-            vec!["Details", "PgUp/PgDown", "Scroll content"],
-        ];
+            Line::from(vec![Span::styled(
+                "🧭 NAVIGATION",
+                Style::default().fg(Color::Green),
+            )]),
+            Line::from(""),
+            Line::from("  [↑] [k]          Move up"),
+            Line::from("  [↓] [j]          Move down"),
+            Line::from("  [Enter] [o]      Select / Open item"),
+            Line::from("  [PgUp] [PgDn]    Scroll page up/down"),
+            Line::from(""),
+            // Queue & Message Management
+            Line::from(vec![Span::styled(
+                "📋 QUEUE & MESSAGE MANAGEMENT",
+                Style::default().fg(Color::Green),
+            )]),
+            Line::from(""),
+            Line::from("  [n] ']'          Next page"),
+            Line::from("  [p] '['         Previous page"),
+            Line::from("  [d]              Toggle between Main ↔ Dead Letter Queue"),
+            Line::from("  [Enter]          View message details"),
+            Line::from(""),
+            // Bulk Selection
+            Line::from(vec![Span::styled(
+                "📦 BULK SELECTION MODE",
+                Style::default().fg(Color::Green),
+            )]),
+            Line::from(""),
+            Line::from("  [Space]          Toggle selection for current message"),
+            Line::from("  [Ctrl+A]         Select all messages on current page"),
+            Line::from("  [Ctrl+Shift+A]   Select all loaded messages (all pages)"),
+            Line::from("  [Esc]            Clear selections / Exit bulk mode"),
+            Line::from(""),
+            // Message Operations
+            Line::from(vec![Span::styled(
+                "⚡ MESSAGE OPERATIONS",
+                Style::default().fg(Color::Green),
+            )]),
+            Line::from(""),
+            Line::from("  [Delete] [Ctrl+X] Delete message(s) with confirmation"),
+            Line::from("  [Ctrl+D]         Send message(s) to DLQ (⚠️ DEV)"),
+            Line::from("  [r]              Resend from DLQ to main queue (⚠️ DEV)"),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "💡 Note: Operations work on selected messages in bulk mode,",
+                Style::default().fg(Color::Yellow),
+            )]),
+            Line::from(vec![Span::styled(
+                "        or on current message when no selections exist.",
+                Style::default().fg(Color::Yellow),
+            )]),
+            Line::from(""),
+            // Message Details View
+            Line::from(vec![Span::styled(
+                "🔍 MESSAGE DETAILS VIEW",
+                Style::default().fg(Color::Green),
+            )]),
+            Line::from(""),
+            Line::from("  [←] [→]          Move cursor left/right"),
+            Line::from("  [↑] [↓] [k] [j]  Scroll content up/down"),
+            Line::from("  [PgUp] [PgDn]    Scroll content page up/down"),
+            Line::from("  [Esc]            Return to message list"),
+        ]);
 
-        // Create rows for the table
-        let rows = shortcuts.iter().map(|s| {
-            let cells = s.iter().map(|c| Span::raw(*c));
-            Row::new(cells)
-        });
+        let content_para = RatatuiParagraph::new(help_content)
+            .block(Block::default())
+            .wrap(tuirealm::ratatui::widgets::Wrap { trim: true });
 
-        // Create header row
-        let header_cells = ["Context", "Key", "Description"]
-            .iter()
-            .map(|h| Span::styled(*h, Style::default().fg(Color::Yellow)));
-        let header_row = Row::new(header_cells);
-
-        // Create the table
-        let table = Table::new(
-            rows,
-            [
-                Constraint::Percentage(20),
-                Constraint::Percentage(20),
-                Constraint::Percentage(60),
-            ],
-        )
-        .header(header_row)
-        .block(Block::default())
-        .style(Style::default());
-
-        // Render the components
+        // Render components
         frame.render_widget(block, area);
         frame.render_widget(header_para, chunks[0]);
-        frame.render_widget(table, chunks[1]);
+        frame.render_widget(content_para, chunks[1]);
     }
 
     fn query(&self, _attr: tuirealm::Attribute) -> Option<tuirealm::AttrValue> {
