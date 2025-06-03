@@ -2,8 +2,112 @@ use crate::app::updates::messages::MessagePaginationState;
 use crate::components::common::QueueType;
 use server::consumer::Consumer;
 use server::model::MessageModel;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+/// Unique identifier for a message combining ID and sequence
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MessageIdentifier {
+    pub id: String,
+    pub sequence: i64,
+}
+
+impl MessageIdentifier {
+    pub fn new(id: String, sequence: i64) -> Self {
+        Self { id, sequence }
+    }
+
+    pub fn from_message(message: &MessageModel) -> Self {
+        Self {
+            id: message.id.clone(),
+            sequence: message.sequence,
+        }
+    }
+}
+
+/// State for managing bulk selection of messages
+#[derive(Debug, Default)]
+pub struct BulkSelectionState {
+    /// Set of selected message identifiers
+    pub selected_messages: HashSet<MessageIdentifier>,
+    /// Whether we're currently in bulk selection mode
+    pub selection_mode: bool,
+    /// Index of the last selected message for range selection (future use)
+    pub last_selected_index: Option<usize>,
+}
+
+impl BulkSelectionState {
+    /// Check if a message is selected
+    pub fn is_selected(&self, message_id: &MessageIdentifier) -> bool {
+        self.selected_messages.contains(message_id)
+    }
+
+    /// Toggle selection for a message
+    pub fn toggle_selection(&mut self, message_id: MessageIdentifier) -> bool {
+        if self.selected_messages.contains(&message_id) {
+            self.selected_messages.remove(&message_id);
+            false
+        } else {
+            self.selected_messages.insert(message_id);
+            true
+        }
+    }
+
+    /// Select all messages from a given list
+    pub fn select_all(&mut self, messages: &[MessageModel]) {
+        for message in messages {
+            self.selected_messages
+                .insert(MessageIdentifier::from_message(message));
+        }
+        if !messages.is_empty() {
+            self.selection_mode = true;
+        }
+    }
+
+    /// Clear all selections
+    pub fn clear_all(&mut self) {
+        self.selected_messages.clear();
+        self.selection_mode = false;
+        self.last_selected_index = None;
+    }
+
+    /// Get the number of selected messages
+    pub fn selection_count(&self) -> usize {
+        self.selected_messages.len()
+    }
+
+    /// Check if any messages are selected
+    pub fn has_selections(&self) -> bool {
+        !self.selected_messages.is_empty()
+    }
+
+    /// Enter bulk selection mode
+    pub fn enter_selection_mode(&mut self) {
+        self.selection_mode = true;
+    }
+
+    /// Exit bulk selection mode and clear selections
+    pub fn exit_selection_mode(&mut self) {
+        self.clear_all();
+    }
+
+    /// Get a vector of selected message identifiers
+    pub fn get_selected_messages(&self) -> Vec<MessageIdentifier> {
+        self.selected_messages.iter().cloned().collect()
+    }
+
+    /// Remove messages from selection (used when messages are deleted/moved)
+    pub fn remove_messages(&mut self, message_ids: &[MessageIdentifier]) {
+        for id in message_ids {
+            self.selected_messages.remove(id);
+        }
+        // Exit selection mode if no messages are selected
+        if self.selected_messages.is_empty() {
+            self.selection_mode = false;
+        }
+    }
+}
 
 /// Encapsulates all queue-related state and data
 #[derive(Debug)]
@@ -20,6 +124,8 @@ pub struct QueueState {
     pub messages: Option<Vec<MessageModel>>,
     /// Message pagination state
     pub message_pagination: MessagePaginationState,
+    /// Bulk selection state
+    pub bulk_selection: BulkSelectionState,
 }
 
 impl Default for QueueState {
@@ -31,6 +137,7 @@ impl Default for QueueState {
             consumer: None,
             messages: None,
             message_pagination: MessagePaginationState::default(),
+            bulk_selection: BulkSelectionState::default(),
         }
     }
 }
@@ -81,9 +188,26 @@ impl QueueState {
             self.messages = None;
             self.message_pagination.reset();
 
+            // Clear selections when switching queues (as per user requirement)
+            self.bulk_selection.clear_all();
+
             Some(target_queue)
         } else {
             None
         }
+    }
+
+    /// Clear queue-related state when switching queues
+    pub fn clear_queue_data(&mut self) {
+        self.consumer = None;
+        self.messages = None;
+        self.message_pagination.reset();
+        // Clear selections when switching queues (as per user requirement)
+        self.bulk_selection.clear_all();
+    }
+
+    /// Reset all state to initial values
+    pub fn reset(&mut self) {
+        *self = Self::default();
     }
 }

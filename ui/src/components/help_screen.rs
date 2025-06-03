@@ -1,8 +1,13 @@
-use tui_realm_stdlib::Paragraph;
 use tuirealm::{
-    Component, Event, MockComponent, NoUserEvent,
-    event::{Key, KeyEvent},
-    props::{Alignment, BorderType, Borders, Color, TextModifiers, TextSpan},
+    Component, Event, Frame, MockComponent, NoUserEvent,
+    event::{Key, KeyEvent, KeyModifiers},
+    props::{BorderType, Color},
+    ratatui::{
+        layout::{Constraint, Layout, Rect},
+        style::Style,
+        text::{Line, Span, Text},
+        widgets::{Block, Paragraph as RatatuiParagraph, Row, Table},
+    },
 };
 
 use crate::components::common::Msg;
@@ -43,8 +48,8 @@ impl MockComponent for HelpScreen {
             )]),
         ]);
 
-        let header_para = Paragraph::new(header_text)
-            .alignment(Alignment::Center)
+        let header_para = RatatuiParagraph::new(header_text)
+            .alignment(tuirealm::ratatui::layout::Alignment::Center)
             .block(Block::default());
 
         // Define the keyboard shortcut data

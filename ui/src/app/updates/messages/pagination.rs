@@ -1,5 +1,5 @@
 use crate::app::model::Model;
-use crate::components::common::{Msg, MessageActivityMsg};
+use crate::components::common::{MessageActivityMsg, Msg};
 use crate::config::CONFIG;
 use crate::error::{AppError, AppResult};
 use server::model::MessageModel;
@@ -238,17 +238,15 @@ where
     fn send_page_changed_message(&self) {
         if let Err(e) = self
             .tx_to_main
-            .send(Msg::MessageActivity(
-                MessageActivityMsg::PageChanged,
-            ))
+            .send(Msg::MessageActivity(MessageActivityMsg::PageChanged))
         {
             log::error!("Failed to send page changed message: {}", e);
         }
     }
 
     fn update_pagination_state(&mut self) {
-        let page_size = CONFIG.max_messages() as usize;
-        self.queue_state.message_pagination.update(page_size as u32);
+        let page_size = CONFIG.max_messages();
+        self.queue_state.message_pagination.update(page_size);
 
         log::debug!(
             "Updated pagination state: current={}, total_loaded={}, has_prev={}, has_next={}",
@@ -260,15 +258,15 @@ where
     }
 
     pub fn update_current_page_view(&mut self) -> AppResult<()> {
-        let page_size = CONFIG.max_messages() as usize;
+        let page_size = CONFIG.max_messages();
         let current_page_messages = self
             .queue_state
             .message_pagination
-            .get_current_page_messages(page_size as u32);
+            .get_current_page_messages(page_size);
         let (start_idx, end_idx) = self
             .queue_state
             .message_pagination
-            .calculate_page_bounds(page_size as u32);
+            .calculate_page_bounds(page_size);
 
         log::debug!(
             "Updating view for page {}: showing messages {}-{} of {}",
@@ -304,4 +302,5 @@ where
                 AppError::Component(e.to_string())
             })
     }
-} 
+}
+

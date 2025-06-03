@@ -1,10 +1,12 @@
+pub mod bulk;
+pub mod delete;
 pub mod dlq;
 pub mod loading;
 pub mod pagination;
-pub mod delete;
 pub mod utils;
 
 // Re-export commonly used types
+use crate::app::queue_state::MessageIdentifier;
 pub use pagination::MessagePaginationState;
 
 use crate::app::model::{AppState, Model};
@@ -56,6 +58,27 @@ where
             MessageActivityMsg::DeleteMessage(index) => self.handle_delete_message(index),
             MessageActivityMsg::RemoveMessageFromState(message_id, message_sequence) => {
                 self.handle_remove_message_from_state(message_id, message_sequence)
+            }
+
+            // Bulk selection handlers
+            MessageActivityMsg::ToggleMessageSelection(message_id) => {
+                self.handle_toggle_message_selection(message_id)
+            }
+            MessageActivityMsg::SelectAllCurrentPage => self.handle_select_all_current_page(),
+            MessageActivityMsg::SelectAllLoadedMessages => self.handle_select_all_loaded_messages(),
+            MessageActivityMsg::ClearAllSelections => self.handle_clear_all_selections(),
+            MessageActivityMsg::EnterBulkMode => self.handle_enter_bulk_mode(),
+            MessageActivityMsg::ExitBulkMode => self.handle_exit_bulk_mode(),
+
+            // Bulk operation handlers
+            MessageActivityMsg::BulkDeleteMessages(message_ids) => {
+                self.handle_bulk_delete_messages(message_ids)
+            }
+            MessageActivityMsg::BulkSendToDLQ(message_ids) => {
+                self.handle_bulk_send_to_dlq(message_ids)
+            }
+            MessageActivityMsg::BulkResendFromDLQ(message_ids) => {
+                self.handle_bulk_resend_from_dlq(message_ids)
             }
         }
     }
@@ -155,7 +178,7 @@ where
         message_id: String,
         message_sequence: i64,
     ) -> Option<Msg> {
-        let page_size = CONFIG.max_messages() as usize;
+        let page_size = CONFIG.max_messages() as u32;
 
         // Remove the message from pagination state by both ID and sequence
         let removed = self
@@ -177,6 +200,12 @@ where
             message_id,
             message_sequence
         );
+
+        // Also remove the message from bulk selection if it was selected
+        let message_identifier = MessageIdentifier::new(message_id, message_sequence);
+        self.queue_state
+            .bulk_selection
+            .remove_messages(&[message_identifier]);
 
         // Update the current page view with the new state
         if let Err(e) = self.update_current_page_view() {

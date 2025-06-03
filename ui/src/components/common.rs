@@ -1,6 +1,7 @@
 use server::consumer::Consumer;
 use server::model::MessageModel;
 
+use crate::app::queue_state::MessageIdentifier;
 use crate::error::AppError;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -74,6 +75,19 @@ pub enum MessageActivityMsg {
     ResendMessageFromDLQ(usize),          // Resend message from DLQ back to main queue
     DeleteMessage(usize),                 // Delete message from queue (complete message)
     RemoveMessageFromState(String, i64), // Remove message by ID and sequence from local state (after DLQ)
+
+    // Bulk selection messages
+    ToggleMessageSelection(MessageIdentifier),
+    SelectAllCurrentPage,
+    SelectAllLoadedMessages,
+    ClearAllSelections,
+    EnterBulkMode,
+    ExitBulkMode,
+
+    // Bulk operations
+    BulkDeleteMessages(Vec<MessageIdentifier>),
+    BulkSendToDLQ(Vec<MessageIdentifier>),
+    BulkResendFromDLQ(Vec<MessageIdentifier>),
 }
 
 #[derive(Debug, PartialEq)]
