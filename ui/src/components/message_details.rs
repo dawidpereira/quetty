@@ -1,5 +1,4 @@
-use server::model::BodyData;
-use server::model::MessageModel;
+use server::model::{BodyData, MessageModel};
 use tui_realm_textarea::{
     TEXTAREA_CMD_NEWLINE, TEXTAREA_CMD_PASTE, TEXTAREA_CMD_REDO, TEXTAREA_CMD_UNDO, TextArea,
 };
@@ -9,7 +8,6 @@ use tuirealm::{
     event::{Event, Key, KeyEvent, KeyModifiers},
     props::{Alignment, BorderType, Borders, Color, Style, TextModifiers},
 };
-use tui_realm_stdlib::Paragraph;
 
 use crate::components::common::{MessageActivityMsg, Msg};
 

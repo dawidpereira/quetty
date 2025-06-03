@@ -81,7 +81,7 @@ impl AppConfig {
     pub fn max_messages(&self) -> u32 {
         self.max_messages
     }
-    
+
     pub fn crossterm_input_listener_interval(&self) -> Duration {
         Duration::from_millis(self.crossterm_input_listener_interval_ms)
     }
