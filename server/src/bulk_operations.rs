@@ -158,8 +158,11 @@ impl BulkOperationHandler {
             log::warn!("No messages provided for bulk resend operation");
             return Ok(result);
         }
+        // Use a multiplier for batch size to efficiently retrieve messages
+        // We use 2x target count to reduce round trips while staying within limits
+        const BATCH_SIZE_MULTIPLIER: usize = 2;
         let batch_size = std::cmp::min(
-            target_messages.len() * 2,
+            target_messages.len() * BATCH_SIZE_MULTIPLIER,
             self.config.max_batch_size as usize,
         );
 
@@ -263,46 +266,62 @@ impl BulkOperationHandler {
         let mut messages_processed = 0;
         let mut remaining_targets = target_map.clone();
 
-        log::debug!(
-            "Starting message collection phase - searching for {} target messages using batch size {}",
-            target_map.len(),
-            batch_size
-        );
+        self.log_collection_start(target_map.len(), batch_size);
 
         // Keep processing batches until we find all target messages or no more messages available
         while !remaining_targets.is_empty() {
-            match self
-                .receive_message_batch(
-                    consumer.clone(),
-                    batch_size,
-                    &target_messages,
-                    target_map,
-                    messages_processed,
-                )
-                .await?
-            {
-                Some(received_messages) => {
-                    let batch_processed = self.process_message_batch(
-                        received_messages,
-                        &mut remaining_targets,
-                        &mut target_messages,
-                        &mut non_target_messages,
-                    );
+            match self.process_single_batch(
+                consumer.clone(),
+                batch_size,
+                target_messages.len(),
+                target_map,
+                messages_processed,
+                &mut remaining_targets,
+                &mut target_messages,
+                &mut non_target_messages,
+            ).await? {
+                Some(batch_processed) => {
                     messages_processed += batch_processed;
                 }
                 None => {
-                    // No more messages available
-                    log::warn!(
-                        "No more messages available in queue after processing {} messages. Found {}/{} target messages.",
-                        messages_processed,
-                        target_messages.len(),
-                        target_map.len()
-                    );
+                    self.log_no_more_messages(messages_processed, target_messages.len(), target_map.len());
                     break;
                 }
             }
         }
 
+        self.log_collection_complete(&target_messages, &non_target_messages, messages_processed, &remaining_targets);
+
+        Ok((target_messages, non_target_messages))
+    }
+
+    /// Log the start of the collection phase
+    fn log_collection_start(&self, target_count: usize, batch_size: usize) {
+        log::debug!(
+            "Starting message collection phase - searching for {} target messages using batch size {}",
+            target_count,
+            batch_size
+        );
+    }
+
+    /// Log when no more messages are available
+    fn log_no_more_messages(&self, messages_processed: usize, targets_found: usize, total_targets: usize) {
+        log::warn!(
+            "No more messages available in queue after processing {} messages. Found {}/{} target messages.",
+            messages_processed,
+            targets_found,
+            total_targets
+        );
+    }
+
+    /// Log the completion of the collection phase
+    fn log_collection_complete(
+        &self,
+        target_messages: &[azservicebus::ServiceBusReceivedMessage],
+        non_target_messages: &[azservicebus::ServiceBusReceivedMessage],
+        messages_processed: usize,
+        remaining_targets: &HashMap<String, MessageIdentifier>,
+    ) {
         log::info!(
             "Collection phase complete: {} target messages found, {} non-target messages collected, {} messages processed total",
             target_messages.len(),
@@ -317,8 +336,38 @@ impl BulkOperationHandler {
                 remaining_targets.keys().collect::<Vec<_>>()
             );
         }
+    }
 
-        Ok((target_messages, non_target_messages))
+    /// Process a single batch of messages
+    async fn process_single_batch(
+        &self,
+        consumer: Arc<Mutex<Consumer>>,
+        batch_size: usize,
+        target_messages_found: usize,
+        target_map: &HashMap<String, MessageIdentifier>,
+        messages_processed: usize,
+        remaining_targets: &mut HashMap<String, MessageIdentifier>,
+        target_messages_vec: &mut Vec<azservicebus::ServiceBusReceivedMessage>,
+        non_target_messages: &mut Vec<azservicebus::ServiceBusReceivedMessage>,
+    ) -> Result<Option<usize>, Box<dyn std::error::Error>> {
+        match self.receive_message_batch(
+            consumer,
+            batch_size,
+            target_messages_found,
+            target_map,
+            messages_processed,
+        ).await? {
+            Some(received_messages) => {
+                let batch_processed = self.process_message_batch(
+                    received_messages,
+                    remaining_targets,
+                    target_messages_vec,
+                    non_target_messages,
+                );
+                Ok(Some(batch_processed))
+            }
+            None => Ok(None),
+        }
     }
 
     /// Receive a batch of messages from the consumer
@@ -326,7 +375,7 @@ impl BulkOperationHandler {
         &self,
         consumer: Arc<Mutex<Consumer>>,
         batch_size: usize,
-        target_messages: &[azservicebus::ServiceBusReceivedMessage],
+        target_messages_found: usize,
         target_map: &HashMap<String, MessageIdentifier>,
         messages_processed: usize,
     ) -> Result<Option<Vec<azservicebus::ServiceBusReceivedMessage>>, Box<dyn std::error::Error>>
@@ -334,7 +383,7 @@ impl BulkOperationHandler {
         log::debug!(
             "Receiving batch of {} messages (found {}/{} targets so far, {} messages processed total)",
             batch_size,
-            target_messages.len(),
+            target_messages_found,
             target_map.len(),
             messages_processed
         );
@@ -436,15 +485,42 @@ impl BulkOperationHandler {
 
         log::debug!("Processing {} target messages", messages.len());
 
-        // Create new messages for the main queue
+        // Convert DLQ messages to new messages for the main queue
+        let new_messages = self.convert_messages_for_sending(&messages)?;
+
+        // Send messages to main queue
+        self.send_converted_messages_to_queue(&new_messages, context).await?;
+
+        // Complete messages in DLQ (remove them)
+        self.complete_processed_messages(&messages, context).await?;
+
+        // Track successful message processing
+        self.track_successful_messages(&messages, target_map, result);
+
+        log::info!("Successfully processed {} messages", messages.len());
+        Ok(messages.len())
+    }
+
+    /// Convert DLQ messages to new ServiceBusMessage objects for sending
+    fn convert_messages_for_sending(
+        &self,
+        messages: &[azservicebus::ServiceBusReceivedMessage],
+    ) -> Result<Vec<ServiceBusMessage>, Box<dyn std::error::Error>> {
         let mut new_messages = Vec::new();
-        for message in &messages {
+        for message in messages {
             let body = message.body()?;
             let new_message = ServiceBusMessage::new(body.to_vec());
             new_messages.push(new_message);
         }
+        Ok(new_messages)
+    }
 
-        // Send messages to main queue
+    /// Send converted messages to the main queue
+    async fn send_converted_messages_to_queue(
+        &self,
+        new_messages: &[ServiceBusMessage],
+        context: &ServiceBusOperationContext,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         log::debug!(
             "Sending {} messages to main queue {}",
             new_messages.len(),
@@ -452,19 +528,33 @@ impl BulkOperationHandler {
         );
         self.send_messages_to_main_queue(
             &context.main_queue_name,
-            new_messages,
+            new_messages.to_vec(),
             context.service_bus_client.clone(),
         )
-        .await?;
+        .await
+    }
 
-        // Complete messages in DLQ (remove them)
+    /// Complete processed messages in DLQ to remove them
+    async fn complete_processed_messages(
+        &self,
+        messages: &[azservicebus::ServiceBusReceivedMessage],
+        context: &ServiceBusOperationContext,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         log::debug!("Completing {} messages in DLQ", messages.len());
         let mut consumer_guard = context.consumer.lock().await;
-        consumer_guard.complete_messages(&messages).await?;
+        consumer_guard.complete_messages(messages).await?;
         drop(consumer_guard);
+        Ok(())
+    }
 
-        // Track which specific messages were successfully processed
-        for message in &messages {
+    /// Track which specific messages were successfully processed
+    fn track_successful_messages(
+        &self,
+        messages: &[azservicebus::ServiceBusReceivedMessage],
+        target_map: &HashMap<String, MessageIdentifier>,
+        result: &mut BulkOperationResult,
+    ) {
+        for message in messages {
             let message_id = message
                 .message_id()
                 .map(|s| s.to_string())
@@ -480,9 +570,6 @@ impl BulkOperationHandler {
                 );
             }
         }
-
-        log::info!("Successfully processed {} messages", messages.len());
-        Ok(messages.len())
     }
 
     /// Send multiple messages to the main queue using batch operations
