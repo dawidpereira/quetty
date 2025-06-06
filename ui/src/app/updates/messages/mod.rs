@@ -1,4 +1,5 @@
 pub mod bulk;
+pub mod bulk_execution;
 pub mod delete;
 pub mod dlq;
 pub mod loading;
@@ -6,8 +7,8 @@ pub mod pagination;
 pub mod utils;
 
 // Re-export commonly used types
-use crate::app::queue_state::MessageIdentifier;
 pub use pagination::MessagePaginationState;
+use server::bulk_operations::MessageIdentifier;
 
 use crate::app::model::{AppState, Model};
 use crate::components::common::{MessageActivityMsg, Msg};
@@ -110,7 +111,11 @@ where
                 self.handle_bulk_send_to_dlq(message_ids)
             }
             MessageActivityMsg::BulkResendFromDLQ(message_ids) => {
-                self.handle_bulk_resend_from_dlq(message_ids)
+                // This is the confirmed execution - actually perform the bulk resend
+                self.handle_bulk_resend_from_dlq_execution(message_ids)
+            }
+            MessageActivityMsg::BulkRemoveMessagesFromState(message_ids) => {
+                self.handle_bulk_remove_messages_from_state(message_ids)
             }
         }
     }
@@ -238,6 +243,89 @@ where
         self.queue_state
             .bulk_selection
             .remove_messages(&[message_identifier]);
+
+        // Update the current page view with the new state
+        if let Err(e) = self.update_current_page_view() {
+            return Some(Msg::Error(e));
+        }
+
+        // Update message details if we have messages
+        let current_page_messages = self
+            .queue_state
+            .message_pagination
+            .get_current_page_messages(page_size);
+        if !current_page_messages.is_empty() {
+            if let Err(e) = self.remount_message_details(0) {
+                return Some(Msg::Error(e));
+            }
+        }
+
+        None
+    }
+
+    fn handle_bulk_remove_messages_from_state(
+        &mut self,
+        message_ids: Vec<MessageIdentifier>,
+    ) -> Option<Msg> {
+        if message_ids.is_empty() {
+            return None;
+        }
+
+        let page_size = CONFIG.max_messages() as u32;
+        let mut removed_count = 0;
+
+        // Remove each message from pagination state
+        for message_id in &message_ids {
+            let removed = self
+                .queue_state
+                .message_pagination
+                .remove_message_by_id_and_sequence(&message_id.id, message_id.sequence, page_size);
+
+            if removed {
+                removed_count += 1;
+                log::debug!(
+                    "Removed message {} (sequence {}) from local state",
+                    message_id.id,
+                    message_id.sequence
+                );
+            } else {
+                log::warn!(
+                    "Message with ID {} and sequence {} not found in local state",
+                    message_id.id,
+                    message_id.sequence
+                );
+            }
+        }
+
+        log::info!(
+            "Bulk removed {} out of {} messages from local state",
+            removed_count,
+            message_ids.len()
+        );
+
+        // Remove the messages from bulk selection if they were selected
+        self.queue_state
+            .bulk_selection
+            .remove_messages(&message_ids);
+
+        // Reset to page 1 after bulk removal to ensure we're on a valid page
+        self.queue_state.message_pagination.set_current_page(0);
+
+        // Recalculate total pages based on remaining messages
+        let remaining_message_count = self
+            .queue_state
+            .message_pagination
+            .all_loaded_messages
+            .len();
+        let new_total_pages = if remaining_message_count == 0 {
+            0
+        } else {
+            ((remaining_message_count - 1) / page_size as usize) + 1
+        };
+        self.queue_state.message_pagination.total_pages_loaded = new_total_pages;
+
+        // Update pagination flags based on new state
+        self.queue_state.message_pagination.update(page_size);
 
         // Update the current page view with the new state
         if let Err(e) = self.update_current_page_view() {

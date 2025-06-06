@@ -31,6 +31,8 @@ pub struct AppConfig {
     tick_interval_millis: u64,
     #[serde(flatten)]
     dlq: DLQConfig,
+    #[serde(flatten)]
+    bulk: BulkConfig,
     servicebus: ServicebusConfig,
     azure_ad: AzureAdConfig,
     logging: LoggingConfig,
@@ -40,6 +42,17 @@ pub struct AppConfig {
 pub struct LoggingConfig {
     level: Option<String>,
     file: Option<String>,
+}
+
+/// Configuration for Bulk operations
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct BulkConfig {
+    /// Maximum batch size for bulk operations (default: 2048, Azure Service Bus limit)
+    bulk_max_batch_size: Option<u32>,
+    /// Timeout for bulk operations (default: 300 seconds)
+    bulk_operation_timeout_secs: Option<u64>,
+    /// Warning threshold - warn user if operation may affect message order (default: 2048)
+    bulk_order_warning_threshold: Option<u32>,
 }
 
 /// Configuration for Dead Letter Queue (DLQ) operations
@@ -97,6 +110,9 @@ impl AppConfig {
     pub fn dlq(&self) -> &DLQConfig {
         &self.dlq
     }
+    pub fn bulk(&self) -> &BulkConfig {
+        &self.bulk
+    }
     pub fn servicebus(&self) -> &ServicebusConfig {
         &self.servicebus
     }
@@ -153,6 +169,23 @@ impl DLQConfig {
     /// Get the batch size for receiving messages in DLQ operations
     pub fn batch_size(&self) -> u32 {
         self.dlq_batch_size.unwrap_or(10)
+    }
+}
+
+impl BulkConfig {
+    /// Get the maximum batch size for bulk operations
+    pub fn max_batch_size(&self) -> u32 {
+        self.bulk_max_batch_size.unwrap_or(2048)
+    }
+
+    /// Get the timeout for bulk operations
+    pub fn operation_timeout_secs(&self) -> u64 {
+        self.bulk_operation_timeout_secs.unwrap_or(300)
+    }
+
+    /// Get the warning threshold for message order preservation
+    pub fn order_warning_threshold(&self) -> u32 {
+        self.bulk_order_warning_threshold.unwrap_or(2048)
     }
 }
 

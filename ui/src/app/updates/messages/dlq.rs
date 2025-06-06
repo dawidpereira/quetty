@@ -1,6 +1,6 @@
 use crate::app::model::Model;
 use crate::app::updates::messages::utils::find_target_message;
-use crate::components::common::{LoadingActivityMsg, Msg, MessageActivityMsg, QueueType};
+use crate::components::common::{LoadingActivityMsg, MessageActivityMsg, Msg, QueueType};
 use crate::config::CONFIG;
 use crate::error::AppError;
 use server::consumer::Consumer;
@@ -87,11 +87,9 @@ where
         let tx_to_main = self.tx_to_main.clone();
 
         // Show loading indicator
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
-            LoadingActivityMsg::Start(
-                "Sending message to dead letter queue...".to_string(),
-            ),
-        )) {
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Start(
+            "Sending message to dead letter queue...".to_string(),
+        ))) {
             log::error!("Failed to send loading start message: {}", e);
         }
 
@@ -148,11 +146,7 @@ where
     }
 
     /// Handles successful DLQ operation
-    fn handle_dlq_success(
-        tx_to_main: &Sender<Msg>,
-        message_id: &str,
-        message_sequence: i64,
-    ) {
+    fn handle_dlq_success(tx_to_main: &Sender<Msg>, message_id: &str, message_sequence: i64) {
         log::info!(
             "DLQ operation completed successfully for message {} (sequence {})",
             message_id,
@@ -160,35 +154,24 @@ where
         );
 
         // Stop loading indicator
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
-            LoadingActivityMsg::Stop,
-        )) {
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
             log::error!("Failed to send loading stop message: {}", e);
         }
 
         // Remove the message from local state instead of reloading from server
         if let Err(e) = tx_to_main.send(Msg::MessageActivity(
-            MessageActivityMsg::RemoveMessageFromState(
-                message_id.to_string(),
-                message_sequence,
-            ),
+            MessageActivityMsg::RemoveMessageFromState(message_id.to_string(), message_sequence),
         )) {
             log::error!("Failed to send remove message from state message: {}", e);
         }
     }
 
     /// Handles DLQ operation errors
-    fn handle_dlq_error(
-        tx_to_main: &Sender<Msg>,
-        tx_to_main_err: &Sender<Msg>,
-        error: AppError,
-    ) {
+    fn handle_dlq_error(tx_to_main: &Sender<Msg>, tx_to_main_err: &Sender<Msg>, error: AppError) {
         log::error!("Error in DLQ operation: {}", error);
 
         // Stop loading indicator
-        if let Err(err) = tx_to_main.send(Msg::LoadingActivity(
-            LoadingActivityMsg::Stop,
-        )) {
+        if let Err(err) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
             log::error!("Failed to send loading stop message: {}", err);
         }
 
@@ -255,11 +238,9 @@ where
         let tx_to_main = self.tx_to_main.clone();
 
         // Show loading indicator
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
-            LoadingActivityMsg::Start(
-                "Resending message from dead letter queue...".to_string(),
-            ),
-        )) {
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Start(
+            "Resending message from dead letter queue...".to_string(),
+        ))) {
             log::error!("Failed to send loading start message: {}", e);
         }
 
@@ -395,11 +376,9 @@ where
     }
 
     /// Get the main queue name from the current DLQ queue name
-    fn get_main_queue_name_from_current_dlq(&self) -> Result<String, AppError> {
+    pub fn get_main_queue_name_from_current_dlq(&self) -> Result<String, AppError> {
         if let Some(current_queue_name) = &self.queue_state.current_queue_name {
-            if self.queue_state.current_queue_type
-                == QueueType::DeadLetter
-            {
+            if self.queue_state.current_queue_type == QueueType::DeadLetter {
                 // Remove the /$deadletterqueue suffix to get the main queue name
                 if let Some(main_name) = current_queue_name.strip_suffix("/$deadletterqueue") {
                     Ok(main_name.to_string())
@@ -511,11 +490,7 @@ where
     }
 
     /// Handles successful resend operation
-    fn handle_resend_success(
-        tx_to_main: &Sender<Msg>,
-        message_id: &str,
-        message_sequence: i64,
-    ) {
+    fn handle_resend_success(tx_to_main: &Sender<Msg>, message_id: &str, message_sequence: i64) {
         log::info!(
             "Resend operation completed successfully for message {} (sequence {})",
             message_id,
@@ -523,18 +498,13 @@ where
         );
 
         // Stop loading indicator
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
-            LoadingActivityMsg::Stop,
-        )) {
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
             log::error!("Failed to send loading stop message: {}", e);
         }
 
         // Remove the message from local state since it's been resent
         if let Err(e) = tx_to_main.send(Msg::MessageActivity(
-            MessageActivityMsg::RemoveMessageFromState(
-                message_id.to_string(),
-                message_sequence,
-            ),
+            MessageActivityMsg::RemoveMessageFromState(message_id.to_string(), message_sequence),
         )) {
             log::error!("Failed to send remove message from state message: {}", e);
         }
@@ -549,13 +519,11 @@ where
         log::error!("Error in resend operation: {}", error);
 
         // Stop loading indicator
-        if let Err(err) = tx_to_main.send(Msg::LoadingActivity(
-            LoadingActivityMsg::Stop,
-        )) {
+        if let Err(err) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
             log::error!("Failed to send loading stop message: {}", err);
         }
 
         // Send error message
         let _ = tx_to_main_err.send(Msg::Error(error));
     }
-} 
+}

@@ -11,12 +11,12 @@ use tuirealm::{
 };
 
 use crate::app::model::Model;
-use crate::app::queue_state::MessageIdentifier;
 use crate::components::common::{
     LoadingActivityMsg, MessageActivityMsg, Msg, QueueActivityMsg, QueueType,
 };
 use crate::config;
 use crate::error::{AppError, AppResult};
+use server::bulk_operations::MessageIdentifier;
 
 #[derive(Debug, Clone)]
 pub struct PaginationInfo {
@@ -82,10 +82,7 @@ impl Messages {
             (" Messages ".to_string(), Vec::<MessageIdentifier>::new())
         };
 
-        let (headers, widths) = if pagination_info
-            .as_ref()
-            .map_or(false, |info| info.bulk_mode)
-        {
+        let (headers, widths) = if pagination_info.as_ref().is_some_and(|info| info.bulk_mode) {
             // In bulk mode, add checkbox column with ASCII-style checkboxes
             (
                 vec![
@@ -132,7 +129,7 @@ impl Messages {
 
         Self {
             component,
-            selected_messages: selected_messages,
+            selected_messages,
         }
     }
 
@@ -181,7 +178,7 @@ impl Messages {
     ) -> Vec<Vec<TextSpan>> {
         if let Some(messages) = messages {
             let mut builder = TableBuilder::default();
-            let bulk_mode = pagination_info.map_or(false, |info| info.bulk_mode);
+            let bulk_mode = pagination_info.is_some_and(|info| info.bulk_mode);
 
             for msg in messages {
                 if bulk_mode {
