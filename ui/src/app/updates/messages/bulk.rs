@@ -1,6 +1,6 @@
 use crate::app::model::Model;
-use crate::app::queue_state::MessageIdentifier;
 use crate::components::common::{MessageActivityMsg, Msg, PopupActivityMsg, QueueActivityMsg};
+use server::bulk_operations::MessageIdentifier;
 use tuirealm::terminal::TerminalAdapter;
 
 impl<T> Model<T>
@@ -182,12 +182,16 @@ where
         }
 
         let count = message_ids.len();
+
         let title = "Bulk Resend from Dead Letter Queue".to_string();
-        let message = format!(
+        let mut message = format!(
             "Are you sure you want to resend {} message{} from the dead letter queue back to the main queue?",
             count,
             if count == 1 { "" } else { "s" }
         );
+
+        // Always show warning about message order
+        message.push_str("\n\n⚠️  WARNING: This bulk operation may change the order of messages in the queue. Messages may not be processed in their original sequence.");
 
         Some(Msg::PopupActivity(PopupActivityMsg::ShowConfirmation {
             title,

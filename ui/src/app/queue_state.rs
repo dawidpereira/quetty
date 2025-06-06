@@ -1,5 +1,6 @@
 use crate::app::updates::messages::MessagePaginationState;
 use crate::components::common::QueueType;
+use server::bulk_operations::MessageIdentifier;
 use server::consumer::Consumer;
 use server::model::MessageModel;
 use std::collections::HashSet;
@@ -7,25 +8,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// Unique identifier for a message combining ID and sequence
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct MessageIdentifier {
-    pub id: String,
-    pub sequence: i64,
-}
-
-impl MessageIdentifier {
-    pub fn new(id: String, sequence: i64) -> Self {
-        Self { id, sequence }
-    }
-
-    pub fn from_message(message: &MessageModel) -> Self {
-        Self {
-            id: message.id.clone(),
-            sequence: message.sequence,
-        }
-    }
-}
-
 /// State for managing bulk selection of messages
 #[derive(Debug, Default)]
 pub struct BulkSelectionState {
@@ -38,11 +20,6 @@ pub struct BulkSelectionState {
 }
 
 impl BulkSelectionState {
-    /// Check if a message is selected
-    pub fn is_selected(&self, message_id: &MessageIdentifier) -> bool {
-        self.selected_messages.contains(message_id)
-    }
-
     /// Toggle selection for a message
     pub fn toggle_selection(&mut self, message_id: MessageIdentifier) -> bool {
         if self.selected_messages.contains(&message_id) {
@@ -195,19 +172,5 @@ impl QueueState {
         } else {
             None
         }
-    }
-
-    /// Clear queue-related state when switching queues
-    pub fn clear_queue_data(&mut self) {
-        self.consumer = None;
-        self.messages = None;
-        self.message_pagination.reset();
-        // Clear selections when switching queues (as per user requirement)
-        self.bulk_selection.clear_all();
-    }
-
-    /// Reset all state to initial values
-    pub fn reset(&mut self) {
-        *self = Self::default();
     }
 }

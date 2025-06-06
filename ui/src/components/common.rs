@@ -1,8 +1,7 @@
+use crate::error::AppError;
+use server::bulk_operations::MessageIdentifier;
 use server::consumer::Consumer;
 use server::model::MessageModel;
-
-use crate::app::queue_state::MessageIdentifier;
-use crate::error::AppError;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum QueueType {
@@ -94,6 +93,9 @@ pub enum MessageActivityMsg {
     BulkDeleteMessages(Vec<MessageIdentifier>),
     BulkSendToDLQ(Vec<MessageIdentifier>),
     BulkResendFromDLQ(Vec<MessageIdentifier>),
+
+    // Bulk state management - remove multiple messages from local state
+    BulkRemoveMessagesFromState(Vec<MessageIdentifier>),
 }
 
 #[derive(Debug, PartialEq)]

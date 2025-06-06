@@ -99,6 +99,39 @@ impl Consumer {
         }
     }
 
+    /// Complete multiple messages in a batch for better performance
+    pub async fn complete_messages(
+        &mut self,
+        messages: &[azservicebus::ServiceBusReceivedMessage],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut guard = self.receiver.lock().await;
+        if let Some(receiver) = guard.as_mut() {
+            // Complete messages one by one since batch completion may not be available
+            for message in messages {
+                receiver.complete_message(message).await?;
+            }
+            Ok(())
+        } else {
+            Err("Receiver already disposed".into())
+        }
+    }
+
+    /// Abandon multiple messages in a batch
+    pub async fn abandon_messages(
+        &mut self,
+        messages: &[azservicebus::ServiceBusReceivedMessage],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut guard = self.receiver.lock().await;
+        if let Some(receiver) = guard.as_mut() {
+            for message in messages {
+                receiver.abandon_message(message, None).await?;
+            }
+            Ok(())
+        } else {
+            Err("Receiver already disposed".into())
+        }
+    }
+
     pub async fn dispose(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut guard = self.receiver.lock().await;
         if let Some(receiver) = guard.take() {
