@@ -22,17 +22,19 @@ lazy_static! {
     };
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
-    max_messages: u32,
-    crossterm_input_listener_interval_ms: u64,
-    crossterm_input_listener_retries: usize,
-    poll_timeout_ms: u64,
-    tick_interval_millis: u64,
+    max_messages: Option<u32>,
+    crossterm_input_listener_interval_ms: Option<u64>,
+    crossterm_input_listener_retries: Option<usize>,
+    poll_timeout_ms: Option<u64>,
+    tick_interval_millis: Option<u64>,
     #[serde(flatten)]
     dlq: DLQConfig,
     #[serde(flatten)]
     bulk: BulkConfig,
+    #[serde(flatten)]
+    ui: UIConfig,
     servicebus: ServicebusConfig,
     azure_ad: AzureAdConfig,
     logging: LoggingConfig,
@@ -44,8 +46,15 @@ pub struct LoggingConfig {
     file: Option<String>,
 }
 
+/// Configuration for UI elements
+#[derive(Debug, Clone, Deserialize)]
+pub struct UIConfig {
+    /// Duration between animation frames for loading indicators (default: 100ms)
+    ui_loading_frame_duration_ms: Option<u64>,
+}
+
 /// Configuration for Bulk operations
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct BulkConfig {
     /// Maximum batch size for bulk operations (default: 2048, Azure Service Bus limit)
     bulk_max_batch_size: Option<u32>,
@@ -53,10 +62,12 @@ pub struct BulkConfig {
     bulk_operation_timeout_secs: Option<u64>,
     /// Warning threshold - warn user if operation may affect message order (default: 2048)
     bulk_order_warning_threshold: Option<u32>,
+    /// Batch size multiplier for target estimation (default: 2)
+    bulk_batch_size_multiplier: Option<usize>,
 }
 
 /// Configuration for Dead Letter Queue (DLQ) operations
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct DLQConfig {
     /// Timeout for receiving messages from DLQ (default: 10 seconds)
     dlq_receive_timeout_secs: Option<u64>,
@@ -76,42 +87,36 @@ pub struct DLQConfig {
     dlq_batch_size: Option<u32>,
 }
 
-impl Default for LoggingConfig {
-    fn default() -> Self {
-        Self {
-            level: Some("info".to_string()),
-            file: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ServicebusConfig {
-    connection_string: String,
+    connection_string: Option<String>,
 }
 
 impl AppConfig {
     pub fn max_messages(&self) -> u32 {
-        self.max_messages
+        self.max_messages.unwrap_or(10)
     }
 
     pub fn crossterm_input_listener_interval(&self) -> Duration {
-        Duration::from_millis(self.crossterm_input_listener_interval_ms)
+        Duration::from_millis(self.crossterm_input_listener_interval_ms.unwrap_or(20))
     }
     pub fn crossterm_input_listener_retries(&self) -> usize {
-        self.crossterm_input_listener_retries
+        self.crossterm_input_listener_retries.unwrap_or(5)
     }
     pub fn poll_timeout(&self) -> Duration {
-        Duration::from_millis(self.poll_timeout_ms)
+        Duration::from_millis(self.poll_timeout_ms.unwrap_or(10))
     }
     pub fn tick_interval(&self) -> Duration {
-        Duration::from_millis(self.tick_interval_millis)
+        Duration::from_millis(self.tick_interval_millis.unwrap_or(250))
     }
     pub fn dlq(&self) -> &DLQConfig {
         &self.dlq
     }
     pub fn bulk(&self) -> &BulkConfig {
         &self.bulk
+    }
+    pub fn ui(&self) -> &UIConfig {
+        &self.ui
     }
     pub fn servicebus(&self) -> &ServicebusConfig {
         &self.servicebus
@@ -126,7 +131,8 @@ impl AppConfig {
 
 impl ServicebusConfig {
     pub fn connection_string(&self) -> &str {
-        &self.connection_string
+        self.connection_string.as_deref()
+            .expect("SERVICEBUS_CONNECTION_STRING is required but not found in configuration or environment variables. Please set this value in .env file or environment.")
     }
 }
 
@@ -186,6 +192,18 @@ impl BulkConfig {
     /// Get the warning threshold for message order preservation
     pub fn order_warning_threshold(&self) -> u32 {
         self.bulk_order_warning_threshold.unwrap_or(2048)
+    }
+
+    /// Get the batch size multiplier for target estimation
+    pub fn batch_size_multiplier(&self) -> usize {
+        self.bulk_batch_size_multiplier.unwrap_or(2)
+    }
+}
+
+impl UIConfig {
+    /// Get the duration between animation frames for loading indicators
+    pub fn loading_frame_duration_ms(&self) -> u64 {
+        self.ui_loading_frame_duration_ms.unwrap_or(100)
     }
 }
 

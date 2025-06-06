@@ -236,7 +236,7 @@ where
                 let mut config = CONFIG.azure_ad().clone();
                 if let Some(ns) = selected_namespace.clone() {
                     log::debug!("Using namespace: {}", ns);
-                    config.namespace = ns;
+                    config.namespace = Some(ns);
                 } else {
                     log::warn!("No namespace selected, using default namespace");
                 }

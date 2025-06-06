@@ -7,10 +7,10 @@ use tuirealm::{
 };
 
 use crate::components::common::Msg;
+use crate::config::CONFIG;
 
 // Simple animation frames for loading indicator
 const SPINNER_FRAMES: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
-const FRAME_DURATION: Duration = Duration::from_millis(100);
 
 #[derive(MockComponent)]
 pub struct LoadingIndicator {
@@ -52,7 +52,8 @@ impl LoadingIndicator {
     // Update the animation frame
     fn update_animation(&mut self) {
         let now = Instant::now();
-        if now.duration_since(self.last_frame_time) >= FRAME_DURATION {
+        let frame_duration = Duration::from_millis(CONFIG.ui().loading_frame_duration_ms());
+        if now.duration_since(self.last_frame_time) >= frame_duration {
             // Move to next frame
             self.frame_index = (self.frame_index + 1) % SPINNER_FRAMES.len();
             self.last_frame_time = now;
