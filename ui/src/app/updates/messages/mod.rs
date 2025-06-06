@@ -109,7 +109,7 @@ where
 
             // Bulk operation handlers - with specific message lists
             MessageActivityMsg::BulkDeleteMessages(message_ids) => {
-                self.handle_bulk_delete_messages(message_ids)
+                self.handle_bulk_delete_execution(message_ids)
             }
             MessageActivityMsg::BulkSendToDLQ(message_ids) => {
                 self.handle_bulk_send_to_dlq_execution(message_ids)

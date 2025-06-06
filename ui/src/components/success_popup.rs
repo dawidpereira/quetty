@@ -8,7 +8,7 @@ use tuirealm::{
         Frame,
         layout::Rect,
         text::{Line, Text},
-        widgets::{Block, Paragraph as RatatuiParagraph},
+        widgets::{Block, Paragraph as RatatuiParagraph, Wrap},
     },
 };
 
@@ -57,10 +57,11 @@ impl MockComponent for SuccessPopup {
 
         let text = Text::from(lines);
 
-        // Create the paragraph with custom text
+        // Create the paragraph with custom text and word wrapping
         let paragraph = RatatuiParagraph::new(text)
             .block(block)
             .alignment(tuirealm::ratatui::layout::Alignment::Center)
+            .wrap(Wrap { trim: true })
             .style(
                 tuirealm::ratatui::style::Style::default()
                     .fg(tuirealm::ratatui::style::Color::Green)
@@ -98,4 +99,3 @@ impl Component<Msg, NoUserEvent> for SuccessPopup {
         }
     }
 }
-

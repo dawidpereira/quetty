@@ -571,4 +571,250 @@ where
 
         Ok(())
     }
+
+    /// Execute bulk delete operation - works for both main queue and DLQ
+    pub fn handle_bulk_delete_execution(
+        &mut self,
+        message_ids: Vec<MessageIdentifier>,
+    ) -> Option<Msg> {
+        if message_ids.is_empty() {
+            log::warn!("No messages provided for bulk delete operation");
+            return None;
+        }
+
+        if let Err(error_msg) = self.validate_bulk_delete_request(&message_ids) {
+            return Some(error_msg);
+        }
+
+        let consumer = match self.get_consumer_for_bulk_operation() {
+            Ok(consumer) => consumer,
+            Err(error_msg) => return Some(error_msg),
+        };
+
+        // Start the bulk delete operation
+        self.start_bulk_delete_operation(message_ids, consumer)
+    }
+
+    /// Validates that the bulk delete request is valid
+    fn validate_bulk_delete_request(&self, message_ids: &[MessageIdentifier]) -> Result<(), Msg> {
+        // Can delete from both main queue and DLQ - no restrictions
+        log::info!(
+            "Validated bulk delete request for {} messages from {:?} queue",
+            message_ids.len(),
+            self.queue_state.current_queue_type
+        );
+        Ok(())
+    }
+
+    /// Starts the bulk delete operation in a background task
+    fn start_bulk_delete_operation(
+        &self,
+        message_ids: Vec<MessageIdentifier>,
+        consumer: Arc<Mutex<Consumer>>,
+    ) -> Option<Msg> {
+        let taskpool = &self.taskpool;
+        let tx_to_main = self.tx_to_main.clone();
+
+        // Start loading indicator
+        let loading_message = format!("Bulk deleting {} messages...", message_ids.len());
+        Self::send_message_or_log_error(
+            &tx_to_main,
+            Msg::LoadingActivity(LoadingActivityMsg::Start(loading_message)),
+            "loading start",
+        );
+
+        // Spawn bulk delete task
+        let tx_to_main_err = tx_to_main.clone();
+        let queue_type = self.queue_state.current_queue_type.clone();
+
+        let task = async move {
+            log::debug!("Executing bulk delete operation in background task");
+
+            let result = Self::execute_bulk_delete_operation(consumer, message_ids.clone()).await;
+
+            match result {
+                Ok(()) => {
+                    Self::handle_bulk_delete_success(&tx_to_main, &message_ids, queue_type);
+                }
+                Err(e) => {
+                    Self::handle_bulk_delete_error(&tx_to_main, &tx_to_main_err, e, queue_type);
+                }
+            }
+        };
+
+        taskpool.execute(task);
+        None
+    }
+
+    /// Executes the bulk delete operation: find and complete target messages
+    async fn execute_bulk_delete_operation(
+        consumer: Arc<Mutex<Consumer>>,
+        message_ids: Vec<MessageIdentifier>,
+    ) -> Result<(), AppError> {
+        use crate::app::updates::messages::utils::find_target_message;
+
+        let mut consumer = consumer.lock().await;
+        let total_messages = message_ids.len();
+
+        log::info!(
+            "Starting bulk delete operation for {} messages",
+            total_messages
+        );
+
+        let mut successfully_deleted = 0;
+        let mut not_found_count = 0;
+        let mut delete_failed_count = 0;
+        let mut critical_errors = Vec::new();
+
+        // Process each message individually
+        for message_id in &message_ids {
+            match find_target_message(&mut consumer, &message_id.id, message_id.sequence).await {
+                Ok(target_msg) => {
+                    // Complete the message to delete it
+                    match consumer.complete_message(&target_msg).await {
+                        Ok(()) => {
+                            log::debug!("Successfully deleted message {}", message_id.id);
+                            successfully_deleted += 1;
+                        }
+                        Err(e) => {
+                            let error_msg =
+                                format!("Failed to delete message {}: {}", message_id.id, e);
+                            log::error!("{}", error_msg);
+                            critical_errors.push(error_msg);
+                            delete_failed_count += 1;
+                        }
+                    }
+                }
+                Err(_e) => {
+                    // Message not found - this is common and not critical
+                    // The message may have been processed by another consumer, expired, etc.
+                    log::info!(
+                        "Message {} was not found in queue (likely already processed/expired)",
+                        message_id.id
+                    );
+                    not_found_count += 1;
+                }
+            }
+        }
+
+        log::info!(
+            "Bulk delete operation completed: {} deleted, {} not found, {} failed out of {} total",
+            successfully_deleted,
+            not_found_count,
+            delete_failed_count,
+            total_messages
+        );
+
+        // Only consider it a critical failure if actual deletions failed
+        // Messages not found are treated as already processed (success)
+        if delete_failed_count > 0 {
+            let error_summary = if critical_errors.len() <= 3 {
+                critical_errors.join("; ")
+            } else {
+                format!(
+                    "{} (and {} more errors)",
+                    critical_errors[..3].join("; "),
+                    critical_errors.len() - 3
+                )
+            };
+
+            return Err(AppError::ServiceBus(format!(
+                "Bulk delete partially failed: {} out of {} messages could not be deleted due to errors. Errors: {}",
+                delete_failed_count, total_messages, error_summary
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Handles successful bulk delete operation
+    fn handle_bulk_delete_success(
+        tx_to_main: &Sender<Msg>,
+        message_ids: &[MessageIdentifier],
+        queue_type: QueueType,
+    ) {
+        log::info!(
+            "Bulk delete operation completed successfully for {} messages",
+            message_ids.len()
+        );
+
+        // Stop loading indicator
+        Self::send_message_or_log_error(
+            tx_to_main,
+            Msg::LoadingActivity(LoadingActivityMsg::Stop),
+            "loading stop",
+        );
+
+        // Remove messages from local state
+        Self::send_message_or_log_error(
+            tx_to_main,
+            Msg::MessageActivity(MessageActivityMsg::BulkRemoveMessagesFromState(
+                message_ids.to_vec(),
+            )),
+            "bulk remove from state",
+        );
+
+        // Show success popup
+        let queue_name = match queue_type {
+            QueueType::Main => "main queue",
+            QueueType::DeadLetter => "dead letter queue",
+        };
+
+        let title = "Bulk Delete Complete";
+
+        // Add concurrent processing note only for main queue, not DLQ
+        let success_message = if matches!(queue_type, QueueType::Main) {
+            format!(
+                "{}\n\n✅ Successfully deleted {} message{} from {}\n📍 Action: Messages permanently removed\n\nℹ️  Note: Some messages may have already been processed by other consumers",
+                title,
+                message_ids.len(),
+                if message_ids.len() == 1 { "" } else { "s" },
+                queue_name
+            )
+        } else {
+            format!(
+                "{}\n\n✅ Successfully deleted {} message{} from {}\n📍 Action: Messages permanently removed",
+                title,
+                message_ids.len(),
+                if message_ids.len() == 1 { "" } else { "s" },
+                queue_name
+            )
+        };
+
+        Self::send_message_or_log_error(
+            tx_to_main,
+            Msg::PopupActivity(PopupActivityMsg::ShowSuccess(success_message)),
+            "success popup",
+        );
+    }
+
+    /// Handles bulk delete operation errors
+    fn handle_bulk_delete_error(
+        tx_to_main: &Sender<Msg>,
+        tx_to_main_err: &Sender<Msg>,
+        error: AppError,
+        queue_type: QueueType,
+    ) {
+        log::error!("Error in bulk delete operation: {}", error);
+
+        // Stop loading indicator
+        Self::send_message_or_log_error(
+            tx_to_main,
+            Msg::LoadingActivity(LoadingActivityMsg::Stop),
+            "loading stop",
+        );
+
+        // Show error message
+        let queue_name = match queue_type {
+            QueueType::Main => "main queue",
+            QueueType::DeadLetter => "dead letter queue",
+        };
+
+        let enhanced_error = AppError::ServiceBus(format!(
+            "Failed to delete messages from {}: {}",
+            queue_name, error
+        ));
+
+        Self::send_message_or_log_error(tx_to_main_err, Msg::Error(enhanced_error), "error");
+    }
 }
