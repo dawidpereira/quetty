@@ -1,3 +1,10 @@
+use crate::app::model::Model;
+use crate::components::common::{
+    LoadingActivityMsg, MessageActivityMsg, Msg, QueueActivityMsg, QueueType,
+};
+use crate::config;
+use crate::error::{AppError, AppResult};
+use server::bulk_operations::MessageIdentifier;
 use server::model::MessageModel;
 use tui_realm_stdlib::Table;
 use tuirealm::Frame;
@@ -9,14 +16,6 @@ use tuirealm::terminal::TerminalAdapter;
 use tuirealm::{
     AttrValue, Attribute, Component, Event, MockComponent, NoUserEvent, State, StateValue,
 };
-
-use crate::app::model::Model;
-use crate::components::common::{
-    LoadingActivityMsg, MessageActivityMsg, Msg, QueueActivityMsg, QueueType,
-};
-use crate::config;
-use crate::error::{AppError, AppResult};
-use server::bulk_operations::MessageIdentifier;
 
 #[derive(Debug, Clone)]
 pub struct PaginationInfo {
@@ -125,9 +124,7 @@ impl Messages {
                 ))
         };
 
-        Self {
-            component,
-        }
+        Self { component }
     }
 
     fn format_queue_display(info: &PaginationInfo) -> String {
@@ -214,9 +211,9 @@ impl Component<Msg, NoUserEvent> for Messages {
         let cmd_result = match ev {
             // Bulk selection key bindings
             Event::Keyboard(KeyEvent {
-                code: Key::Char(' '),
+                code: Key::Char(c),
                 modifiers: KeyModifiers::NONE,
-            }) => {
+            }) if c == config::CONFIG.keys().toggle_selection() => {
                 // Toggle selection for current message
                 let index = match self.state() {
                     tuirealm::State::One(StateValue::Usize(index)) => index,
@@ -226,9 +223,9 @@ impl Component<Msg, NoUserEvent> for Messages {
                 return Some(Self::create_toggle_message_selection(index));
             }
             Event::Keyboard(KeyEvent {
-                code: Key::Char('a'),
+                code: Key::Char(c),
                 modifiers: KeyModifiers::CONTROL,
-            }) => {
+            }) if c == config::CONFIG.keys().select_all_page() => {
                 // Select all messages on current page
                 return Some(Msg::MessageActivity(
                     MessageActivityMsg::SelectAllCurrentPage,
@@ -254,9 +251,9 @@ impl Component<Msg, NoUserEvent> for Messages {
 
             // Enhanced existing operations for bulk mode
             Event::Keyboard(KeyEvent {
-                code: Key::Char('d'),
+                code: Key::Char(c),
                 modifiers: KeyModifiers::CONTROL,
-            }) => {
+            }) if c == config::CONFIG.keys().send_to_dlq() => {
                 // Check if we should do bulk operation or single message operation
                 // We'll send the bulk message and let the handler decide
                 return Some(Msg::MessageActivity(
@@ -264,18 +261,27 @@ impl Component<Msg, NoUserEvent> for Messages {
                 ));
             }
             Event::Keyboard(KeyEvent {
-                code: Key::Char('r'),
+                code: Key::Char(c),
                 modifiers: KeyModifiers::NONE,
-            }) => {
+            }) if c == config::CONFIG.keys().send_to_dlq() => {
+                // Single send to DLQ
+                return Some(Msg::MessageActivity(
+                    MessageActivityMsg::BulkSendSelectedToDLQ,
+                ));
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(c),
+                modifiers: KeyModifiers::NONE,
+            }) if c == config::CONFIG.keys().resend_from_dlq() => {
                 // Resend only (without deleting from DLQ)
                 return Some(Msg::MessageActivity(
                     MessageActivityMsg::BulkResendSelectedFromDLQ(false),
                 ));
             }
             Event::Keyboard(KeyEvent {
-                code: Key::Char('R'),
+                code: Key::Char(c),
                 modifiers: KeyModifiers::SHIFT,
-            }) => {
+            }) if c == config::CONFIG.keys().resend_and_delete_from_dlq() => {
                 // Resend and delete from DLQ
                 return Some(Msg::MessageActivity(
                     MessageActivityMsg::BulkResendSelectedFromDLQ(true),
@@ -284,12 +290,22 @@ impl Component<Msg, NoUserEvent> for Messages {
             Event::Keyboard(KeyEvent {
                 code: Key::Delete,
                 modifiers: KeyModifiers::NONE,
-            })
-            | Event::Keyboard(KeyEvent {
-                code: Key::Char('x'),
-                modifiers: KeyModifiers::CONTROL,
             }) => {
                 // Check if we should do bulk operation or single message operation
+                return Some(Msg::MessageActivity(MessageActivityMsg::BulkDeleteSelected));
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(c),
+                modifiers: KeyModifiers::CONTROL,
+            }) if c == config::CONFIG.keys().alt_delete_message() => {
+                // Bulk delete with Ctrl+X
+                return Some(Msg::MessageActivity(MessageActivityMsg::BulkDeleteSelected));
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(c),
+                modifiers: KeyModifiers::NONE,
+            }) if c == config::CONFIG.keys().delete_message() => {
+                // Single delete with X
                 return Some(Msg::MessageActivity(MessageActivityMsg::BulkDeleteSelected));
             }
 
@@ -302,9 +318,9 @@ impl Component<Msg, NoUserEvent> for Messages {
                 CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
             }
             Event::Keyboard(KeyEvent {
-                code: Key::Char('j'),
+                code: Key::Char(c),
                 modifiers: KeyModifiers::NONE,
-            }) => {
+            }) if c == config::CONFIG.keys().down() => {
                 self.component.perform(Cmd::Move(Direction::Down));
                 CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
             }
@@ -316,9 +332,9 @@ impl Component<Msg, NoUserEvent> for Messages {
                 CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
             }
             Event::Keyboard(KeyEvent {
-                code: Key::Char('k'),
+                code: Key::Char(c),
                 modifiers: KeyModifiers::NONE,
-            }) => {
+            }) if c == config::CONFIG.keys().up() => {
                 self.component.perform(Cmd::Move(Direction::Up));
                 CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
             }
@@ -343,21 +359,29 @@ impl Component<Msg, NoUserEvent> for Messages {
 
             // Pagination
             Event::Keyboard(KeyEvent {
-                code: Key::Char('n'),
+                code: Key::Char(c),
                 modifiers: KeyModifiers::NONE,
-            }) => return Some(Msg::MessageActivity(MessageActivityMsg::NextPage)),
+            }) if c == config::CONFIG.keys().next_page() => {
+                return Some(Msg::MessageActivity(MessageActivityMsg::NextPage));
+            }
             Event::Keyboard(KeyEvent {
-                code: Key::Char(']'),
+                code: Key::Char(c),
                 modifiers: KeyModifiers::NONE,
-            }) => return Some(Msg::MessageActivity(MessageActivityMsg::NextPage)),
+            }) if c == config::CONFIG.keys().alt_next_page() => {
+                return Some(Msg::MessageActivity(MessageActivityMsg::NextPage));
+            }
             Event::Keyboard(KeyEvent {
-                code: Key::Char('p'),
+                code: Key::Char(c),
                 modifiers: KeyModifiers::NONE,
-            }) => return Some(Msg::MessageActivity(MessageActivityMsg::PreviousPage)),
+            }) if c == config::CONFIG.keys().prev_page() => {
+                return Some(Msg::MessageActivity(MessageActivityMsg::PreviousPage));
+            }
             Event::Keyboard(KeyEvent {
-                code: Key::Char('['),
+                code: Key::Char(c),
                 modifiers: KeyModifiers::NONE,
-            }) => return Some(Msg::MessageActivity(MessageActivityMsg::PreviousPage)),
+            }) if c == config::CONFIG.keys().alt_prev_page() => {
+                return Some(Msg::MessageActivity(MessageActivityMsg::PreviousPage));
+            }
             Event::Keyboard(KeyEvent {
                 code: Key::Char('d'),
                 modifiers: KeyModifiers::NONE,

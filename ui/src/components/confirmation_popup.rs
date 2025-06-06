@@ -1,3 +1,5 @@
+use crate::components::common::{Msg, PopupActivityMsg};
+use crate::config;
 use tui_realm_stdlib::Paragraph;
 use tuirealm::{
     Component, Event, MockComponent, NoUserEvent,
@@ -10,8 +12,6 @@ use tuirealm::{
         widgets::{Block, Paragraph as RatatuiParagraph},
     },
 };
-
-use crate::components::common::{Msg, PopupActivityMsg};
 
 pub struct ConfirmationPopup {
     component: Paragraph,
@@ -62,17 +62,17 @@ impl MockComponent for ConfirmationPopup {
         // Add empty line for spacing
         lines.push(Line::from(""));
 
-        // Add the options
+        let keys = config::CONFIG.keys();
         lines.push(Line::from(vec![
             Span::styled(
-                "[Y] Yes",
+                format!("[{}] Yes", keys.confirm_yes().to_uppercase()),
                 tuirealm::ratatui::style::Style::default()
                     .fg(tuirealm::ratatui::style::Color::Green)
                     .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
             ),
             Span::raw("    "),
             Span::styled(
-                "[N] No",
+                format!("[{}] No", keys.confirm_no().to_uppercase()),
                 tuirealm::ratatui::style::Style::default()
                     .fg(tuirealm::ratatui::style::Color::Red)
                     .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
@@ -116,17 +116,36 @@ impl Component<Msg, NoUserEvent> for ConfirmationPopup {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
         match ev {
             Event::Keyboard(KeyEvent {
-                code: Key::Char('y') | Key::Char('Y'),
-                ..
-            }) => Some(Msg::PopupActivity(PopupActivityMsg::ConfirmationResult(
-                true,
-            ))),
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('n') | Key::Char('N') | Key::Esc,
-                ..
-            }) => Some(Msg::PopupActivity(PopupActivityMsg::ConfirmationResult(
-                false,
-            ))),
+                code: Key::Char(c), ..
+            }) => {
+                let keys = config::CONFIG.keys();
+                let c_lower = c.to_lowercase().next().unwrap_or(c);
+                let yes_key = keys
+                    .confirm_yes()
+                    .to_lowercase()
+                    .next()
+                    .unwrap_or(keys.confirm_yes());
+                let no_key = keys
+                    .confirm_no()
+                    .to_lowercase()
+                    .next()
+                    .unwrap_or(keys.confirm_no());
+
+                if c_lower == yes_key {
+                    Some(Msg::PopupActivity(PopupActivityMsg::ConfirmationResult(
+                        true,
+                    )))
+                } else if c_lower == no_key {
+                    Some(Msg::PopupActivity(PopupActivityMsg::ConfirmationResult(
+                        false,
+                    )))
+                } else {
+                    None
+                }
+            }
+            Event::Keyboard(KeyEvent { code: Key::Esc, .. }) => Some(Msg::PopupActivity(
+                PopupActivityMsg::ConfirmationResult(false),
+            )),
             _ => None,
         }
     }
