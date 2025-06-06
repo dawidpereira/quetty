@@ -1,3 +1,5 @@
+use crate::components::common::Msg;
+use crate::config;
 use tuirealm::{
     Component, Event, Frame, MockComponent, NoUserEvent,
     event::{Key, KeyEvent, KeyModifiers},
@@ -9,8 +11,6 @@ use tuirealm::{
         widgets::{Block, Paragraph as RatatuiParagraph},
     },
 };
-
-use crate::components::common::Msg;
 
 pub struct HelpScreen {}
 
@@ -34,13 +34,16 @@ impl MockComponent for HelpScreen {
             .margin(1)
             .split(area);
 
-        // Header section
+        let keys = config::CONFIG.keys();
         let header_text = Text::from(vec![
             Line::from(vec![Span::styled(
                 "Quetty - Azure Service Bus Queue Manager",
                 Style::default().fg(Color::Yellow),
             )]),
-            Line::from(Span::raw("Press [Esc] or [h] to close this help screen")),
+            Line::from(Span::raw(format!(
+                "Press [Esc] or [{}] to close this help screen",
+                keys.help()
+            ))),
             Line::from(vec![Span::styled(
                 "⚠️  DLQ operations are in development - use with caution",
                 Style::default().fg(Color::Red),
@@ -51,7 +54,7 @@ impl MockComponent for HelpScreen {
             .alignment(tuirealm::ratatui::layout::Alignment::Center)
             .block(Block::default());
 
-        // Help content with organized sections
+        // Help content with organized sections - using configured keys
         let help_content = Text::from(vec![
             // Global Actions
             Line::from(vec![Span::styled(
@@ -59,8 +62,11 @@ impl MockComponent for HelpScreen {
                 Style::default().fg(Color::Green),
             )]),
             Line::from(""),
-            Line::from("  [q]              Quit application"),
-            Line::from("  [h]              Toggle this help screen"),
+            Line::from(format!("  [{}]              Quit application", keys.quit())),
+            Line::from(format!(
+                "  [{}]              Toggle this help screen",
+                keys.help()
+            )),
             Line::from("  [Esc]            Go back / Cancel operation"),
             Line::from(""),
             // Navigation
@@ -69,9 +75,12 @@ impl MockComponent for HelpScreen {
                 Style::default().fg(Color::Green),
             )]),
             Line::from(""),
-            Line::from("  [↑] [k]          Move up"),
-            Line::from("  [↓] [j]          Move down"),
-            Line::from("  [Enter] [o]      Select / Open item"),
+            Line::from(format!("  [↑] [{}]          Move up", keys.up())),
+            Line::from(format!("  [↓] [{}]          Move down", keys.down())),
+            Line::from(format!(
+                "  [Enter] [{}]      Select / Open item",
+                keys.queue_select()
+            )),
             Line::from("  [PgUp] [PgDn]    Scroll page up/down"),
             Line::from(""),
             // Queue & Message Management
@@ -80,8 +89,16 @@ impl MockComponent for HelpScreen {
                 Style::default().fg(Color::Green),
             )]),
             Line::from(""),
-            Line::from("  [n] ']'          Next page"),
-            Line::from("  [p] '['         Previous page"),
+            Line::from(format!(
+                "  [{}] [{}]          Next page",
+                keys.next_page(),
+                keys.alt_next_page()
+            )),
+            Line::from(format!(
+                "  [{}] [{}]         Previous page",
+                keys.prev_page(),
+                keys.alt_prev_page()
+            )),
             Line::from("  [d]              Toggle between Main ↔ Dead Letter Queue"),
             Line::from("  [Enter]          View message details"),
             Line::from(""),
@@ -91,8 +108,14 @@ impl MockComponent for HelpScreen {
                 Style::default().fg(Color::Green),
             )]),
             Line::from(""),
-            Line::from("  [Space]          Toggle selection for current message"),
-            Line::from("  [Ctrl+A]         Select all messages on current page"),
+            Line::from(format!(
+                "  [{}]          Toggle selection for current message",
+                keys.toggle_selection()
+            )),
+            Line::from(format!(
+                "  [Ctrl+{}]         Select all messages on current page",
+                keys.select_all_page()
+            )),
             Line::from("  [Ctrl+Shift+A]   Select all loaded messages (all pages)"),
             Line::from("  [Esc]            Clear selections / Exit bulk mode"),
             Line::from(""),
@@ -102,9 +125,24 @@ impl MockComponent for HelpScreen {
                 Style::default().fg(Color::Green),
             )]),
             Line::from(""),
-            Line::from("  [Delete] [Ctrl+X] Delete message(s) with confirmation"),
-            Line::from("  [Ctrl+D]         Send message(s) to DLQ (⚠️ DEV)"),
-            Line::from("  [r]              Resend from DLQ to main queue (⚠️ DEV)"),
+            Line::from(format!(
+                "  [{}] [Ctrl+{}]     Delete message(s) with confirmation",
+                keys.delete_message(),
+                keys.alt_delete_message()
+            )),
+            Line::from(format!(
+                "  [{}] [Ctrl+{}]     Send message(s) to DLQ (⚠️ DEV)",
+                keys.send_to_dlq(),
+                keys.send_to_dlq()
+            )),
+            Line::from(format!(
+                "  [{}]              Resend from DLQ to main queue (keep in DLQ)",
+                keys.resend_from_dlq()
+            )),
+            Line::from(format!(
+                "  [{}]              Resend and delete from DLQ (⚠️ DEV)",
+                keys.resend_and_delete_from_dlq()
+            )),
             Line::from(""),
             Line::from(vec![Span::styled(
                 "💡 Note: Operations work on selected messages in bulk mode,",
@@ -122,7 +160,11 @@ impl MockComponent for HelpScreen {
             )]),
             Line::from(""),
             Line::from("  [←] [→]          Move cursor left/right"),
-            Line::from("  [↑] [↓] [k] [j]  Scroll content up/down"),
+            Line::from(format!(
+                "  [↑] [↓] [{}] [{}]  Scroll content up/down",
+                keys.up(),
+                keys.down()
+            )),
             Line::from("  [PgUp] [PgDn]    Scroll content page up/down"),
             Line::from("  [Esc]            Return to message list"),
         ]);
@@ -157,9 +199,16 @@ impl Component<Msg, NoUserEvent> for HelpScreen {
         match ev {
             Event::Keyboard(KeyEvent { code: Key::Esc, .. }) => Some(Msg::ToggleHelpScreen),
             Event::Keyboard(KeyEvent {
-                code: Key::Char('h'),
+                code: Key::Char(c),
                 modifiers: KeyModifiers::NONE,
-            }) => Some(Msg::ToggleHelpScreen),
+            }) => {
+                let keys = config::CONFIG.keys();
+                if c == keys.help() {
+                    Some(Msg::ToggleHelpScreen)
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }

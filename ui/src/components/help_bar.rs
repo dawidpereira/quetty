@@ -1,10 +1,10 @@
+use crate::components::common::{ComponentId, Msg, QueueType};
+use crate::config;
 use tuirealm::props::{Alignment, Color};
 use tuirealm::ratatui::layout::Rect;
 use tuirealm::ratatui::style::Style;
 use tuirealm::ratatui::text::{Line, Span, Text};
 use tuirealm::{Component, Event, Frame, MockComponent, NoUserEvent};
-
-use crate::components::common::{ComponentId, Msg, QueueType};
 
 /// Help bar that shows keyboard shortcuts based on the current active component
 pub struct HelpBar {
@@ -20,10 +20,11 @@ impl HelpBar {
 
     /// Get the global shortcuts that are always available
     fn get_global_shortcuts(&self) -> Vec<(String, bool)> {
+        let keys = config::CONFIG.keys();
         vec![
-            ("[h]".to_string(), true),
+            (format!("[{}]", keys.help()), true),
             (" Help ".to_string(), false),
-            ("[q]".to_string(), true),
+            (format!("[{}]", keys.quit()), true),
             (" Quit".to_string(), false),
         ]
     }
@@ -46,25 +47,26 @@ impl HelpBar {
                 ];
 
                 // Add bulk mode shortcuts - simplified
+                let keys = config::CONFIG.keys();
                 if bulk_mode.unwrap_or(false) {
-                    shortcuts.push(("[Space]".to_string(), true));
+                    shortcuts.push((format!("[{}]", keys.toggle_selection()), true));
                     shortcuts.push((" Select ".to_string(), false));
-                    
+
                     if selected_count.unwrap_or(0) > 0 {
-                        shortcuts.push(("[Del]".to_string(), true));
+                        shortcuts.push((format!("[{}]", keys.delete_message()), true));
                         shortcuts.push((" Delete ".to_string(), false));
                         shortcuts.push(("[Esc]".to_string(), true));
                         shortcuts.push((" Clear ".to_string(), false));
                     } else {
-                        shortcuts.push(("[Ctrl+A]".to_string(), true));
+                        shortcuts.push((format!("[Ctrl+{}]", keys.select_all_page()), true));
                         shortcuts.push((" All ".to_string(), false));
                         shortcuts.push(("[Esc]".to_string(), true));
                         shortcuts.push((" Exit ".to_string(), false));
                     }
                 } else {
-                    shortcuts.push(("[Space]".to_string(), true));
+                    shortcuts.push((format!("[{}]", keys.toggle_selection()), true));
                     shortcuts.push((" Bulk ".to_string(), false));
-                    shortcuts.push(("[n/p]".to_string(), true));
+                    shortcuts.push((format!("[{}/{}]", keys.next_page(), keys.prev_page()), true));
                     shortcuts.push((" Page ".to_string(), false));
                 }
 
@@ -92,30 +94,39 @@ impl HelpBar {
                 ("[Esc]".to_string(), true),
                 (" Back ".to_string(), false),
             ],
-            ComponentId::QueuePicker => vec![
-                ("[↑/↓]".to_string(), true),
-                (" Navigate ".to_string(), false),
-                ("[Enter]".to_string(), true),
-                (" Select ".to_string(), false),
-                ("[Esc]".to_string(), true),
-                (" Back ".to_string(), false),
-            ],
-            ComponentId::NamespacePicker => vec![
-                ("[↑/↓]".to_string(), true),
-                (" Navigate ".to_string(), false),
-                ("[Enter]".to_string(), true),
-                (" Select ".to_string(), false),
-            ],
+            ComponentId::QueuePicker => {
+                let keys = config::CONFIG.keys();
+                vec![
+                    (format!("[{}/{}]", keys.up(), keys.down()), true),
+                    (" Navigate ".to_string(), false),
+                    (format!("[{}]", keys.queue_select()), true),
+                    (" Select ".to_string(), false),
+                    ("[Esc]".to_string(), true),
+                    (" Back ".to_string(), false),
+                ]
+            }
+            ComponentId::NamespacePicker => {
+                let keys = config::CONFIG.keys();
+                vec![
+                    (format!("[{}/{}]", keys.up(), keys.down()), true),
+                    (" Navigate ".to_string(), false),
+                    (format!("[{}]", keys.namespace_select()), true),
+                    (" Select ".to_string(), false),
+                ]
+            }
             ComponentId::ErrorPopup => vec![
                 ("[Enter/Esc]".to_string(), true),
                 (" Close ".to_string(), false),
             ],
-            ComponentId::ConfirmationPopup => vec![
-                ("[Y]".to_string(), true),
-                (" Yes ".to_string(), false),
-                ("[N/Esc]".to_string(), true),
-                (" No ".to_string(), false),
-            ],
+            ComponentId::ConfirmationPopup => {
+                let keys = config::CONFIG.keys();
+                vec![
+                    (format!("[{}]", keys.confirm_yes().to_uppercase()), true),
+                    (" Yes ".to_string(), false),
+                    (format!("[{}/Esc]", keys.confirm_no().to_uppercase()), true),
+                    (" No ".to_string(), false),
+                ]
+            }
             _ => vec![],
         }
     }

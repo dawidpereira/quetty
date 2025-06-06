@@ -1,3 +1,8 @@
+use crate::app::model::Model;
+use crate::components::common::{LoadingActivityMsg, Msg, NamespaceActivityMsg};
+use crate::config;
+use crate::config::CONFIG;
+use crate::error::{AppError, AppResult};
 use server::service_bus_manager::ServiceBusManager;
 use tuirealm::command::{Cmd, CmdResult};
 use tuirealm::event::{Key, KeyEvent};
@@ -8,12 +13,6 @@ use tuirealm::terminal::TerminalAdapter;
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, NoUserEvent, State, StateValue,
 };
-
-use crate::app::model::Model;
-use crate::config::CONFIG;
-use crate::error::{AppError, AppResult};
-
-use crate::components::common::{LoadingActivityMsg, Msg, NamespaceActivityMsg};
 
 const CMD_RESULT_NAMESPACE_SELECTED: &str = "NamespaceSelected";
 
@@ -77,32 +76,54 @@ impl Component<Msg, NoUserEvent> for NamespacePicker {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
         let cmd_result = match ev {
             Event::Keyboard(KeyEvent {
-                code: Key::Down | Key::Char('j'),
-                ..
+                code: Key::Down, ..
             }) => {
                 if self.selected + 1 < self.namespaces.len() {
                     self.selected += 1;
                 }
                 CmdResult::Changed(State::One(StateValue::Usize(self.selected)))
             }
-            Event::Keyboard(KeyEvent {
-                code: Key::Up | Key::Char('k'),
-                ..
-            }) => {
+            Event::Keyboard(KeyEvent { code: Key::Up, .. }) => {
                 if self.selected > 0 {
                     self.selected -= 1;
                 }
                 CmdResult::Changed(State::One(StateValue::Usize(self.selected)))
             }
             Event::Keyboard(KeyEvent {
-                code: Key::Enter | Key::Char('o'),
-                ..
+                code: Key::Enter, ..
             }) => {
                 if let Some(ns) = self.namespaces.get(self.selected).cloned() {
                     CmdResult::Custom(
                         CMD_RESULT_NAMESPACE_SELECTED,
                         State::One(StateValue::String(ns)),
                     )
+                } else {
+                    CmdResult::None
+                }
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(c), ..
+            }) => {
+                let keys = config::CONFIG.keys();
+                if c == keys.down() {
+                    if self.selected + 1 < self.namespaces.len() {
+                        self.selected += 1;
+                    }
+                    CmdResult::Changed(State::One(StateValue::Usize(self.selected)))
+                } else if c == keys.up() {
+                    if self.selected > 0 {
+                        self.selected -= 1;
+                    }
+                    CmdResult::Changed(State::One(StateValue::Usize(self.selected)))
+                } else if c == keys.namespace_select() {
+                    if let Some(ns) = self.namespaces.get(self.selected).cloned() {
+                        CmdResult::Custom(
+                            CMD_RESULT_NAMESPACE_SELECTED,
+                            State::One(StateValue::String(ns)),
+                        )
+                    } else {
+                        CmdResult::None
+                    }
                 } else {
                     CmdResult::None
                 }

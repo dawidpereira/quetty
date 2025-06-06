@@ -1,8 +1,8 @@
+use crate::components::common::Msg;
+use crate::config;
 use tui_realm_stdlib::Phantom;
 use tuirealm::event::{Key, KeyEvent, KeyModifiers};
 use tuirealm::{Component, Event, MockComponent, NoUserEvent};
-
-use crate::components::common::Msg;
 
 #[derive(MockComponent, Default)]
 pub struct GlobalKeyWatcher {
@@ -13,15 +13,17 @@ impl Component<Msg, NoUserEvent> for GlobalKeyWatcher {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
         match ev {
             Event::Keyboard(KeyEvent {
-                code: Key::Char('q'),
-                modifiers: KeyModifiers::NONE,
-            }) => Some(Msg::AppClose),
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('h'),
+                code: Key::Char(c),
                 modifiers: KeyModifiers::NONE,
             }) => {
-                // Show help screen when h is pressed
-                Some(Msg::ToggleHelpScreen)
+                let keys = config::CONFIG.keys();
+                if c == keys.quit() {
+                    Some(Msg::AppClose)
+                } else if c == keys.help() {
+                    Some(Msg::ToggleHelpScreen)
+                } else {
+                    None
+                }
             }
             _ => None,
         }

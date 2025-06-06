@@ -1,3 +1,10 @@
+use crate::app::model::Model;
+use crate::components::common::{
+    LoadingActivityMsg, MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg,
+};
+use crate::config;
+use crate::config::CONFIG;
+use crate::error::{AppError, AppResult};
 use azservicebus::ServiceBusReceiverOptions;
 use server::consumer::ServiceBusClientExt;
 use server::service_bus_manager::ServiceBusManager;
@@ -8,14 +15,6 @@ use tuirealm::ratatui::layout::Rect;
 use tuirealm::ratatui::widgets::{List, ListItem};
 use tuirealm::terminal::TerminalAdapter;
 use tuirealm::{Component, Event, Frame, MockComponent, NoUserEvent};
-
-use crate::app::model::Model;
-use crate::config::CONFIG;
-use crate::error::{AppError, AppResult};
-
-use crate::components::common::{
-    LoadingActivityMsg, MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg,
-};
 
 const CMD_RESULT_QUEUE_SELECTED: &str = "QueueSelected";
 const CMD_RESULT_NAMESPACE_UNSELECTED: &str = "NamespaceUnselected";
@@ -80,8 +79,7 @@ impl Component<Msg, NoUserEvent> for QueuePicker {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
         let cmd_result = match ev {
             Event::Keyboard(KeyEvent {
-                code: Key::Down | Key::Char('j'),
-                ..
+                code: Key::Down, ..
             }) => {
                 if self.selected + 1 < self.queues.len() {
                     self.selected += 1;
@@ -90,10 +88,7 @@ impl Component<Msg, NoUserEvent> for QueuePicker {
                     self.selected,
                 )))
             }
-            Event::Keyboard(KeyEvent {
-                code: Key::Up | Key::Char('k'),
-                ..
-            }) => {
+            Event::Keyboard(KeyEvent { code: Key::Up, .. }) => {
                 if self.selected > 0 {
                     self.selected -= 1;
                 }
@@ -102,8 +97,7 @@ impl Component<Msg, NoUserEvent> for QueuePicker {
                 )))
             }
             Event::Keyboard(KeyEvent {
-                code: Key::Enter | Key::Char('o'),
-                ..
+                code: Key::Enter, ..
             }) => {
                 if let Some(queue) = self.queues.get(self.selected).cloned() {
                     CmdResult::Custom(
@@ -118,6 +112,37 @@ impl Component<Msg, NoUserEvent> for QueuePicker {
                 CMD_RESULT_NAMESPACE_UNSELECTED,
                 tuirealm::State::One(tuirealm::StateValue::String("".to_string())),
             ),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(c), ..
+            }) => {
+                let keys = config::CONFIG.keys();
+                if c == keys.down() {
+                    if self.selected + 1 < self.queues.len() {
+                        self.selected += 1;
+                    }
+                    CmdResult::Changed(tuirealm::State::One(tuirealm::StateValue::Usize(
+                        self.selected,
+                    )))
+                } else if c == keys.up() {
+                    if self.selected > 0 {
+                        self.selected -= 1;
+                    }
+                    CmdResult::Changed(tuirealm::State::One(tuirealm::StateValue::Usize(
+                        self.selected,
+                    )))
+                } else if c == keys.queue_select() {
+                    if let Some(queue) = self.queues.get(self.selected).cloned() {
+                        CmdResult::Custom(
+                            CMD_RESULT_QUEUE_SELECTED,
+                            tuirealm::State::One(tuirealm::StateValue::String(queue)),
+                        )
+                    } else {
+                        CmdResult::None
+                    }
+                } else {
+                    CmdResult::None
+                }
+            }
             _ => CmdResult::None,
         };
 
