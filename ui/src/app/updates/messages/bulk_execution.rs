@@ -126,7 +126,7 @@ where
             consumer,
             current_queue_name, // target_queue
             true,               // should_delete = true for DLQ to Main
-            "Bulk resending {} messages from dead letter queue...",
+            "Bulk resending {} messages from DLQ to main queue...",
             DLQ_DISPLAY_NAME,
             MAIN_QUEUE_DISPLAY_NAME,
         );
@@ -181,8 +181,12 @@ where
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
 
-        // Extract loading message before moving operation_params
-        let loading_message = operation_params.loading_message_template.clone();
+        // Extract and format loading message with the actual count before moving operation_params
+        let message_count = match &bulk_data {
+            BulkSendData::MessageIds(ids) => ids.len(),
+            BulkSendData::MessageData(data) => data.len(),
+        };
+        let loading_message = operation_params.loading_message_template.replace("{}", &message_count.to_string());
 
         // Start loading indicator
         Self::send_message_or_log_error(
@@ -333,7 +337,7 @@ where
                 consumer,
                 target_queue,
                 false, // should_delete = false for resend-only
-                "Bulk resending {} messages from dead letter queue (keeping in DLQ)...",
+                "Bulk copying {} messages from DLQ to main queue (keeping in DLQ)...",
                 DLQ_DISPLAY_NAME,
                 MAIN_QUEUE_DISPLAY_NAME,
             ),
