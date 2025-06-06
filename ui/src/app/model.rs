@@ -10,6 +10,7 @@ use crate::components::message_details::MessageDetails;
 use crate::components::messages::Messages;
 use crate::components::namespace_picker::NamespacePicker;
 use crate::components::queue_picker::QueuePicker;
+use crate::components::success_popup::SuccessPopup;
 use crate::components::text_label::TextLabel;
 use crate::config;
 use crate::error::{AppError, AppResult, handle_error};
@@ -192,6 +193,7 @@ where
 
             // View help bar (if not showing any popup) with active component
             if !self.app.mounted(&ComponentId::ErrorPopup)
+                && !self.app.mounted(&ComponentId::SuccessPopup)
                 && !self.app.mounted(&ComponentId::ConfirmationPopup)
             {
                 // Create a temporary help bar with the active component
@@ -337,6 +339,72 @@ where
     pub fn unmount_error_popup(&mut self) -> AppResult<()> {
         self.app
             .umount(&ComponentId::ErrorPopup)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        // Return to appropriate state
+        match self.app_state {
+            AppState::NamespacePicker => {
+                self.app
+                    .active(&ComponentId::NamespacePicker)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::QueuePicker => {
+                self.app
+                    .active(&ComponentId::QueuePicker)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::MessagePicker => {
+                self.app
+                    .active(&ComponentId::Messages)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::MessageDetails => {
+                self.app
+                    .active(&ComponentId::MessageDetails)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::Loading => {
+                // If we were showing a loading indicator, just continue showing it
+                // No need to activate any specific component
+                // The loading indicator will be updated or closed by its own message flow
+            }
+            AppState::HelpScreen => {
+                self.app
+                    .active(&ComponentId::HelpScreen)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+        }
+
+        self.redraw = true;
+
+        Ok(())
+    }
+
+    /// Mount success popup and give focus to it
+    pub fn mount_success_popup(&mut self, message: &str) -> AppResult<()> {
+        log::info!("Displaying success popup: {}", message);
+
+        self.app
+            .remount(
+                ComponentId::SuccessPopup,
+                Box::new(SuccessPopup::new(message)),
+                Vec::default(),
+            )
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        self.app
+            .active(&ComponentId::SuccessPopup)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        self.redraw = true;
+
+        Ok(())
+    }
+
+    /// Unmount success popup and return focus to previous component
+    pub fn unmount_success_popup(&mut self) -> AppResult<()> {
+        self.app
+            .umount(&ComponentId::SuccessPopup)
             .map_err(|e| AppError::Component(e.to_string()))?;
 
         // Return to appropriate state

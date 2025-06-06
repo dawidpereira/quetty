@@ -18,6 +18,7 @@ pub enum ComponentId {
     NamespacePicker,
     GlobalKeyWatcher,
     ErrorPopup,
+    SuccessPopup,
     ConfirmationPopup,
     LoadingIndicator,
     HelpScreen,
@@ -109,6 +110,8 @@ pub enum LoadingActivityMsg {
 pub enum PopupActivityMsg {
     ShowError(AppError),
     CloseError,
+    ShowSuccess(String),
+    CloseSuccess,
     ShowConfirmation {
         title: String,
         message: String,
@@ -122,6 +125,8 @@ impl PartialEq for PopupActivityMsg {
         match (self, other) {
             (PopupActivityMsg::ShowError(e1), PopupActivityMsg::ShowError(e2)) => e1 == e2,
             (PopupActivityMsg::CloseError, PopupActivityMsg::CloseError) => true,
+            (PopupActivityMsg::ShowSuccess(s1), PopupActivityMsg::ShowSuccess(s2)) => s1 == s2,
+            (PopupActivityMsg::CloseSuccess, PopupActivityMsg::CloseSuccess) => true,
             (
                 PopupActivityMsg::ConfirmationResult(b1),
                 PopupActivityMsg::ConfirmationResult(b2),

@@ -1,0 +1,101 @@
+use crate::components::common::{Msg, PopupActivityMsg};
+use tui_realm_stdlib::Paragraph;
+use tuirealm::{
+    Component, Event, MockComponent, NoUserEvent,
+    event::{Key, KeyEvent},
+    props::{Alignment, BorderType, Borders, Color, TextModifiers, TextSpan},
+    ratatui::{
+        Frame,
+        layout::Rect,
+        text::{Line, Text},
+        widgets::{Block, Paragraph as RatatuiParagraph},
+    },
+};
+
+pub struct SuccessPopup {
+    component: Paragraph,
+    message: String,
+}
+
+impl SuccessPopup {
+    pub fn new(message: &str) -> Self {
+        Self {
+            component: Paragraph::default()
+                .borders(
+                    Borders::default()
+                        .color(Color::Green)
+                        .modifiers(BorderType::Rounded),
+                )
+                .title(" Success ", Alignment::Center)
+                .foreground(Color::Green)
+                .modifiers(TextModifiers::BOLD)
+                .alignment(Alignment::Center)
+                .text(&[TextSpan::from(message)]),
+            message: message.to_string(),
+        }
+    }
+}
+
+impl MockComponent for SuccessPopup {
+    fn view(&mut self, frame: &mut Frame, area: Rect) {
+        // Create the border block
+        let block = Block::default()
+            .borders(tuirealm::ratatui::widgets::Borders::ALL)
+            .border_type(tuirealm::ratatui::widgets::BorderType::Rounded)
+            .border_style(
+                tuirealm::ratatui::style::Style::default()
+                    .fg(tuirealm::ratatui::style::Color::Green),
+            )
+            .title(" Success ")
+            .title_alignment(tuirealm::ratatui::layout::Alignment::Center);
+
+        // Split the message into lines and create centered text
+        let mut lines = Vec::new();
+        for line in self.message.lines() {
+            lines.push(Line::from(line).alignment(tuirealm::ratatui::layout::Alignment::Center));
+        }
+
+        let text = Text::from(lines);
+
+        // Create the paragraph with custom text
+        let paragraph = RatatuiParagraph::new(text)
+            .block(block)
+            .alignment(tuirealm::ratatui::layout::Alignment::Center)
+            .style(
+                tuirealm::ratatui::style::Style::default()
+                    .fg(tuirealm::ratatui::style::Color::Green)
+                    .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
+            );
+
+        frame.render_widget(paragraph, area);
+    }
+
+    fn query(&self, attr: tuirealm::Attribute) -> Option<tuirealm::AttrValue> {
+        self.component.query(attr)
+    }
+
+    fn attr(&mut self, attr: tuirealm::Attribute, value: tuirealm::AttrValue) {
+        self.component.attr(attr, value);
+    }
+
+    fn state(&self) -> tuirealm::State {
+        self.component.state()
+    }
+
+    fn perform(&mut self, cmd: tuirealm::command::Cmd) -> tuirealm::command::CmdResult {
+        self.component.perform(cmd)
+    }
+}
+
+impl Component<Msg, NoUserEvent> for SuccessPopup {
+    fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
+        match ev {
+            Event::Keyboard(KeyEvent {
+                code: Key::Enter | Key::Esc,
+                ..
+            }) => Some(Msg::PopupActivity(PopupActivityMsg::CloseSuccess)),
+            _ => None,
+        }
+    }
+}
+
