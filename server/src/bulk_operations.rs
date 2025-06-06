@@ -144,6 +144,18 @@ impl ServiceBusOperationContext {
 }
 
 /// Handles bulk operations on Azure Service Bus queues
+/// Parameters for processing a single batch of messages
+struct BatchProcessingContext<'a> {
+    consumer: Arc<Mutex<Consumer>>,
+    batch_size: usize,
+    target_messages_found: usize,
+    target_map: &'a HashMap<String, MessageIdentifier>,
+    messages_processed: usize,
+    remaining_targets: &'a mut HashMap<String, MessageIdentifier>,
+    target_messages_vec: &'a mut Vec<azservicebus::ServiceBusReceivedMessage>,
+    non_target_messages: &'a mut Vec<azservicebus::ServiceBusReceivedMessage>,
+}
+
 pub struct BulkOperationHandler {
     config: BulkOperationConfig,
 }
@@ -260,6 +272,129 @@ impl BulkOperationHandler {
         Ok(result)
     }
 
+    /// Resend messages from peeked message data to main queue without deleting from DLQ
+    /// This method uses message data already available from peek operations
+    pub async fn bulk_resend_from_dlq_only(
+        &self,
+        context: ServiceBusOperationContext,
+        messages_data: Vec<(MessageIdentifier, Vec<u8>)>,
+    ) -> Result<BulkOperationResult, Box<dyn std::error::Error>> {
+        log::info!(
+            "Starting bulk resend-only operation for {} messages to queue {} (without deleting from DLQ)",
+            messages_data.len(),
+            context.main_queue_name
+        );
+
+        let mut result = BulkOperationResult::new(messages_data.len());
+        if messages_data.is_empty() {
+            log::warn!("No message data provided for bulk resend-only operation");
+            return Ok(result);
+        }
+
+        // Execute the bulk resend-only operation with timeout
+        let operation_timeout = Duration::from_secs(self.config.operation_timeout_secs());
+        let bulk_result = timeout(
+            operation_timeout,
+            self.execute_bulk_resend_only_operation(context, messages_data, &mut result),
+        )
+        .await;
+
+        match bulk_result {
+            Ok(operation_result) => operation_result,
+            Err(_) => {
+                let timeout_error = format!(
+                    "Bulk resend-only operation timed out after {} seconds",
+                    self.config.operation_timeout_secs()
+                );
+                log::error!("{}", timeout_error);
+                result.add_failure(timeout_error);
+                Ok(result)
+            }
+        }
+    }
+
+    /// Core implementation of bulk resend-only operation
+    async fn execute_bulk_resend_only_operation(
+        &self,
+        context: ServiceBusOperationContext,
+        messages_data: Vec<(MessageIdentifier, Vec<u8>)>,
+        result: &mut BulkOperationResult,
+    ) -> Result<BulkOperationResult, Box<dyn std::error::Error>> {
+        if messages_data.is_empty() {
+            return Ok(result.clone());
+        }
+
+        // Convert message data to ServiceBusMessage objects
+        let messages_to_send = self.convert_peeked_messages_for_sending(&messages_data)?;
+
+        // Send all messages to the main queue
+        match self
+            .send_messages_to_main_queue(
+                &context.main_queue_name,
+                messages_to_send,
+                context.service_bus_client,
+            )
+            .await
+        {
+            Ok(()) => {
+                // Track all messages as successful
+                for (identifier, _) in messages_data {
+                    result.add_successful_message(identifier);
+                }
+                log::info!(
+                    "Successfully sent {} messages to main queue",
+                    result.successful
+                );
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to send messages to main queue: {}", e);
+                log::error!("{}", error_msg);
+                result.add_failure(error_msg);
+            }
+        }
+
+        log::info!(
+            "Bulk resend-only operation completed: {} successful, {} failed",
+            result.successful,
+            result.failed
+        );
+
+        Ok(result.clone())
+    }
+
+    /// Convert peeked message data to ServiceBusMessage objects for sending
+    fn convert_peeked_messages_for_sending(
+        &self,
+        messages_data: &[(MessageIdentifier, Vec<u8>)],
+    ) -> Result<Vec<ServiceBusMessage>, Box<dyn std::error::Error>> {
+        let mut converted_messages = Vec::new();
+
+        for (identifier, body) in messages_data {
+            log::debug!("Converting peeked message {} for sending", identifier.id);
+
+            // Create a new ServiceBusMessage with the body data
+            let mut message = ServiceBusMessage::new(body.clone());
+
+            // Set message ID for tracking (optional, but useful for debugging)
+            if let Err(e) = message.set_message_id(&identifier.id) {
+                log::warn!(
+                    "Failed to set message ID for message {}: {}",
+                    identifier.id,
+                    e
+                );
+                // Continue anyway - this is not critical
+            }
+
+            converted_messages.push(message);
+        }
+
+        log::debug!(
+            "Converted {} peeked messages for sending",
+            converted_messages.len()
+        );
+        Ok(converted_messages)
+    }
+
     /// Collect target messages from the queue, separating them from non-target messages
     async fn collect_target_messages(
         &self,
@@ -282,27 +417,38 @@ impl BulkOperationHandler {
 
         // Keep processing batches until we find all target messages or no more messages available
         while !remaining_targets.is_empty() {
-            match self.process_single_batch(
-                consumer.clone(),
+            let ctx = BatchProcessingContext {
+                consumer: consumer.clone(),
                 batch_size,
-                target_messages.len(),
+                target_messages_found: target_messages.len(),
                 target_map,
                 messages_processed,
-                &mut remaining_targets,
-                &mut target_messages,
-                &mut non_target_messages,
-            ).await? {
+                remaining_targets: &mut remaining_targets,
+                target_messages_vec: &mut target_messages,
+                non_target_messages: &mut non_target_messages,
+            };
+
+            match self.process_single_batch(ctx).await? {
                 Some(batch_processed) => {
                     messages_processed += batch_processed;
                 }
                 None => {
-                    self.log_no_more_messages(messages_processed, target_messages.len(), target_map.len());
+                    self.log_no_more_messages(
+                        messages_processed,
+                        target_messages.len(),
+                        target_map.len(),
+                    );
                     break;
                 }
             }
         }
 
-        self.log_collection_complete(&target_messages, &non_target_messages, messages_processed, &remaining_targets);
+        self.log_collection_complete(
+            &target_messages,
+            &non_target_messages,
+            messages_processed,
+            &remaining_targets,
+        );
 
         Ok((target_messages, non_target_messages))
     }
@@ -317,7 +463,12 @@ impl BulkOperationHandler {
     }
 
     /// Log when no more messages are available
-    fn log_no_more_messages(&self, messages_processed: usize, targets_found: usize, total_targets: usize) {
+    fn log_no_more_messages(
+        &self,
+        messages_processed: usize,
+        targets_found: usize,
+        total_targets: usize,
+    ) {
         log::warn!(
             "No more messages available in queue after processing {} messages. Found {}/{} target messages.",
             messages_processed,
@@ -353,28 +504,24 @@ impl BulkOperationHandler {
     /// Process a single batch of messages
     async fn process_single_batch(
         &self,
-        consumer: Arc<Mutex<Consumer>>,
-        batch_size: usize,
-        target_messages_found: usize,
-        target_map: &HashMap<String, MessageIdentifier>,
-        messages_processed: usize,
-        remaining_targets: &mut HashMap<String, MessageIdentifier>,
-        target_messages_vec: &mut Vec<azservicebus::ServiceBusReceivedMessage>,
-        non_target_messages: &mut Vec<azservicebus::ServiceBusReceivedMessage>,
+        ctx: BatchProcessingContext<'_>,
     ) -> Result<Option<usize>, Box<dyn std::error::Error>> {
-        match self.receive_message_batch(
-            consumer,
-            batch_size,
-            target_messages_found,
-            target_map,
-            messages_processed,
-        ).await? {
+        match self
+            .receive_message_batch(
+                ctx.consumer,
+                ctx.batch_size,
+                ctx.target_messages_found,
+                ctx.target_map,
+                ctx.messages_processed,
+            )
+            .await?
+        {
             Some(received_messages) => {
                 let batch_processed = self.process_message_batch(
                     received_messages,
-                    remaining_targets,
-                    target_messages_vec,
-                    non_target_messages,
+                    ctx.remaining_targets,
+                    ctx.target_messages_vec,
+                    ctx.non_target_messages,
                 );
                 Ok(Some(batch_processed))
             }
@@ -501,7 +648,8 @@ impl BulkOperationHandler {
         let new_messages = self.convert_messages_for_sending(&messages)?;
 
         // Send messages to main queue
-        self.send_converted_messages_to_queue(&new_messages, context).await?;
+        self.send_converted_messages_to_queue(&new_messages, context)
+            .await?;
 
         // Complete messages in DLQ (remove them)
         self.complete_processed_messages(&messages, context).await?;

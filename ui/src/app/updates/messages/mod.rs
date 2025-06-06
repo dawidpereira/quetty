@@ -93,8 +93,8 @@ where
                     self.handle_send_message_to_dlq(index)
                 }
             }
-            MessageActivityMsg::BulkResendSelectedFromDLQ => {
-                if let Some(msg) = self.handle_bulk_resend_selected_from_dlq() {
+            MessageActivityMsg::BulkResendSelectedFromDLQ(delete_from_dlq) => {
+                if let Some(msg) = self.handle_bulk_resend_selected_from_dlq(delete_from_dlq) {
                     Some(msg)
                 } else {
                     // Fall back to single message resend using current cursor position
@@ -110,9 +110,13 @@ where
             MessageActivityMsg::BulkSendToDLQ(message_ids) => {
                 self.handle_bulk_send_to_dlq(message_ids)
             }
-            MessageActivityMsg::BulkResendFromDLQ(message_ids) => {
+            MessageActivityMsg::BulkResendFromDLQ(message_ids, delete_from_dlq) => {
                 // This is the confirmed execution - actually perform the bulk resend
-                self.handle_bulk_resend_from_dlq_execution(message_ids)
+                if delete_from_dlq {
+                    self.handle_bulk_resend_from_dlq_execution(message_ids)
+                } else {
+                    self.handle_bulk_resend_from_dlq_only_execution(message_ids)
+                }
             }
             MessageActivityMsg::BulkRemoveMessagesFromState(message_ids) => {
                 self.handle_bulk_remove_messages_from_state(message_ids)

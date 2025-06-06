@@ -18,8 +18,6 @@ use tuirealm::terminal::TerminalAdapter;
 const DLQ_DISPLAY_NAME: &str = "Dead Letter Queue";
 const MAIN_QUEUE_DISPLAY_NAME: &str = "Main Queue";
 
-
-
 impl<T> Model<T>
 where
     T: TerminalAdapter,
@@ -180,6 +178,259 @@ where
         None
     }
 
+    /// Execute bulk resend-only from DLQ operation (without deleting from DLQ)
+    pub fn handle_bulk_resend_from_dlq_only_execution(
+        &mut self,
+        message_ids: Vec<MessageIdentifier>,
+    ) -> Option<Msg> {
+        if message_ids.is_empty() {
+            log::warn!("No messages provided for bulk resend-only operation");
+            return None;
+        }
+
+        if let Err(error_msg) = self.validate_bulk_resend_request(&message_ids) {
+            return Some(error_msg);
+        }
+
+        // For resend-only, we get message data from the current state (peeked messages)
+        let messages_data = match self.extract_message_data_for_resend_only(&message_ids) {
+            Ok(data) => data,
+            Err(error_msg) => return Some(error_msg),
+        };
+
+        self.start_bulk_resend_only_operation(message_ids, messages_data)
+    }
+
+    /// Extract message data from current state for resend-only operation
+    fn extract_message_data_for_resend_only(
+        &self,
+        message_ids: &[MessageIdentifier],
+    ) -> Result<Vec<(MessageIdentifier, Vec<u8>)>, Msg> {
+        let mut messages_data = Vec::new();
+
+        // Get messages from pagination state (these are peeked messages)
+        let all_messages = &self.queue_state.message_pagination.all_loaded_messages;
+
+        for message_id in message_ids {
+            // Find the message in our loaded state
+            if let Some(message) = all_messages
+                .iter()
+                .find(|m| m.id == message_id.id && m.sequence == message_id.sequence)
+            {
+                // Extract the message body as bytes
+                let body = match &message.body {
+                    server::model::BodyData::ValidJson(json) => {
+                        serde_json::to_vec(json).unwrap_or_default()
+                    }
+                    server::model::BodyData::RawString(s) => s.as_bytes().to_vec(),
+                };
+                messages_data.push((message_id.clone(), body));
+                log::debug!("Extracted message data for {}", message_id.id);
+            } else {
+                log::error!("Message {} not found in current state", message_id.id);
+                return Err(Msg::Error(AppError::State(format!(
+                    "Message {} not found in current state for resend-only operation",
+                    message_id.id
+                ))));
+            }
+        }
+
+        Ok(messages_data)
+    }
+
+    /// Starts the bulk resend-only operation in a background task
+    fn start_bulk_resend_only_operation(
+        &self,
+        message_ids: Vec<MessageIdentifier>,
+        messages_data: Vec<(MessageIdentifier, Vec<u8>)>,
+    ) -> Option<Msg> {
+        // Get the consumer before entering the async block
+        let consumer = match self.get_consumer_for_bulk_operation() {
+            Ok(consumer) => consumer,
+            Err(error_msg) => return Some(error_msg),
+        };
+        let taskpool = &self.taskpool;
+        let tx_to_main = self.tx_to_main.clone();
+
+        // Show loading indicator
+        Self::send_message_or_log_error(
+            &tx_to_main,
+            Msg::LoadingActivity(LoadingActivityMsg::Start(format!(
+                "Bulk resending {} messages from dead letter queue (keeping in DLQ)...",
+                message_ids.len()
+            ))),
+            "loading start",
+        );
+
+        let tx_to_main_err = tx_to_main.clone();
+
+        // Get the main queue name and service bus client for resending
+        let main_queue_name = match self.get_main_queue_name_from_current_dlq() {
+            Ok(name) => name,
+            Err(e) => {
+                log::error!("Failed to get main queue name: {}", e);
+                return Some(Msg::Error(e));
+            }
+        };
+        let service_bus_client = self.service_bus_client.clone();
+
+        log::info!(
+            "Starting bulk resend-only operation for {} messages from DLQ to queue {} (keeping in DLQ)",
+            message_ids.len(),
+            main_queue_name
+        );
+
+        let task = async move {
+            log::debug!("Executing bulk resend-only operation in background task");
+
+            // Create bulk operation configuration from app config
+            let bulk_config = CONFIG.bulk();
+            let bulk_operation_config = BulkOperationConfig::new(
+                bulk_config.max_batch_size(),
+                bulk_config.operation_timeout_secs(),
+                bulk_config.order_warning_threshold(),
+                bulk_config.batch_size_multiplier(),
+            );
+
+            let bulk_handler = BulkOperationHandler::new(bulk_operation_config);
+
+            let operation_context =
+                ServiceBusOperationContext::new(consumer, service_bus_client, main_queue_name);
+
+            let result = bulk_handler
+                .bulk_resend_from_dlq_only(operation_context, messages_data)
+                .await;
+
+            match result {
+                Ok(operation_result) => {
+                    log::info!(
+                        "Bulk resend-only operation completed: {} successful, {} failed",
+                        operation_result.successful,
+                        operation_result.failed
+                    );
+                    Self::handle_bulk_resend_only_success(&tx_to_main, operation_result);
+                }
+                Err(e) => {
+                    log::error!("Failed to execute bulk resend-only operation: {}", e);
+                    Self::handle_bulk_resend_error(
+                        &tx_to_main,
+                        &tx_to_main_err,
+                        AppError::ServiceBus(e.to_string()),
+                        DLQ_DISPLAY_NAME,
+                        MAIN_QUEUE_DISPLAY_NAME,
+                    );
+                }
+            }
+        };
+
+        taskpool.execute(task);
+
+        None
+    }
+
+    /// Handles successful bulk resend-only operation
+    fn handle_bulk_resend_only_success(tx_to_main: &Sender<Msg>, result: BulkOperationResult) {
+        log::info!(
+            "Bulk resend-only operation completed successfully: {} successful, {} failed",
+            result.successful,
+            result.failed
+        );
+
+        // Stop loading indicator
+        Self::send_message_or_log_error(
+            tx_to_main,
+            Msg::LoadingActivity(LoadingActivityMsg::Stop),
+            "loading stop",
+        );
+
+        // For resend-only, we DON'T remove messages from local state since they stay in DLQ
+        // Just reload the page to refresh the view
+        Self::send_message_or_log_error(
+            tx_to_main,
+            Msg::MessageActivity(MessageActivityMsg::PageChanged),
+            "page changed",
+        );
+
+        // Always show operation status to the user
+        Self::show_bulk_resend_only_status(
+            tx_to_main,
+            &result,
+            DLQ_DISPLAY_NAME,
+            MAIN_QUEUE_DISPLAY_NAME,
+        );
+    }
+
+    /// Show status of bulk resend-only operation to the user
+    fn show_bulk_resend_only_status(
+        tx_to_main: &Sender<Msg>,
+        result: &BulkOperationResult,
+        from_queue: &str,
+        to_queue: &str,
+    ) {
+        let status_summary = Self::build_status_summary(result);
+        let total = result.total_requested;
+
+        if result.successful == total {
+            let success_msg = format!(
+                "✅ Bulk resend-only completed successfully!\n{}\n\n{}\n\n💡 Messages remain in {} for potential reprocessing.",
+                Self::format_queue_direction(from_queue, to_queue),
+                status_summary,
+                from_queue
+            );
+
+            log::info!(
+                "Bulk resend-only completed successfully: {}/{} messages sent to main queue",
+                result.successful,
+                result.total_requested
+            );
+
+            Self::send_message_or_log_error(
+                tx_to_main,
+                Msg::PopupActivity(PopupActivityMsg::ShowSuccess(success_msg)),
+                "success",
+            );
+        } else if result.successful > 0 {
+            let detailed_msg = format!(
+                "✅ Bulk resend-only partially completed\n{}\n\n{}\n\n💡 Successfully sent messages remain in {} for potential reprocessing.\n{}",
+                Self::format_queue_direction(from_queue, to_queue),
+                status_summary,
+                from_queue,
+                if !result.error_details.is_empty() {
+                    format!("\nError details:\n• {}", result.error_details.join("\n• "))
+                } else {
+                    "".to_string()
+                }
+            );
+
+            log::info!("⚠️ Bulk resend-only partial success: {}", status_summary);
+
+            Self::send_message_or_log_error(
+                tx_to_main,
+                Msg::PopupActivity(PopupActivityMsg::ShowSuccess(detailed_msg)),
+                "partial success",
+            );
+        } else {
+            let detailed_msg = format!(
+                "❌ Bulk resend-only failed\n{}\n\n{}\n{}",
+                Self::format_queue_direction(from_queue, to_queue),
+                status_summary,
+                if !result.error_details.is_empty() {
+                    format!("\nError details:\n• {}", result.error_details.join("\n• "))
+                } else {
+                    "".to_string()
+                }
+            );
+
+            log::error!("❌ Bulk resend-only operation failed: {}", status_summary);
+
+            Self::send_message_or_log_error(
+                tx_to_main,
+                Msg::Error(AppError::ServiceBus(detailed_msg)),
+                "bulk resend-only failure",
+            );
+        }
+    }
+
     /// Handles successful bulk resend operation
     fn handle_bulk_resend_success(tx_to_main: &Sender<Msg>, result: BulkOperationResult) {
         log::info!(
@@ -227,7 +478,12 @@ where
         }
 
         // Always show operation status to the user
-        Self::show_bulk_operation_status(tx_to_main, &result, DLQ_DISPLAY_NAME, MAIN_QUEUE_DISPLAY_NAME);
+        Self::show_bulk_operation_status(
+            tx_to_main,
+            &result,
+            DLQ_DISPLAY_NAME,
+            MAIN_QUEUE_DISPLAY_NAME,
+        );
     }
 
     /// Show comprehensive status of bulk operation to the user
@@ -277,7 +533,8 @@ where
     ) {
         let success_msg = format!(
             "✅ Bulk resend completed successfully!\n{}\n\n{}",
-            Self::format_queue_direction(from_queue, to_queue), status_summary
+            Self::format_queue_direction(from_queue, to_queue),
+            status_summary
         );
 
         log::info!(
@@ -365,7 +622,8 @@ where
         // Enhance error message with queue information
         let enhanced_error = AppError::State(format!(
             "❌ Bulk resend operation failed\n{}\n\nError: {}",
-            Self::format_queue_direction(from_queue, to_queue), error
+            Self::format_queue_direction(from_queue, to_queue),
+            error
         ));
 
         let _ = tx_to_main_err.send(Msg::Error(enhanced_error));
