@@ -1,9 +1,13 @@
 use crate::app::model::Model;
-use crate::components::common::{LoadingActivityMsg, MessageActivityMsg, Msg, QueueType};
+use crate::components::common::{
+    LoadingActivityMsg, MessageActivityMsg, Msg, PopupActivityMsg, QueueType,
+};
 use crate::config::CONFIG;
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
-use server::bulk_operations::{BulkOperationConfig, BulkOperationHandler, BulkOperationResult};
+use server::bulk_operations::{
+    BulkOperationConfig, BulkOperationHandler, BulkOperationResult, ServiceBusOperationContext,
+};
 use server::consumer::Consumer;
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
@@ -109,9 +113,6 @@ where
             main_queue_name
         );
 
-        // Clone message IDs for use in success handler (to know which messages to remove from UI)
-        let original_message_ids = message_ids.clone();
-
         let task = async move {
             log::debug!("Executing bulk resend operation in background task");
 
@@ -124,8 +125,11 @@ where
             );
 
             let bulk_handler = BulkOperationHandler::new(bulk_operation_config);
+            let operation_context =
+                ServiceBusOperationContext::new(consumer, service_bus_client, main_queue_name);
+
             let result = bulk_handler
-                .bulk_resend_from_dlq(consumer, message_ids, main_queue_name, service_bus_client)
+                .bulk_resend_from_dlq(operation_context, message_ids)
                 .await;
 
             match result {
@@ -136,11 +140,7 @@ where
                         operation_result.failed,
                         operation_result.not_found
                     );
-                    Self::handle_bulk_resend_success(
-                        &tx_to_main,
-                        operation_result,
-                        original_message_ids,
-                    );
+                    Self::handle_bulk_resend_success(&tx_to_main, operation_result);
                 }
                 Err(e) => {
                     log::error!("Failed to execute bulk resend operation: {}", e);
@@ -148,6 +148,8 @@ where
                         &tx_to_main,
                         &tx_to_main_err,
                         AppError::ServiceBus(e.to_string()),
+                        "Dead Letter Queue",
+                        "Main Queue",
                     );
                 }
             }
@@ -159,11 +161,7 @@ where
     }
 
     /// Handles successful bulk resend operation
-    fn handle_bulk_resend_success(
-        tx_to_main: &Sender<Msg>,
-        result: BulkOperationResult,
-        original_message_ids: Vec<MessageIdentifier>,
-    ) {
+    fn handle_bulk_resend_success(tx_to_main: &Sender<Msg>, result: BulkOperationResult) {
         log::info!(
             "Bulk resend operation completed successfully: {} successful, {} failed, {} not found",
             result.successful,
@@ -176,20 +174,15 @@ where
             log::error!("Failed to send loading stop message: {}", e);
         }
 
-        // If we have successful operations, remove those messages from the local state
-        if result.successful > 0 {
+        // If we have successful operations, remove those specific messages from the local state
+        if result.successful > 0 && !result.successful_message_ids.is_empty() {
             log::info!(
                 "Removing {} successfully resent messages from local state",
-                result.successful
+                result.successful_message_ids.len()
             );
 
-            // For now, we'll remove all the originally selected messages if any were successful
-            // In a more sophisticated implementation, we could track exactly which messages were successful
-            // But since the operation is atomic per message, if some succeeded, we assume they're the first N messages
-            let messages_to_remove = original_message_ids
-                .into_iter()
-                .take(result.successful)
-                .collect();
+            // Use the exact messages that were successfully processed
+            let messages_to_remove = result.successful_message_ids.clone();
 
             if let Err(e) = tx_to_main.send(Msg::MessageActivity(
                 MessageActivityMsg::BulkRemoveMessagesFromState(messages_to_remove),
@@ -209,23 +202,127 @@ where
             }
         }
 
-        // If there were any failures, we might want to show an error or info popup
-        if result.failed > 0 || result.not_found > 0 {
-            let error_msg = format!(
-                "Bulk resend partially completed: {} successful, {} failed, {} not found. {}",
-                result.successful,
-                result.failed,
-                result.not_found,
-                if !result.error_details.is_empty() {
-                    format!("Errors: {}", result.error_details.join(", "))
-                } else {
-                    "".to_string()
-                }
-            );
-            log::warn!("{}", error_msg);
+        // Always show operation status to the user
+        Self::show_bulk_operation_status(tx_to_main, &result, "Dead Letter Queue", "Main Queue");
+    }
 
-            // For partial failures, we'll just log but not show an error popup since some succeeded
-            // The user will see the updated state when messages reload
+    /// Show comprehensive status of bulk operation to the user
+    fn show_bulk_operation_status(
+        tx_to_main: &Sender<Msg>,
+        result: &BulkOperationResult,
+        from_queue: &str,
+        to_queue: &str,
+    ) {
+        let status_summary = Self::build_status_summary(result);
+        let total = result.total_requested;
+
+        if result.successful == total {
+            Self::show_complete_success(tx_to_main, result, from_queue, to_queue, &status_summary);
+        } else if result.successful > 0 {
+            Self::show_partial_success(tx_to_main, result, from_queue, to_queue, &status_summary);
+        } else {
+            Self::show_complete_failure(tx_to_main, result, from_queue, to_queue, &status_summary);
+        }
+    }
+
+    /// Build status summary showing only non-zero counts
+    fn build_status_summary(result: &BulkOperationResult) -> String {
+        let total = result.total_requested;
+        let mut status_lines = Vec::new();
+
+        if result.successful > 0 {
+            status_lines.push(format!("Processed: {}/{}", result.successful, total));
+        }
+        if result.failed > 0 {
+            status_lines.push(format!("Failed: {}/{}", result.failed, total));
+        }
+        if result.not_found > 0 {
+            status_lines.push(format!("Not Found: {}/{}", result.not_found, total));
+        }
+
+        status_lines.join("\n")
+    }
+
+    /// Handle complete success case
+    fn show_complete_success(
+        tx_to_main: &Sender<Msg>,
+        result: &BulkOperationResult,
+        from_queue: &str,
+        to_queue: &str,
+        status_summary: &str,
+    ) {
+        let success_msg = format!(
+            "✅ Bulk resend completed successfully!\nFrom {} to {}\n\n{}",
+            from_queue, to_queue, status_summary
+        );
+
+        log::info!(
+            "Bulk resend completed successfully: {}/{} messages processed",
+            result.successful,
+            result.total_requested
+        );
+
+        if let Err(e) = tx_to_main.send(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
+            success_msg,
+        ))) {
+            log::error!("Failed to send success message to user: {}", e);
+        }
+    }
+
+    /// Handle partial success case
+    fn show_partial_success(
+        tx_to_main: &Sender<Msg>,
+        result: &BulkOperationResult,
+        from_queue: &str,
+        to_queue: &str,
+        status_summary: &str,
+    ) {
+        let detailed_msg = format!(
+            "✅ Bulk resend partially completed\nFrom {} to {}\n\n{}\n{}",
+            from_queue,
+            to_queue,
+            status_summary,
+            if !result.error_details.is_empty() {
+                format!("\nError details:\n• {}", result.error_details.join("\n• "))
+            } else {
+                "".to_string()
+            }
+        );
+
+        log::info!("⚠️ Bulk operation partial success: {}", status_summary);
+
+        if let Err(e) = tx_to_main.send(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
+            detailed_msg,
+        ))) {
+            log::error!("Failed to send success message to user: {}", e);
+        }
+    }
+
+    /// Handle complete failure case
+    fn show_complete_failure(
+        tx_to_main: &Sender<Msg>,
+        result: &BulkOperationResult,
+        from_queue: &str,
+        to_queue: &str,
+        status_summary: &str,
+    ) {
+        let detailed_msg = format!(
+            "❌ Bulk resend failed\nFrom {} to {}\n\n{}\n{}",
+            from_queue,
+            to_queue,
+            status_summary,
+            if !result.error_details.is_empty() {
+                format!("\nError details:\n• {}", result.error_details.join("\n• "))
+            } else {
+                "".to_string()
+            }
+        );
+
+        log::error!("❌ Bulk operation failed: {}", status_summary);
+
+        let error_msg = AppError::State(detailed_msg);
+        if let Err(e) = tx_to_main.send(Msg::Error(error_msg)) {
+            log::error!("Failed to send error message to user: {}", e);
         }
     }
 
@@ -234,6 +331,8 @@ where
         tx_to_main: &Sender<Msg>,
         tx_to_main_err: &Sender<Msg>,
         error: AppError,
+        from_queue: &str,
+        to_queue: &str,
     ) {
         log::error!("Error in bulk resend operation: {}", error);
 
@@ -241,6 +340,12 @@ where
             log::error!("Failed to send loading stop message: {}", err);
         }
 
-        let _ = tx_to_main_err.send(Msg::Error(error));
+        // Enhance error message with queue information
+        let enhanced_error = AppError::State(format!(
+            "❌ Bulk resend operation failed\nFrom {} to {}\n\nError: {}",
+            from_queue, to_queue, error
+        ));
+
+        let _ = tx_to_main_err.send(Msg::Error(enhanced_error));
     }
 }

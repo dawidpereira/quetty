@@ -61,6 +61,35 @@ pub fn view_confirmation_popup(
     Ok(())
 }
 
+// Render the success popup centered on the screen
+pub fn view_success_popup(
+    app: &mut Application<ComponentId, Msg, NoUserEvent>,
+    f: &mut Frame,
+) -> Result<(), AppError> {
+    // Create a centered box for the success popup
+    let popup_width = 60;
+    let popup_height = 10;
+    let area = f.area();
+
+    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+
+    let popup_area = Rect::new(
+        popup_x,
+        popup_y,
+        popup_width.min(area.width),
+        popup_height.min(area.height),
+    );
+
+    app.view(&ComponentId::SuccessPopup, f, popup_area);
+
+    // Make sure the popup has focus
+    app.active(&ComponentId::SuccessPopup)
+        .map_err(|e| AppError::Component(e.to_string()))?;
+
+    Ok(())
+}
+
 // Higher-order function to wrap view functions with popup handling
 pub fn with_popup<F>(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,
@@ -78,6 +107,11 @@ where
     // First, try to render the confirmation popup if it exists
     if app.mounted(&ComponentId::ConfirmationPopup) {
         return view_confirmation_popup(app, f);
+    }
+
+    // Then, try to render the success popup if it exists
+    if app.mounted(&ComponentId::SuccessPopup) {
+        return view_success_popup(app, f);
     }
 
     // Then, try to render the error popup if it exists

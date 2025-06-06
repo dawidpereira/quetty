@@ -11,6 +11,8 @@ where
         match msg {
             PopupActivityMsg::ShowError(error) => self.handle_show_error(error),
             PopupActivityMsg::CloseError => self.handle_close_error(),
+            PopupActivityMsg::ShowSuccess(message) => self.handle_show_success(message),
+            PopupActivityMsg::CloseSuccess => self.handle_close_success(),
             PopupActivityMsg::ShowConfirmation {
                 title,
                 message,
@@ -34,6 +36,24 @@ where
     fn handle_close_error(&mut self) -> Option<Msg> {
         if let Err(e) = self.unmount_error_popup() {
             log::error!("Failed to unmount error popup: {}", e);
+            Some(Msg::Error(e))
+        } else {
+            None
+        }
+    }
+
+    fn handle_show_success(&mut self, message: String) -> Option<Msg> {
+        if let Err(e) = self.mount_success_popup(&message) {
+            log::error!("Failed to mount success popup: {}", e);
+            Some(Msg::Error(e))
+        } else {
+            None
+        }
+    }
+
+    fn handle_close_success(&mut self) -> Option<Msg> {
+        if let Err(e) = self.unmount_success_popup() {
+            log::error!("Failed to unmount success popup: {}", e);
             Some(Msg::Error(e))
         } else {
             None

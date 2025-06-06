@@ -16,6 +16,7 @@ pub struct BulkOperationResult {
     pub failed: usize,
     pub not_found: usize,
     pub error_details: Vec<String>,
+    pub successful_message_ids: Vec<MessageIdentifier>,
 }
 
 impl BulkOperationResult {
@@ -26,6 +27,7 @@ impl BulkOperationResult {
             failed: 0,
             not_found: 0,
             error_details: Vec::new(),
+            successful_message_ids: Vec::new(),
         }
     }
 
@@ -36,6 +38,11 @@ impl BulkOperationResult {
     pub fn add_failure(&mut self, error: String) {
         self.failed += 1;
         self.error_details.push(error);
+    }
+
+    pub fn add_successful_message(&mut self, message_id: MessageIdentifier) {
+        self.successful += 1;
+        self.successful_message_ids.push(message_id);
     }
 
     pub fn add_not_found(&mut self) {
@@ -100,6 +107,29 @@ impl BulkOperationConfig {
     }
 }
 
+/// Context for Service Bus operations containing shared resources
+#[derive(Debug, Clone)]
+pub struct ServiceBusOperationContext {
+    pub consumer: Arc<Mutex<Consumer>>,
+    pub service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+    pub main_queue_name: String,
+}
+
+impl ServiceBusOperationContext {
+    /// Create a new ServiceBusOperationContext
+    pub fn new(
+        consumer: Arc<Mutex<Consumer>>,
+        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+        main_queue_name: String,
+    ) -> Self {
+        Self {
+            consumer,
+            service_bus_client,
+            main_queue_name,
+        }
+    }
+}
+
 /// Handles bulk operations on Azure Service Bus queues
 pub struct BulkOperationHandler {
     config: BulkOperationConfig,
@@ -114,15 +144,13 @@ impl BulkOperationHandler {
     /// This is the main entry point for bulk resend operations
     pub async fn bulk_resend_from_dlq(
         &self,
-        consumer: Arc<Mutex<Consumer>>,
+        context: ServiceBusOperationContext,
         target_messages: Vec<MessageIdentifier>,
-        main_queue_name: String,
-        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
     ) -> Result<BulkOperationResult, Box<dyn std::error::Error>> {
         log::info!(
             "Starting bulk resend operation for {} messages to queue {}",
             target_messages.len(),
-            main_queue_name
+            context.main_queue_name
         );
 
         let mut result = BulkOperationResult::new(target_messages.len());
@@ -151,13 +179,7 @@ impl BulkOperationHandler {
         let operation_timeout = Duration::from_secs(self.config.operation_timeout_secs);
         let bulk_result = timeout(
             operation_timeout,
-            self.execute_bulk_resend_operation(
-                consumer,
-                target_map,
-                batch_size,
-                main_queue_name,
-                service_bus_client,
-            ),
+            self.execute_bulk_resend_operation(context, target_map, batch_size),
         )
         .await;
 
@@ -178,32 +200,24 @@ impl BulkOperationHandler {
     /// Core implementation of bulk resend operation
     async fn execute_bulk_resend_operation(
         &self,
-        consumer: Arc<Mutex<Consumer>>,
+        context: ServiceBusOperationContext,
         target_map: HashMap<String, MessageIdentifier>,
         batch_size: usize,
-        main_queue_name: String,
-        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
     ) -> Result<BulkOperationResult, Box<dyn std::error::Error>> {
         let mut result = BulkOperationResult::new(target_map.len());
 
         // Phase 1: Collect target and non-target messages
         let (target_messages, non_target_messages) = self
-            .collect_target_messages(consumer.clone(), &target_map, batch_size)
+            .collect_target_messages(context.consumer.clone(), &target_map, batch_size)
             .await?;
 
         // Phase 2: Process target messages (resend them)
         if !target_messages.is_empty() {
             match self
-                .process_target_messages(
-                    target_messages,
-                    &main_queue_name,
-                    service_bus_client,
-                    consumer.clone(),
-                )
+                .process_target_messages(target_messages, &context, &target_map, &mut result)
                 .await
             {
                 Ok(processed_count) => {
-                    result.successful = processed_count;
                     log::info!("Successfully processed {} target messages", processed_count);
                 }
                 Err(e) => {
@@ -215,7 +229,7 @@ impl BulkOperationHandler {
         }
 
         // Phase 3: Abandon non-target messages to make them available in DLQ again
-        self.abandon_non_target_messages(consumer, non_target_messages, &mut result)
+        self.abandon_non_target_messages(context.consumer, non_target_messages, &mut result)
             .await?;
 
         // Calculate not found messages
@@ -412,9 +426,9 @@ impl BulkOperationHandler {
     async fn process_target_messages(
         &self,
         messages: Vec<azservicebus::ServiceBusReceivedMessage>,
-        main_queue_name: &str,
-        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
-        consumer: Arc<Mutex<Consumer>>,
+        context: &ServiceBusOperationContext,
+        target_map: &HashMap<String, MessageIdentifier>,
+        result: &mut BulkOperationResult,
     ) -> Result<usize, Box<dyn std::error::Error>> {
         if messages.is_empty() {
             return Ok(0);
@@ -434,16 +448,38 @@ impl BulkOperationHandler {
         log::debug!(
             "Sending {} messages to main queue {}",
             new_messages.len(),
-            main_queue_name
+            context.main_queue_name
         );
-        self.send_messages_to_main_queue(main_queue_name, new_messages, service_bus_client)
-            .await?;
+        self.send_messages_to_main_queue(
+            &context.main_queue_name,
+            new_messages,
+            context.service_bus_client.clone(),
+        )
+        .await?;
 
         // Complete messages in DLQ (remove them)
         log::debug!("Completing {} messages in DLQ", messages.len());
-        let mut consumer_guard = consumer.lock().await;
+        let mut consumer_guard = context.consumer.lock().await;
         consumer_guard.complete_messages(&messages).await?;
         drop(consumer_guard);
+
+        // Track which specific messages were successfully processed
+        for message in &messages {
+            let message_id = message
+                .message_id()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+
+            // Find the corresponding MessageIdentifier from the original target map
+            if let Some(original_message_id) = target_map.get(&message_id) {
+                result.add_successful_message(original_message_id.clone());
+                log::debug!(
+                    "Marked message {} (sequence: {}) as successfully processed",
+                    original_message_id.id,
+                    original_message_id.sequence
+                );
+            }
+        }
 
         log::info!("Successfully processed {} messages", messages.len());
         Ok(messages.len())
