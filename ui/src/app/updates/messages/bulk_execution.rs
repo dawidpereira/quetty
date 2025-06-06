@@ -4,10 +4,8 @@ use crate::components::common::{
 };
 use crate::config::CONFIG;
 use crate::error::AppError;
-use server::bulk_operations::MessageIdentifier;
-use server::bulk_operations::{
-    BulkOperationConfig, BulkOperationHandler, BulkOperationResult, ServiceBusOperationContext,
-};
+use server::bulk_operations::{BulkOperationContext, BulkSendParams, MessageIdentifier};
+use server::bulk_operations::{BulkOperationHandler, BulkOperationResult};
 use server::consumer::Consumer;
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
@@ -15,8 +13,68 @@ use tokio::sync::Mutex;
 use tuirealm::terminal::TerminalAdapter;
 
 // Constants for consistent queue display names
-const DLQ_DISPLAY_NAME: &str = "Dead Letter Queue";
-const MAIN_QUEUE_DISPLAY_NAME: &str = "Main Queue";
+const DLQ_DISPLAY_NAME: &str = "DLQ";
+const MAIN_QUEUE_DISPLAY_NAME: &str = "Main";
+
+struct BulkSendDisplayParams<'a> {
+    result: &'a BulkOperationResult,
+    from_queue_display: &'a str,
+    to_queue_display: &'a str,
+    target_queue: &'a str,
+    should_delete: bool,
+}
+
+impl<'a> BulkSendDisplayParams<'a> {
+    fn new(
+        result: &'a BulkOperationResult,
+        from_queue_display: &'a str,
+        to_queue_display: &'a str,
+        target_queue: &'a str,
+        should_delete: bool,
+    ) -> Self {
+        Self {
+            result,
+            from_queue_display,
+            to_queue_display,
+            target_queue,
+            should_delete,
+        }
+    }
+}
+
+pub struct BulkSendOperationParams {
+    pub consumer: Arc<Mutex<Consumer>>,
+    pub target_queue: String,
+    pub should_delete: bool,
+    pub loading_message_template: String,
+    pub from_queue_display: String,
+    pub to_queue_display: String,
+}
+
+impl BulkSendOperationParams {
+    pub fn new(
+        consumer: Arc<Mutex<Consumer>>,
+        target_queue: String,
+        should_delete: bool,
+        loading_message_template: &str,
+        from_queue_display: &str,
+        to_queue_display: &str,
+    ) -> Self {
+        Self {
+            consumer,
+            target_queue,
+            should_delete,
+            loading_message_template: loading_message_template.to_string(),
+            from_queue_display: from_queue_display.to_string(),
+            to_queue_display: to_queue_display.to_string(),
+        }
+    }
+}
+
+enum BulkSendData {
+    MessageIds(Vec<MessageIdentifier>),
+    MessageData(Vec<(MessageIdentifier, Vec<u8>)>),
+}
 
 impl<T> Model<T>
 where
@@ -31,8 +89,9 @@ where
 
     /// Helper function to format queue direction display
     fn format_queue_direction(from_queue: &str, to_queue: &str) -> String {
-        format!("From {} to {}", from_queue, to_queue)
+        format!("{} → {}", from_queue, to_queue)
     }
+
     /// Execute bulk resend from DLQ operation
     pub fn handle_bulk_resend_from_dlq_execution(
         &mut self,
@@ -52,7 +111,27 @@ where
             Err(error_msg) => return Some(error_msg),
         };
 
-        self.start_bulk_resend_operation(message_ids, consumer)
+        // Get the current queue name for DLQ to Main operation
+        let current_queue_name = match &self.queue_state.current_queue_name {
+            Some(name) => name.clone(),
+            None => {
+                log::error!("No current queue name available");
+                return Some(Msg::Error(AppError::State(
+                    "No current queue name available".to_string(),
+                )));
+            }
+        };
+
+        let params = BulkSendOperationParams::new(
+            consumer,
+            current_queue_name, // target_queue
+            true,               // should_delete = true for DLQ to Main
+            "Bulk resending {} messages from dead letter queue...",
+            DLQ_DISPLAY_NAME,
+            MAIN_QUEUE_DISPLAY_NAME,
+        );
+
+        self.start_bulk_send_operation(message_ids, params)
     }
 
     /// Validates that the bulk resend request is valid
@@ -93,89 +172,125 @@ where
         }
     }
 
-    /// Starts the bulk resend operation in a background task
-    fn start_bulk_resend_operation(
+    /// Generic method to start bulk send operation with either message IDs or pre-fetched data
+    fn start_bulk_send_generic(
         &self,
-        message_ids: Vec<MessageIdentifier>,
-        consumer: Arc<Mutex<Consumer>>,
+        bulk_data: BulkSendData,
+        operation_params: BulkSendOperationParams,
     ) -> Option<Msg> {
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
 
-        // Show loading indicator
+        // Extract loading message before moving operation_params
+        let loading_message = operation_params.loading_message_template.clone();
+
+        // Start loading indicator
         Self::send_message_or_log_error(
             &tx_to_main,
-            Msg::LoadingActivity(LoadingActivityMsg::Start(format!(
-                "Bulk resending {} messages from dead letter queue...",
-                message_ids.len()
-            ))),
+            Msg::LoadingActivity(LoadingActivityMsg::Start(loading_message)),
             "loading start",
         );
 
+        // Spawn bulk send task
         let tx_to_main_err = tx_to_main.clone();
-
-        // Get the main queue name and service bus client for resending
-        let main_queue_name = match self.get_main_queue_name_from_current_dlq() {
-            Ok(name) => name,
-            Err(e) => {
-                log::error!("Failed to get main queue name: {}", e);
-                return Some(Msg::Error(e));
-            }
-        };
         let service_bus_client = self.service_bus_client.clone();
 
-        log::info!(
-            "Starting bulk resend operation for {} messages from DLQ to queue {}",
-            message_ids.len(),
-            main_queue_name
-        );
-
         let task = async move {
-            log::debug!("Executing bulk resend operation in background task");
+            log::debug!("Executing bulk send operation in background task");
 
-            // Create bulk operation configuration from app config
-            let bulk_config = CONFIG.bulk();
-            let bulk_operation_config = BulkOperationConfig::new(
-                bulk_config.max_batch_size(),
-                bulk_config.operation_timeout_secs(),
-                bulk_config.order_warning_threshold(),
-                bulk_config.batch_size_multiplier(),
+            // Create batch operation configuration using server's config directly
+            let batch_config = CONFIG.batch();
+            let bulk_handler = BulkOperationHandler::new(batch_config.clone());
+
+            // Create operation context and parameters
+            let operation_context = BulkOperationContext::new(
+                operation_params.consumer,
+                service_bus_client,
+                operation_params.target_queue.clone(),
             );
 
-            let bulk_handler = BulkOperationHandler::new(bulk_operation_config);
-            let operation_context =
-                ServiceBusOperationContext::new(consumer, service_bus_client, main_queue_name);
+            // Create BulkSendParams based on the data type
+            let params = match bulk_data {
+                BulkSendData::MessageIds(message_ids) => {
+                    log::info!(
+                        "Starting bulk send operation for {} messages to queue {} (delete: {})",
+                        message_ids.len(),
+                        operation_params.target_queue,
+                        operation_params.should_delete
+                    );
+                    BulkSendParams::with_retrieval(
+                        operation_context.target_queue.clone(),
+                        operation_params.should_delete,
+                        message_ids,
+                    )
+                }
+                BulkSendData::MessageData(messages_data) => {
+                    log::info!(
+                        "Starting bulk send with data operation for {} messages to queue {} (delete: {})",
+                        messages_data.len(),
+                        operation_params.target_queue,
+                        operation_params.should_delete
+                    );
+                    BulkSendParams::with_message_data(
+                        operation_context.target_queue.clone(),
+                        operation_params.should_delete,
+                        messages_data,
+                    )
+                }
+            };
 
-            let result = bulk_handler
-                .bulk_resend_from_dlq(operation_context, message_ids)
-                .await;
+            let result = bulk_handler.bulk_send(operation_context, params).await;
 
             match result {
                 Ok(operation_result) => {
                     log::info!(
-                        "Bulk resend operation completed: {} successful, {} failed, {} not found",
+                        "Bulk send operation completed: {} successful, {} failed, {} not found",
                         operation_result.successful,
                         operation_result.failed,
                         operation_result.not_found
                     );
-                    Self::handle_bulk_resend_success(&tx_to_main, operation_result);
+                    let display_params = BulkSendDisplayParams::new(
+                        &operation_result,
+                        &operation_params.from_queue_display,
+                        &operation_params.to_queue_display,
+                        &operation_params.target_queue,
+                        operation_params.should_delete,
+                    );
+                    Self::handle_bulk_send_success(&tx_to_main, display_params);
                 }
                 Err(e) => {
-                    log::error!("Failed to execute bulk resend operation: {}", e);
-                    Self::handle_bulk_resend_error(
+                    log::error!("Failed to execute bulk send operation: {}", e);
+                    Self::handle_bulk_send_error(
                         &tx_to_main,
                         &tx_to_main_err,
                         AppError::ServiceBus(e.to_string()),
-                        DLQ_DISPLAY_NAME,
-                        MAIN_QUEUE_DISPLAY_NAME,
+                        &operation_params.from_queue_display,
+                        &operation_params.to_queue_display,
                     );
                 }
             }
         };
 
         taskpool.execute(task);
-
         None
+    }
+
+    /// Method to start bulk send operation with message retrieval
+    fn start_bulk_send_operation(
+        &self,
+        message_ids: Vec<MessageIdentifier>,
+        params: BulkSendOperationParams,
+    ) -> Option<Msg> {
+        self.start_bulk_send_generic(BulkSendData::MessageIds(message_ids), params)
+    }
+
+    /// Method to start bulk send operation with pre-fetched message data
+    fn start_bulk_send_with_data_operation(
+        &self,
+        messages_data: Vec<(MessageIdentifier, Vec<u8>)>,
+        params: BulkSendOperationParams,
+    ) -> Option<Msg> {
+        self.start_bulk_send_generic(BulkSendData::MessageData(messages_data), params)
     }
 
     /// Execute bulk resend-only from DLQ operation (without deleting from DLQ)
@@ -198,7 +313,31 @@ where
             Err(error_msg) => return Some(error_msg),
         };
 
-        self.start_bulk_resend_only_operation(message_ids, messages_data)
+        // Get the main queue name for DLQ to Main operation
+        let target_queue = match self.get_main_queue_name_from_current_dlq() {
+            Ok(name) => name,
+            Err(e) => {
+                log::error!("Failed to get main queue name: {}", e);
+                return Some(Msg::Error(e));
+            }
+        };
+
+        let consumer = match self.get_consumer_for_bulk_operation() {
+            Ok(consumer) => consumer,
+            Err(error_msg) => return Some(error_msg),
+        };
+
+        self.start_bulk_send_with_data_operation(
+            messages_data,
+            BulkSendOperationParams::new(
+                consumer,
+                target_queue,
+                false, // should_delete = false for resend-only
+                "Bulk resending {} messages from dead letter queue (keeping in DLQ)...",
+                DLQ_DISPLAY_NAME,
+                MAIN_QUEUE_DISPLAY_NAME,
+            ),
+        )
     }
 
     /// Extract message data from current state for resend-only operation
@@ -238,102 +377,13 @@ where
         Ok(messages_data)
     }
 
-    /// Starts the bulk resend-only operation in a background task
-    fn start_bulk_resend_only_operation(
-        &self,
-        message_ids: Vec<MessageIdentifier>,
-        messages_data: Vec<(MessageIdentifier, Vec<u8>)>,
-    ) -> Option<Msg> {
-        // Get the consumer before entering the async block
-        let consumer = match self.get_consumer_for_bulk_operation() {
-            Ok(consumer) => consumer,
-            Err(error_msg) => return Some(error_msg),
-        };
-        let taskpool = &self.taskpool;
-        let tx_to_main = self.tx_to_main.clone();
-
-        // Show loading indicator
-        Self::send_message_or_log_error(
-            &tx_to_main,
-            Msg::LoadingActivity(LoadingActivityMsg::Start(format!(
-                "Bulk resending {} messages from dead letter queue (keeping in DLQ)...",
-                message_ids.len()
-            ))),
-            "loading start",
-        );
-
-        let tx_to_main_err = tx_to_main.clone();
-
-        // Get the main queue name and service bus client for resending
-        let main_queue_name = match self.get_main_queue_name_from_current_dlq() {
-            Ok(name) => name,
-            Err(e) => {
-                log::error!("Failed to get main queue name: {}", e);
-                return Some(Msg::Error(e));
-            }
-        };
-        let service_bus_client = self.service_bus_client.clone();
-
+    /// Success handler for all bulk send operations
+    fn handle_bulk_send_success(tx_to_main: &Sender<Msg>, display_params: BulkSendDisplayParams) {
         log::info!(
-            "Starting bulk resend-only operation for {} messages from DLQ to queue {} (keeping in DLQ)",
-            message_ids.len(),
-            main_queue_name
-        );
-
-        let task = async move {
-            log::debug!("Executing bulk resend-only operation in background task");
-
-            // Create bulk operation configuration from app config
-            let bulk_config = CONFIG.bulk();
-            let bulk_operation_config = BulkOperationConfig::new(
-                bulk_config.max_batch_size(),
-                bulk_config.operation_timeout_secs(),
-                bulk_config.order_warning_threshold(),
-                bulk_config.batch_size_multiplier(),
-            );
-
-            let bulk_handler = BulkOperationHandler::new(bulk_operation_config);
-
-            let operation_context =
-                ServiceBusOperationContext::new(consumer, service_bus_client, main_queue_name);
-
-            let result = bulk_handler
-                .bulk_resend_from_dlq_only(operation_context, messages_data)
-                .await;
-
-            match result {
-                Ok(operation_result) => {
-                    log::info!(
-                        "Bulk resend-only operation completed: {} successful, {} failed",
-                        operation_result.successful,
-                        operation_result.failed
-                    );
-                    Self::handle_bulk_resend_only_success(&tx_to_main, operation_result);
-                }
-                Err(e) => {
-                    log::error!("Failed to execute bulk resend-only operation: {}", e);
-                    Self::handle_bulk_resend_error(
-                        &tx_to_main,
-                        &tx_to_main_err,
-                        AppError::ServiceBus(e.to_string()),
-                        DLQ_DISPLAY_NAME,
-                        MAIN_QUEUE_DISPLAY_NAME,
-                    );
-                }
-            }
-        };
-
-        taskpool.execute(task);
-
-        None
-    }
-
-    /// Handles successful bulk resend-only operation
-    fn handle_bulk_resend_only_success(tx_to_main: &Sender<Msg>, result: BulkOperationResult) {
-        log::info!(
-            "Bulk resend-only operation completed successfully: {} successful, {} failed",
-            result.successful,
-            result.failed
+            "Bulk send operation completed successfully: {} successful, {} failed, {} not found",
+            display_params.result.successful,
+            display_params.result.failed,
+            display_params.result.not_found
         );
 
         // Stop loading indicator
@@ -343,133 +393,19 @@ where
             "loading stop",
         );
 
-        // For resend-only, we DON'T remove messages from local state since they stay in DLQ
-        // Just reload the page to refresh the view
-        Self::send_message_or_log_error(
-            tx_to_main,
-            Msg::MessageActivity(MessageActivityMsg::PageChanged),
-            "page changed",
-        );
-
-        // Always show operation status to the user
-        Self::show_bulk_resend_only_status(
-            tx_to_main,
-            &result,
-            DLQ_DISPLAY_NAME,
-            MAIN_QUEUE_DISPLAY_NAME,
-        );
-    }
-
-    /// Show status of bulk resend-only operation to the user
-    fn show_bulk_resend_only_status(
-        tx_to_main: &Sender<Msg>,
-        result: &BulkOperationResult,
-        from_queue: &str,
-        to_queue: &str,
-    ) {
-        let status_summary = Self::build_status_summary(result);
-        let total = result.total_requested;
-
-        if result.successful == total {
-            let success_msg = format!(
-                "✅ Bulk resend-only completed successfully!\n{}\n\n{}\n\n💡 Messages remain in {} for potential reprocessing.",
-                Self::format_queue_direction(from_queue, to_queue),
-                status_summary,
-                from_queue
-            );
-
-            log::info!(
-                "Bulk resend-only completed successfully: {}/{} messages sent to main queue",
-                result.successful,
-                result.total_requested
-            );
-
+        // Handle state updates based on operation type
+        if display_params.should_delete && !display_params.result.successful_message_ids.is_empty()
+        {
+            // Remove successfully processed messages from local state
             Self::send_message_or_log_error(
                 tx_to_main,
-                Msg::PopupActivity(PopupActivityMsg::ShowSuccess(success_msg)),
-                "success",
+                Msg::MessageActivity(MessageActivityMsg::BulkRemoveMessagesFromState(
+                    display_params.result.successful_message_ids.clone(),
+                )),
+                "bulk remove from state",
             );
-        } else if result.successful > 0 {
-            let detailed_msg = format!(
-                "✅ Bulk resend-only partially completed\n{}\n\n{}\n\n💡 Successfully sent messages remain in {} for potential reprocessing.\n{}",
-                Self::format_queue_direction(from_queue, to_queue),
-                status_summary,
-                from_queue,
-                if !result.error_details.is_empty() {
-                    format!("\nError details:\n• {}", result.error_details.join("\n• "))
-                } else {
-                    "".to_string()
-                }
-            );
-
-            log::info!("⚠️ Bulk resend-only partial success: {}", status_summary);
-
-            Self::send_message_or_log_error(
-                tx_to_main,
-                Msg::PopupActivity(PopupActivityMsg::ShowSuccess(detailed_msg)),
-                "partial success",
-            );
-        } else {
-            let detailed_msg = format!(
-                "❌ Bulk resend-only failed\n{}\n\n{}\n{}",
-                Self::format_queue_direction(from_queue, to_queue),
-                status_summary,
-                if !result.error_details.is_empty() {
-                    format!("\nError details:\n• {}", result.error_details.join("\n• "))
-                } else {
-                    "".to_string()
-                }
-            );
-
-            log::error!("❌ Bulk resend-only operation failed: {}", status_summary);
-
-            Self::send_message_or_log_error(
-                tx_to_main,
-                Msg::Error(AppError::ServiceBus(detailed_msg)),
-                "bulk resend-only failure",
-            );
-        }
-    }
-
-    /// Handles successful bulk resend operation
-    fn handle_bulk_resend_success(tx_to_main: &Sender<Msg>, result: BulkOperationResult) {
-        log::info!(
-            "Bulk resend operation completed successfully: {} successful, {} failed, {} not found",
-            result.successful,
-            result.failed,
-            result.not_found
-        );
-
-        // Stop loading indicator
-        Self::send_message_or_log_error(
-            tx_to_main,
-            Msg::LoadingActivity(LoadingActivityMsg::Stop),
-            "loading stop",
-        );
-
-        // If we have successful operations, remove those specific messages from the local state
-        if result.successful > 0 && !result.successful_message_ids.is_empty() {
-            log::info!(
-                "Removing {} successfully resent messages from local state",
-                result.successful_message_ids.len()
-            );
-
-            // Use the exact messages that were successfully processed
-            let messages_to_remove = result.successful_message_ids.clone();
-
-            if let Err(e) = tx_to_main.send(Msg::MessageActivity(
-                MessageActivityMsg::BulkRemoveMessagesFromState(messages_to_remove),
-            )) {
-                log::error!("Failed to send bulk remove messages message: {}", e);
-                // Fall back to page reload if bulk removal fails
-                Self::send_message_or_log_error(
-                    tx_to_main,
-                    Msg::MessageActivity(MessageActivityMsg::PageChanged),
-                    "page changed fallback",
-                );
-            }
-        } else {
-            // No successful operations, just reload the page to be safe
+        } else if !display_params.should_delete {
+            // For operations that don't delete, just reload the page to refresh the view
             Self::send_message_or_log_error(
                 tx_to_main,
                 Msg::MessageActivity(MessageActivityMsg::PageChanged),
@@ -478,154 +414,161 @@ where
         }
 
         // Always show operation status to the user
-        Self::show_bulk_operation_status(
-            tx_to_main,
-            &result,
-            DLQ_DISPLAY_NAME,
-            MAIN_QUEUE_DISPLAY_NAME,
-        );
+        Self::show_bulk_send_status(tx_to_main, display_params);
     }
 
-    /// Show comprehensive status of bulk operation to the user
-    fn show_bulk_operation_status(
-        tx_to_main: &Sender<Msg>,
-        result: &BulkOperationResult,
-        from_queue: &str,
-        to_queue: &str,
-    ) {
-        let status_summary = Self::build_status_summary(result);
-        let total = result.total_requested;
-
-        if result.successful == total {
-            Self::show_complete_success(tx_to_main, result, from_queue, to_queue, &status_summary);
-        } else if result.successful > 0 {
-            Self::show_partial_success(tx_to_main, result, from_queue, to_queue, &status_summary);
+    /// Status display for all bulk send operations
+    fn show_bulk_send_status(tx_to_main: &Sender<Msg>, params: BulkSendDisplayParams) {
+        let direction =
+            Self::format_queue_direction(params.from_queue_display, params.to_queue_display);
+        let operation_type = if params.should_delete {
+            "moved"
         } else {
-            Self::show_complete_failure(tx_to_main, result, from_queue, to_queue, &status_summary);
-        }
-    }
+            "copied"
+        };
 
-    /// Build status summary showing only non-zero counts
-    fn build_status_summary(result: &BulkOperationResult) -> String {
-        let total = result.total_requested;
-        let mut status_lines = Vec::new();
-
-        if result.successful > 0 {
-            status_lines.push(format!("Processed: {}/{}", result.successful, total));
-        }
-        if result.failed > 0 {
-            status_lines.push(format!("Failed: {}/{}", result.failed, total));
-        }
-        if result.not_found > 0 {
-            status_lines.push(format!("Not Found: {}/{}", result.not_found, total));
-        }
-
-        status_lines.join("\n")
-    }
-
-    /// Handle complete success case
-    fn show_complete_success(
-        tx_to_main: &Sender<Msg>,
-        result: &BulkOperationResult,
-        from_queue: &str,
-        to_queue: &str,
-        status_summary: &str,
-    ) {
-        let success_msg = format!(
-            "✅ Bulk resend completed successfully!\n{}\n\n{}",
-            Self::format_queue_direction(from_queue, to_queue),
-            status_summary
-        );
-
-        log::info!(
-            "Bulk resend completed successfully: {}/{} messages processed",
-            result.successful,
-            result.total_requested
-        );
-
-        Self::send_message_or_log_error(
-            tx_to_main,
-            Msg::PopupActivity(PopupActivityMsg::ShowSuccess(success_msg)),
-            "success",
-        );
-    }
-
-    /// Handle partial success case
-    fn show_partial_success(
-        tx_to_main: &Sender<Msg>,
-        result: &BulkOperationResult,
-        from_queue: &str,
-        to_queue: &str,
-        status_summary: &str,
-    ) {
-        let detailed_msg = format!(
-            "✅ Bulk resend partially completed\n{}\n\n{}\n{}",
-            Self::format_queue_direction(from_queue, to_queue),
-            status_summary,
-            if !result.error_details.is_empty() {
-                format!("\nError details:\n• {}", result.error_details.join("\n• "))
+        let title = format!(
+            "Bulk Send Complete ({})",
+            if params.should_delete {
+                "Moved"
             } else {
-                "".to_string()
+                "Copied"
             }
         );
 
-        log::info!("⚠️ Bulk operation partial success: {}", status_summary);
+        // Use target queue to determine destination description (same logic as QueueOperationType)
+        let destination_desc = if params.target_queue.ends_with("/$deadletterqueue") {
+            "to dead letter queue"
+        } else {
+            "to main queue"
+        };
+
+        let status_message = if params.result.is_complete_success() {
+            format!(
+                "{}\n\n✅ Successfully {} {} message{} {}\n📍 Direction: {}",
+                title,
+                operation_type,
+                params.result.successful,
+                if params.result.successful == 1 {
+                    ""
+                } else {
+                    "s"
+                },
+                destination_desc,
+                direction
+            )
+        } else {
+            format!(
+                "{}\n\n⚠️  Bulk send completed with mixed results\n📍 Direction: {}\n✅ Successful: {}\n❌ Failed: {}\n❓ Not found: {}",
+                title,
+                direction,
+                params.result.successful,
+                params.result.failed,
+                params.result.not_found
+            )
+        };
 
         Self::send_message_or_log_error(
             tx_to_main,
-            Msg::PopupActivity(PopupActivityMsg::ShowSuccess(detailed_msg)),
-            "partial success",
+            Msg::PopupActivity(PopupActivityMsg::ShowSuccess(status_message)),
+            "bulk send status",
         );
     }
 
-    /// Handle complete failure case
-    fn show_complete_failure(
-        tx_to_main: &Sender<Msg>,
-        result: &BulkOperationResult,
-        from_queue: &str,
-        to_queue: &str,
-        status_summary: &str,
-    ) {
-        let detailed_msg = format!(
-            "❌ Bulk resend failed\n{}\n\n{}\n{}",
-            Self::format_queue_direction(from_queue, to_queue),
-            status_summary,
-            if !result.error_details.is_empty() {
-                format!("\nError details:\n• {}", result.error_details.join("\n• "))
-            } else {
-                "".to_string()
-            }
-        );
-
-        log::error!("❌ Bulk operation failed: {}", status_summary);
-
-        let error_msg = AppError::State(detailed_msg);
-        Self::send_message_or_log_error(tx_to_main, Msg::Error(error_msg), "error");
-    }
-
-    /// Handles bulk resend operation errors
-    fn handle_bulk_resend_error(
+    /// Error handler for all bulk send operations
+    fn handle_bulk_send_error(
         tx_to_main: &Sender<Msg>,
         tx_to_main_err: &Sender<Msg>,
         error: AppError,
         from_queue: &str,
         to_queue: &str,
     ) {
-        log::error!("Error in bulk resend operation: {}", error);
+        let direction = Self::format_queue_direction(from_queue, to_queue);
+        log::error!("Error in bulk send operation ({}): {}", direction, error);
 
+        // Stop loading indicator
         Self::send_message_or_log_error(
             tx_to_main,
             Msg::LoadingActivity(LoadingActivityMsg::Stop),
-            "loading stop on error",
+            "loading stop",
         );
 
-        // Enhance error message with queue information
-        let enhanced_error = AppError::State(format!(
-            "❌ Bulk resend operation failed\n{}\n\nError: {}",
-            Self::format_queue_direction(from_queue, to_queue),
-            error
-        ));
+        // Send error message
+        let _ = tx_to_main_err.send(Msg::Error(error));
+    }
 
-        let _ = tx_to_main_err.send(Msg::Error(enhanced_error));
+    /// Execute bulk send to DLQ operation
+    pub fn handle_bulk_send_to_dlq_execution(
+        &mut self,
+        message_ids: Vec<MessageIdentifier>,
+    ) -> Option<Msg> {
+        if message_ids.is_empty() {
+            log::warn!("No messages provided for bulk send to DLQ operation");
+            return None;
+        }
+
+        if let Err(error_msg) = self.validate_bulk_send_to_dlq_request(&message_ids) {
+            return Some(error_msg);
+        }
+
+        let consumer = match self.get_consumer_for_bulk_operation() {
+            Ok(consumer) => consumer,
+            Err(error_msg) => return Some(error_msg),
+        };
+
+        // Get the current queue name for Main to DLQ operation
+        let current_queue_name = match &self.queue_state.current_queue_name {
+            Some(name) => name.clone(),
+            None => {
+                log::error!("No current queue name available");
+                return Some(Msg::Error(AppError::State(
+                    "No current queue name available".to_string(),
+                )));
+            }
+        };
+
+        // For DLQ operations, target queue is the DLQ queue name
+        let target_queue = format!("{}/$deadletterqueue", current_queue_name);
+
+        let params = BulkSendOperationParams::new(
+            consumer,
+            target_queue,
+            true, // should_delete = true for Main to DLQ
+            "Bulk sending {} messages to dead letter queue...",
+            MAIN_QUEUE_DISPLAY_NAME,
+            DLQ_DISPLAY_NAME,
+        );
+
+        self.start_bulk_send_operation(message_ids, params)
+    }
+
+    /// Validates that the bulk send to DLQ request is valid
+    fn validate_bulk_send_to_dlq_request(
+        &self,
+        message_ids: &[MessageIdentifier],
+    ) -> Result<(), Msg> {
+        // Only allow sending to DLQ from main queue (not from DLQ itself)
+        if self.queue_state.current_queue_type != QueueType::Main {
+            log::warn!(
+                "Cannot bulk send messages to DLQ from dead letter queue - only from main queue"
+            );
+            return Err(Msg::Error(AppError::State(
+                "Cannot bulk send messages to DLQ from dead letter queue - only from main queue"
+                    .to_string(),
+            )));
+        }
+
+        // Always log warning about potential message order changes in bulk operations
+        log::warn!(
+            "Bulk operation for {} messages may affect message order. Messages may not be processed in their original sequence.",
+            message_ids.len()
+        );
+
+        log::info!(
+            "Validated bulk send to DLQ request for {} messages",
+            message_ids.len()
+        );
+
+        Ok(())
     }
 }
