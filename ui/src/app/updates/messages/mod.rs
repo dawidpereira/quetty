@@ -13,6 +13,7 @@ use server::bulk_operations::MessageIdentifier;
 use crate::app::model::{AppState, Model};
 use crate::components::common::{MessageActivityMsg, Msg};
 use crate::config::CONFIG;
+use crate::error::AppError;
 use server::consumer::Consumer;
 use server::model::MessageModel;
 use std::sync::Arc;
@@ -39,6 +40,9 @@ where
             MessageActivityMsg::PreviousPage => self.handle_previous_page_request(),
             MessageActivityMsg::NewMessagesLoaded(new_messages) => {
                 self.handle_new_messages_loaded(new_messages)
+            }
+            MessageActivityMsg::BackfillMessagesLoaded(backfill_messages) => {
+                self.handle_backfill_messages_loaded(backfill_messages)
             }
             MessageActivityMsg::PageChanged => self.handle_page_changed(),
             MessageActivityMsg::PaginationStateUpdated {
@@ -214,12 +218,27 @@ where
         None
     }
 
+    fn handle_backfill_messages_loaded(
+        &mut self,
+        backfill_messages: Vec<MessageModel>,
+    ) -> Option<Msg> {
+        if backfill_messages.is_empty() {
+            log::debug!("No messages loaded for backfill");
+            return None;
+        }
+
+        self.add_backfill_messages_to_state(backfill_messages);
+        self.ensure_pagination_consistency_after_backfill();
+        self.update_pagination_and_view()
+    }
+
+    /// Handle single message removal from state
     fn handle_remove_message_from_state(
         &mut self,
         message_id: String,
         message_sequence: i64,
     ) -> Option<Msg> {
-        let page_size = CONFIG.max_messages() as u32;
+        let page_size = CONFIG.max_messages();
 
         // Remove the message from pagination state by both ID and sequence
         let removed = self
@@ -248,25 +267,38 @@ where
             .bulk_selection
             .remove_messages(&[message_identifier]);
 
-        // Update the current page view with the new state
-        if let Err(e) = self.update_current_page_view() {
-            return Some(Msg::Error(e));
-        }
-
-        // Update message details if we have messages
-        let current_page_messages = self
+        // Check if we need to load more messages only if ALL messages are gone
+        let should_load_more = self
             .queue_state
             .message_pagination
-            .get_current_page_messages(page_size);
-        if !current_page_messages.is_empty() {
-            if let Err(e) = self.remount_message_details(0) {
-                return Some(Msg::Error(e));
+            .all_loaded_messages
+            .is_empty();
+
+        if should_load_more {
+            log::info!("All messages removed, attempting to load more messages...");
+
+            // Try to load a full page of messages since we have none
+            if let Err(e) = self.load_messages_from_api_with_count(CONFIG.max_messages()) {
+                log::error!(
+                    "Failed to load messages after single removal left page empty: {}",
+                    e
+                );
+                // Continue with normal flow even if loading fails
+            } else {
+                // If we successfully started loading, view will be updated when messages arrive
+                return None;
             }
         }
 
-        None
+        // Update view and message details using common utilities
+        if let Some(msg) = self.update_pagination_and_view() {
+            return Some(msg);
+        }
+
+        self.remount_message_details_safe()
     }
 
+    /// Handle bulk removal of messages from state - now simplified and focused
     fn handle_bulk_remove_messages_from_state(
         &mut self,
         message_ids: Vec<MessageIdentifier>,
@@ -275,11 +307,99 @@ where
             return None;
         }
 
-        let page_size = CONFIG.max_messages() as u32;
+        let _removed_count = self.remove_messages_from_pagination_state(&message_ids);
+        let (target_page, remaining_message_count) =
+            self.calculate_pagination_after_removal(_removed_count);
+
+        match self.calculate_and_execute_auto_loading(target_page, remaining_message_count) {
+            Ok(true) => {
+                // Auto-loading initiated, view will be updated when messages arrive
+                return None;
+            }
+            Ok(false) => {
+                // No auto-loading needed, continue with normal flow
+            }
+            Err(e) => {
+                log::error!("Failed to auto-load messages after bulk removal: {}", e);
+                // Continue with normal flow even if loading fails
+            }
+        }
+
+        // 4. Finalize pagination state (only if no auto-loading occurred)
+        self.finalize_bulk_removal_pagination();
+
+        // 5. Update view and message details
+        if let Some(msg) = self.update_pagination_and_view() {
+            return Some(msg);
+        }
+
+        self.remount_message_details_safe()
+    }
+
+    fn handle_queue_name_updated(&mut self, queue_name: String) -> Option<Msg> {
+        self.queue_state.current_queue_name = Some(queue_name);
+        None
+    }
+
+    /// Update pagination and view - common pattern across handlers
+    fn update_pagination_and_view(&mut self) -> Option<Msg> {
+        if let Err(e) = self.update_current_page_view() {
+            return Some(Msg::Error(e));
+        }
+        None
+    }
+
+    /// Safely remount message details if messages exist - common pattern across handlers
+    fn remount_message_details_safe(&mut self) -> Option<Msg> {
+        let current_page_messages = self
+            .queue_state
+            .message_pagination
+            .get_current_page_messages(CONFIG.max_messages());
+
+        if !current_page_messages.is_empty() {
+            if let Err(e) = self.remount_message_details(0) {
+                return Some(Msg::Error(e));
+            }
+        }
+        None
+    }
+
+    /// Calculate pagination state after message removal - common logic
+    fn calculate_pagination_after_removal(&mut self, _removed_count: usize) -> (usize, usize) {
+        let page_size = CONFIG.max_messages();
+        let remaining_message_count = self
+            .queue_state
+            .message_pagination
+            .all_loaded_messages
+            .len();
+
+        // Calculate the maximum valid page after removal
+        let max_valid_page_after_removal = if remaining_message_count == 0 {
+            0
+        } else {
+            (remaining_message_count - 1) / page_size as usize
+        };
+
+        // Adjust current page if it's now invalid
+        let target_page = self
+            .queue_state
+            .message_pagination
+            .current_page
+            .min(max_valid_page_after_removal);
+
+        (target_page, remaining_message_count)
+    }
+
+    /// Remove multiple messages from pagination state - extracted logic
+    fn remove_messages_from_pagination_state(
+        &mut self,
+        message_ids: &[MessageIdentifier],
+    ) -> usize {
+        let page_size = CONFIG.max_messages();
         let mut removed_count = 0;
 
         // Remove each message from pagination state
-        for message_id in &message_ids {
+        for message_id in message_ids {
             let removed = self
                 .queue_state
                 .message_pagination
@@ -308,52 +428,185 @@ where
         );
 
         // Remove the messages from bulk selection if they were selected
-        self.queue_state
-            .bulk_selection
-            .remove_messages(&message_ids);
+        self.queue_state.bulk_selection.remove_messages(message_ids);
 
-        // Reset to page 1 after bulk removal to ensure we're on a valid page
-        self.queue_state.message_pagination.set_current_page(0);
+        removed_count
+    }
 
-        // Recalculate total pages based on remaining messages
-        let remaining_message_count = self
+    /// Calculate and execute auto-loading if needed after bulk removal
+    fn calculate_and_execute_auto_loading(
+        &mut self,
+        target_page: usize,
+        remaining_message_count: usize,
+    ) -> Result<bool, AppError> {
+        let page_size = CONFIG.max_messages();
+
+        // Check if we should auto-load to fill the target page
+        let current_page_messages = if target_page < remaining_message_count / page_size as usize {
+            // Page is full, no need to auto-load
+            page_size as usize
+        } else {
+            // Last page, might be under-filled
+            remaining_message_count % page_size as usize
+        };
+
+        let messages_short = if current_page_messages < page_size as usize
+            && self.queue_state.message_pagination.has_next_page
+        {
+            page_size as usize - current_page_messages
+        } else {
+            0
+        };
+
+        log::info!(
+            "After bulk removal: {} messages remaining, target page {}, current page has {} messages, need {} more",
+            remaining_message_count,
+            target_page,
+            current_page_messages,
+            messages_short
+        );
+
+        // Update current page to the valid target page
+        self.queue_state.message_pagination.current_page = target_page;
+
+        if messages_short > 0 {
+            // Try to auto-load the missing messages to fill the current page using backfill method
+            log::info!(
+                "Auto-loading {} messages to fill page {}",
+                messages_short,
+                target_page
+            );
+
+            self.load_messages_for_backfill(messages_short as u32)?;
+            return Ok(true); // Auto-loading initiated
+        }
+
+        Ok(false) // No auto-loading needed
+    }
+
+    /// Finalize pagination state after bulk removal (when no auto-loading occurred)
+    fn finalize_bulk_removal_pagination(&mut self) {
+        let page_size = CONFIG.max_messages();
+
+        // After bulk removal (and potential auto-loading), ensure we're on a valid page
+        let total_messages = self
             .queue_state
             .message_pagination
             .all_loaded_messages
             .len();
-        let new_total_pages = if remaining_message_count == 0 {
+        let max_valid_page = if total_messages == 0 {
             0
         } else {
-            ((remaining_message_count - 1) / page_size as usize) + 1
+            (total_messages - 1) / page_size as usize
         };
-        self.queue_state.message_pagination.total_pages_loaded = new_total_pages;
+
+        // Ensure current page is valid - if we're beyond the last page, go to the last valid page
+        if self.queue_state.message_pagination.current_page > max_valid_page {
+            log::info!(
+                "Current page {} is beyond last valid page {}, adjusting to page {}",
+                self.queue_state.message_pagination.current_page,
+                max_valid_page,
+                max_valid_page
+            );
+            self.queue_state.message_pagination.current_page = max_valid_page;
+        }
+
+        // Recalculate total pages based on current messages
+        let new_total_pages = if total_messages == 0 {
+            0
+        } else {
+            ((total_messages - 1) / page_size as usize) + 1
+        };
+
+        // Update total_pages_loaded to reflect actual loaded pages
+        // Don't let it be less than current_page + 1 to maintain navigation capability
+        self.queue_state.message_pagination.total_pages_loaded =
+            new_total_pages.max(self.queue_state.message_pagination.current_page + 1);
 
         // Update pagination flags based on new state
         self.queue_state.message_pagination.update(page_size);
 
-        // Update the current page view with the new state
-        if let Err(e) = self.update_current_page_view() {
-            return Some(Msg::Error(e));
+        log::info!(
+            "Bulk removal completed: now on page {}, current page has {} messages",
+            self.queue_state.message_pagination.current_page,
+            self.queue_state
+                .message_pagination
+                .get_current_page_messages(page_size)
+                .len()
+        );
+    }
+
+    /// Add backfill messages to state without changing pagination structure
+    fn add_backfill_messages_to_state(&mut self, messages: Vec<MessageModel>) {
+        log::info!(
+            "Adding {} backfill messages to current page",
+            messages.len()
+        );
+
+        // Add messages directly to the end of all_loaded_messages (doesn't create new page)
+        for message in messages {
+            self.queue_state
+                .message_pagination
+                .all_loaded_messages
+                .push(message);
         }
 
-        // Update message details if we have messages
-        let current_page_messages = self
+        // Update last_loaded_sequence
+        if let Some(last_message) = self
             .queue_state
             .message_pagination
-            .get_current_page_messages(page_size);
-        if !current_page_messages.is_empty() {
-            if let Err(e) = self.remount_message_details(0) {
-                return Some(Msg::Error(e));
-            }
+            .all_loaded_messages
+            .last()
+        {
+            self.queue_state.message_pagination.last_loaded_sequence = Some(last_message.sequence);
+        }
+    }
+
+    /// Ensure pagination consistency after backfill messages are added
+    fn ensure_pagination_consistency_after_backfill(&mut self) {
+        let page_size = CONFIG.max_messages();
+        let total_messages = self
+            .queue_state
+            .message_pagination
+            .all_loaded_messages
+            .len();
+
+        // Recalculate total pages to include newly loaded messages
+        let new_total_pages = if total_messages == 0 {
+            0
+        } else {
+            ((total_messages - 1) / page_size as usize) + 1
+        };
+
+        // Calculate the maximum valid page (0-indexed)
+        let max_valid_page = if total_messages == 0 {
+            0
+        } else {
+            (total_messages - 1) / page_size as usize
+        };
+
+        // Ensure current page is valid after backfill
+        if self.queue_state.message_pagination.current_page > max_valid_page {
+            log::info!(
+                "After backfill: Current page {} is beyond max valid page {}, adjusting to page {}",
+                self.queue_state.message_pagination.current_page,
+                max_valid_page,
+                max_valid_page
+            );
+            self.queue_state.message_pagination.current_page = max_valid_page;
         }
 
-        None
-    }
+        // Update total_pages_loaded to reflect actual loaded pages
+        // Ensure it's at least as many as we need for current page + 1
+        self.queue_state.message_pagination.total_pages_loaded =
+            new_total_pages.max(self.queue_state.message_pagination.current_page + 1);
 
-    fn handle_queue_name_updated(&mut self, queue_name: String) -> Option<Msg> {
-        self.queue_state.current_queue_name = Some(queue_name);
-        None
+        log::debug!(
+            "After backfill: {} total messages, {} total pages, current page {} (max valid: {})",
+            total_messages,
+            self.queue_state.message_pagination.total_pages_loaded,
+            self.queue_state.message_pagination.current_page,
+            max_valid_page
+        );
     }
-
-    // Note: handle_delete_message is implemented in the delete module
 }
