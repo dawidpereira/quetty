@@ -108,7 +108,7 @@ where
                 self.handle_bulk_delete_messages(message_ids)
             }
             MessageActivityMsg::BulkSendToDLQ(message_ids) => {
-                self.handle_bulk_send_to_dlq(message_ids)
+                self.handle_bulk_send_to_dlq_execution(message_ids)
             }
             MessageActivityMsg::BulkResendFromDLQ(message_ids, delete_from_dlq) => {
                 // This is the confirmed execution - actually perform the bulk resend
