@@ -132,11 +132,10 @@ where
         }
 
         let count = message_ids.len();
-        let title = "Bulk Delete Messages".to_string();
+        let title = "Delete Messages".to_string();
         let message = format!(
-            "Are you sure you want to delete {} message{}?\nThis action will permanently remove the message{} and cannot be undone.",
+            "You are about to delete {} message{} from the queue.\n\n🗑️  Action: Messages will be permanently removed\n⚠️   Warning: This action CANNOT be undone!",
             count,
-            if count == 1 { "" } else { "s" },
             if count == 1 { "" } else { "s" }
         );
 
@@ -156,9 +155,9 @@ where
         }
 
         let count = message_ids.len();
-        let title = "Bulk Send to Dead Letter Queue".to_string();
+        let title = "Send to Dead Letter Queue".to_string();
         let message = format!(
-            "Are you sure you want to send {} message{} to the dead letter queue?",
+            "You are about to send {} message{} to the dead letter queue.\n\n📤 Action: Messages will be moved to the DLQ\n🔄 Result: Messages can be processed or resent later",
             count,
             if count == 1 { "" } else { "s" }
         );
@@ -176,6 +175,7 @@ where
     pub fn handle_bulk_resend_from_dlq_messages(
         &mut self,
         message_ids: Vec<MessageIdentifier>,
+        delete_from_dlq: bool,
     ) -> Option<Msg> {
         if message_ids.is_empty() {
             return None;
@@ -183,21 +183,39 @@ where
 
         let count = message_ids.len();
 
-        let title = "Bulk Resend from Dead Letter Queue".to_string();
-        let mut message = format!(
-            "Are you sure you want to resend {} message{} from the dead letter queue back to the main queue?",
-            count,
-            if count == 1 { "" } else { "s" }
-        );
+        let (title, base_message) = if delete_from_dlq {
+            (
+                "Resend and Delete from DLQ".to_string(),
+                format!(
+                    "You are about to resend {} message{} from the DLQ to the main queue.\n\n📤 Action: Messages will be sent to the main queue\n🗑️  Result: Messages will be DELETED from the DLQ",
+                    count,
+                    if count == 1 { "" } else { "s" }
+                ),
+            )
+        } else {
+            (
+                "Resend Only (Keep in DLQ)".to_string(),
+                format!(
+                    "You are about to resend {} message{} from the DLQ to the main queue.\n\n📤 Action: Messages will be sent to the main queue\n📄 Result: Messages will REMAIN in the DLQ for future processing",
+                    count,
+                    if count == 1 { "" } else { "s" }
+                ),
+            )
+        };
 
-        // Always show warning about message order
-        message.push_str("\n\n⚠️  WARNING: This bulk operation may change the order of messages in the queue. Messages may not be processed in their original sequence.");
+        let mut message = base_message;
+
+        // Only show order warning for operations that delete from DLQ (which changes order)
+        if delete_from_dlq {
+            message.push_str("\n\n⚠️  WARNING: Message order may change in the main queue!");
+        }
 
         Some(Msg::PopupActivity(PopupActivityMsg::ShowConfirmation {
             title,
             message,
             on_confirm: Box::new(Msg::MessageActivity(MessageActivityMsg::BulkResendFromDLQ(
                 message_ids,
+                delete_from_dlq,
             ))),
         }))
     }
@@ -227,7 +245,7 @@ where
     }
 
     /// Handle bulk resend from DLQ for currently selected messages
-    pub fn handle_bulk_resend_selected_from_dlq(&mut self) -> Option<Msg> {
+    pub fn handle_bulk_resend_selected_from_dlq(&mut self, delete_from_dlq: bool) -> Option<Msg> {
         let selected_messages = self.queue_state.bulk_selection.get_selected_messages();
         if selected_messages.is_empty() {
             // Fall back to single message resend if no bulk selections
@@ -235,6 +253,6 @@ where
             return None;
         }
 
-        self.handle_bulk_resend_from_dlq_messages(selected_messages)
+        self.handle_bulk_resend_from_dlq_messages(selected_messages, delete_from_dlq)
     }
 }

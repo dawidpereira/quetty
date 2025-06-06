@@ -58,10 +58,10 @@ impl MockComponent for ConfirmationPopup {
         for line in self.message.lines() {
             lines.push(Line::from(line));
         }
-        
+
         // Add empty line for spacing
         lines.push(Line::from(""));
-        
+
         // Add the options
         lines.push(Line::from(vec![
             Span::styled(
@@ -81,10 +81,11 @@ impl MockComponent for ConfirmationPopup {
 
         let text = Text::from(lines);
 
-        // Create the paragraph with custom text
+        // Create the paragraph with custom text and word wrapping
         let paragraph = RatatuiParagraph::new(text)
             .block(block)
             .alignment(tuirealm::ratatui::layout::Alignment::Center)
+            .wrap(tuirealm::ratatui::widgets::Wrap { trim: true })
             .style(
                 tuirealm::ratatui::style::Style::default()
                     .fg(tuirealm::ratatui::style::Color::Yellow)
@@ -117,15 +118,15 @@ impl Component<Msg, NoUserEvent> for ConfirmationPopup {
             Event::Keyboard(KeyEvent {
                 code: Key::Char('y') | Key::Char('Y'),
                 ..
-            }) => Some(Msg::PopupActivity(
-                PopupActivityMsg::ConfirmationResult(true),
-            )),
+            }) => Some(Msg::PopupActivity(PopupActivityMsg::ConfirmationResult(
+                true,
+            ))),
             Event::Keyboard(KeyEvent {
                 code: Key::Char('n') | Key::Char('N') | Key::Esc,
                 ..
-            }) => Some(Msg::PopupActivity(
-                PopupActivityMsg::ConfirmationResult(false),
-            )),
+            }) => Some(Msg::PopupActivity(PopupActivityMsg::ConfirmationResult(
+                false,
+            ))),
             _ => None,
         }
     }

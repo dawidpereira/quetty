@@ -88,12 +88,12 @@ pub enum MessageActivityMsg {
     // Bulk operations - use currently selected messages
     BulkDeleteSelected,
     BulkSendSelectedToDLQ,
-    BulkResendSelectedFromDLQ,
+    BulkResendSelectedFromDLQ(bool), // bool: true = delete from DLQ, false = keep in DLQ
 
     // Bulk operations - with specific message lists
     BulkDeleteMessages(Vec<MessageIdentifier>),
     BulkSendToDLQ(Vec<MessageIdentifier>),
-    BulkResendFromDLQ(Vec<MessageIdentifier>),
+    BulkResendFromDLQ(Vec<MessageIdentifier>, bool), // bool: true = delete from DLQ, false = keep in DLQ
 
     // Bulk state management - remove multiple messages from local state
     BulkRemoveMessagesFromState(Vec<MessageIdentifier>),

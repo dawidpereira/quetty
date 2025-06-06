@@ -37,9 +37,9 @@ pub fn view_confirmation_popup(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,
     f: &mut Frame,
 ) -> Result<(), AppError> {
-    // Create a centered box for the confirmation popup
-    let popup_width = 80;
-    let popup_height = 8;
+    // Create a centered box for the confirmation popup with better sizing
+    let popup_width = 90; // Increased width for longer messages
+    let popup_height = 12; // Increased height for multi-line messages
     let area = f.area();
 
     let popup_x = (area.width.saturating_sub(popup_width)) / 2;

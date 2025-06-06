@@ -270,9 +270,18 @@ impl Component<Msg, NoUserEvent> for Messages {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
             }) => {
-                // Check if we should do bulk operation or single message operation
+                // Resend only (without deleting from DLQ)
                 return Some(Msg::MessageActivity(
-                    MessageActivityMsg::BulkResendSelectedFromDLQ,
+                    MessageActivityMsg::BulkResendSelectedFromDLQ(false),
+                ));
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('R'),
+                modifiers: KeyModifiers::SHIFT,
+            }) => {
+                // Resend and delete from DLQ
+                return Some(Msg::MessageActivity(
+                    MessageActivityMsg::BulkResendSelectedFromDLQ(true),
                 ));
             }
             Event::Keyboard(KeyEvent {
