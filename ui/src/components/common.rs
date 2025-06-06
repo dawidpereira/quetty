@@ -72,19 +72,11 @@ pub enum MessageActivityMsg {
     NewMessagesLoaded(Vec<MessageModel>), // New messages loaded from API
     BackfillMessagesLoaded(Vec<MessageModel>), // Messages loaded for backfilling current page
     PageChanged,                          // Just changed page within already loaded messages
-    SendMessageToDLQ(usize),              // Send message at index to dead letter queue
-    ResendMessageFromDLQ(usize),          // Resend message from DLQ back to main queue
-    DeleteMessage(usize),                 // Delete message from queue (complete message)
-    RemoveMessageFromState(String, i64), // Remove message by ID and sequence from local state (after DLQ)
-
     // Bulk selection messages
-    ToggleMessageSelection(MessageIdentifier),
     ToggleMessageSelectionByIndex(usize), // Helper for UI components
     SelectAllCurrentPage,
     SelectAllLoadedMessages,
     ClearAllSelections,
-    EnterBulkMode,
-    ExitBulkMode,
 
     // Bulk operations - use currently selected messages
     BulkDeleteSelected,

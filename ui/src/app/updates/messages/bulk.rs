@@ -1,12 +1,31 @@
 use crate::app::model::Model;
-use crate::components::common::{MessageActivityMsg, Msg, PopupActivityMsg, QueueActivityMsg};
+use crate::components::common::{
+    ComponentId, MessageActivityMsg, Msg, PopupActivityMsg, QueueActivityMsg,
+};
 use server::bulk_operations::MessageIdentifier;
+use server::model::MessageModel;
 use tuirealm::terminal::TerminalAdapter;
 
 impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
+    /// Get the currently highlighted message
+    fn get_current_message(&self) -> Option<MessageModel> {
+        // Get the current cursor position from the messages component
+        if let Ok(tuirealm::State::One(tuirealm::StateValue::Usize(selected_index))) =
+            self.app.state(&ComponentId::Messages)
+        {
+            // Get the current page messages
+            if let Some(current_messages) = &self.queue_state.messages {
+                if selected_index < current_messages.len() {
+                    return Some(current_messages[selected_index].clone());
+                }
+            }
+        }
+        None
+    }
+
     /// Handle toggling message selection by message identifier
     pub fn handle_toggle_message_selection(
         &mut self,
@@ -96,30 +115,6 @@ where
             // Not in bulk mode, handle as normal ESC (go back)
             Some(Msg::QueueActivity(QueueActivityMsg::QueueUnselected))
         }
-    }
-
-    /// Handle entering bulk mode
-    pub fn handle_enter_bulk_mode(&mut self) -> Option<Msg> {
-        self.queue_state.bulk_selection.enter_selection_mode();
-
-        // Remount messages to update visual state
-        if let Err(e) = self.remount_messages() {
-            return Some(Msg::Error(e));
-        }
-
-        None
-    }
-
-    /// Handle exiting bulk mode
-    pub fn handle_exit_bulk_mode(&mut self) -> Option<Msg> {
-        self.queue_state.bulk_selection.exit_selection_mode();
-
-        // Remount messages to update visual state
-        if let Err(e) = self.remount_messages() {
-            return Some(Msg::Error(e));
-        }
-
-        None
     }
 
     /// Handle bulk delete operation
@@ -220,39 +215,58 @@ where
         }))
     }
 
-    /// Handle bulk delete for currently selected messages
+    /// Handle bulk delete for currently selected messages or current message
     pub fn handle_bulk_delete_selected(&mut self) -> Option<Msg> {
         let selected_messages = self.queue_state.bulk_selection.get_selected_messages();
-        if selected_messages.is_empty() {
-            // Fall back to single message delete if no bulk selections
-            // This will be handled by the existing delete logic
-            return None;
+        if !selected_messages.is_empty() {
+            // Use bulk selected messages
+            return self.handle_bulk_delete_messages(selected_messages);
         }
 
-        self.handle_bulk_delete_messages(selected_messages)
+        // No bulk selections - use current message as single-item bulk operation
+        if let Some(current_message) = self.get_current_message() {
+            let current_message_id = MessageIdentifier::from_message(&current_message);
+            return self.handle_bulk_delete_messages(vec![current_message_id]);
+        }
+
+        // No current message available
+        None
     }
 
-    /// Handle bulk send to DLQ for currently selected messages
+    /// Handle bulk send to DLQ for currently selected messages or current message
     pub fn handle_bulk_send_selected_to_dlq(&mut self) -> Option<Msg> {
         let selected_messages = self.queue_state.bulk_selection.get_selected_messages();
-        if selected_messages.is_empty() {
-            // Fall back to single message DLQ if no bulk selections
-            // This will be handled by the existing DLQ logic
-            return None;
+        if !selected_messages.is_empty() {
+            // Use bulk selected messages
+            return self.handle_bulk_send_to_dlq(selected_messages);
         }
 
-        self.handle_bulk_send_to_dlq(selected_messages)
+        // No bulk selections - use current message as single-item bulk operation
+        if let Some(current_message) = self.get_current_message() {
+            let current_message_id = MessageIdentifier::from_message(&current_message);
+            return self.handle_bulk_send_to_dlq(vec![current_message_id]);
+        }
+
+        // No current message available
+        None
     }
 
-    /// Handle bulk resend from DLQ for currently selected messages
+    /// Handle bulk resend from DLQ for currently selected messages or current message
     pub fn handle_bulk_resend_selected_from_dlq(&mut self, delete_from_dlq: bool) -> Option<Msg> {
         let selected_messages = self.queue_state.bulk_selection.get_selected_messages();
-        if selected_messages.is_empty() {
-            // Fall back to single message resend if no bulk selections
-            // This will be handled by the existing resend logic
-            return None;
+        if !selected_messages.is_empty() {
+            // Use bulk selected messages
+            return self.handle_bulk_resend_from_dlq_messages(selected_messages, delete_from_dlq);
         }
 
-        self.handle_bulk_resend_from_dlq_messages(selected_messages, delete_from_dlq)
+        // No bulk selections - use current message as single-item bulk operation
+        if let Some(current_message) = self.get_current_message() {
+            let current_message_id = MessageIdentifier::from_message(&current_message);
+            return self
+                .handle_bulk_resend_from_dlq_messages(vec![current_message_id], delete_from_dlq);
+        }
+
+        // No current message available
+        None
     }
 }

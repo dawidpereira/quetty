@@ -817,4 +817,26 @@ where
 
         Self::send_message_or_log_error(tx_to_main_err, Msg::Error(enhanced_error), "error");
     }
+
+    /// Get the main queue name for DLQ to Main operation
+    fn get_main_queue_name_from_current_dlq(&self) -> Result<String, AppError> {
+        let current_queue_name = self
+            .queue_state
+            .current_queue_name
+            .as_ref()
+            .ok_or_else(|| AppError::State("No current queue name available".to_string()))?;
+
+        // Remove the DLQ suffix to get the main queue name
+        let main_queue_name = if current_queue_name.ends_with("/$deadletterqueue") {
+            current_queue_name
+                .strip_suffix("/$deadletterqueue")
+                .unwrap_or(current_queue_name)
+                .to_string()
+        } else {
+            // If it doesn't end with DLQ suffix, assume it's already the main queue name
+            current_queue_name.clone()
+        };
+
+        Ok(main_queue_name)
+    }
 }

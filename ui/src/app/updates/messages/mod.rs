@@ -1,7 +1,5 @@
 pub mod bulk;
 pub mod bulk_execution;
-pub mod delete;
-pub mod dlq;
 pub mod loading;
 pub mod pagination;
 pub mod utils;
@@ -56,55 +54,20 @@ where
                 current_page,
                 total_pages_loaded,
             ),
-            MessageActivityMsg::SendMessageToDLQ(index) => self.handle_send_message_to_dlq(index),
-            MessageActivityMsg::ResendMessageFromDLQ(index) => {
-                self.handle_resend_message_from_dlq(index)
-            }
-            MessageActivityMsg::DeleteMessage(index) => self.handle_delete_message(index),
-            MessageActivityMsg::RemoveMessageFromState(message_id, message_sequence) => {
-                self.handle_remove_message_from_state(message_id, message_sequence)
-            }
 
             // Bulk selection handlers
-            MessageActivityMsg::ToggleMessageSelection(message_id) => {
-                self.handle_toggle_message_selection(message_id)
-            }
             MessageActivityMsg::ToggleMessageSelectionByIndex(index) => {
                 self.handle_toggle_message_selection_by_index(index)
             }
             MessageActivityMsg::SelectAllCurrentPage => self.handle_select_all_current_page(),
             MessageActivityMsg::SelectAllLoadedMessages => self.handle_select_all_loaded_messages(),
             MessageActivityMsg::ClearAllSelections => self.handle_clear_all_selections(),
-            MessageActivityMsg::EnterBulkMode => self.handle_enter_bulk_mode(),
-            MessageActivityMsg::ExitBulkMode => self.handle_exit_bulk_mode(),
 
             // Bulk operation handlers - with selected items
-            MessageActivityMsg::BulkDeleteSelected => {
-                if let Some(msg) = self.handle_bulk_delete_selected() {
-                    Some(msg)
-                } else {
-                    // Fall back to single message delete using current cursor position
-                    let index = 0; // We'd need to get the actual cursor position
-                    self.handle_delete_message(index)
-                }
-            }
-            MessageActivityMsg::BulkSendSelectedToDLQ => {
-                if let Some(msg) = self.handle_bulk_send_selected_to_dlq() {
-                    Some(msg)
-                } else {
-                    // Fall back to single message DLQ using current cursor position
-                    let index = 0; // We'd need to get the actual cursor position
-                    self.handle_send_message_to_dlq(index)
-                }
-            }
+            MessageActivityMsg::BulkDeleteSelected => self.handle_bulk_delete_selected(),
+            MessageActivityMsg::BulkSendSelectedToDLQ => self.handle_bulk_send_selected_to_dlq(),
             MessageActivityMsg::BulkResendSelectedFromDLQ(delete_from_dlq) => {
-                if let Some(msg) = self.handle_bulk_resend_selected_from_dlq(delete_from_dlq) {
-                    Some(msg)
-                } else {
-                    // Fall back to single message resend using current cursor position
-                    let index = 0; // We'd need to get the actual cursor position
-                    self.handle_resend_message_from_dlq(index)
-                }
+                self.handle_bulk_resend_selected_from_dlq(delete_from_dlq)
             }
 
             // Bulk operation handlers - with specific message lists
@@ -230,72 +193,6 @@ where
         self.add_backfill_messages_to_state(backfill_messages);
         self.ensure_pagination_consistency_after_backfill();
         self.update_pagination_and_view()
-    }
-
-    /// Handle single message removal from state
-    fn handle_remove_message_from_state(
-        &mut self,
-        message_id: String,
-        message_sequence: i64,
-    ) -> Option<Msg> {
-        let page_size = CONFIG.max_messages();
-
-        // Remove the message from pagination state by both ID and sequence
-        let removed = self
-            .queue_state
-            .message_pagination
-            .remove_message_by_id_and_sequence(&message_id, message_sequence, page_size);
-
-        if !removed {
-            log::warn!(
-                "Message with ID {} and sequence {} not found in local state",
-                message_id,
-                message_sequence
-            );
-            return None;
-        }
-
-        log::info!(
-            "Removed message {} (sequence {}) from local state",
-            message_id,
-            message_sequence
-        );
-
-        // Also remove the message from bulk selection if it was selected
-        let message_identifier = MessageIdentifier::new(message_id, message_sequence);
-        self.queue_state
-            .bulk_selection
-            .remove_messages(&[message_identifier]);
-
-        // Check if we need to load more messages only if ALL messages are gone
-        let should_load_more = self
-            .queue_state
-            .message_pagination
-            .all_loaded_messages
-            .is_empty();
-
-        if should_load_more {
-            log::info!("All messages removed, attempting to load more messages...");
-
-            // Try to load a full page of messages since we have none
-            if let Err(e) = self.load_messages_from_api_with_count(CONFIG.max_messages()) {
-                log::error!(
-                    "Failed to load messages after single removal left page empty: {}",
-                    e
-                );
-                // Continue with normal flow even if loading fails
-            } else {
-                // If we successfully started loading, view will be updated when messages arrive
-                return None;
-            }
-        }
-
-        // Update view and message details using common utilities
-        if let Some(msg) = self.update_pagination_and_view() {
-            return Some(msg);
-        }
-
-        self.remount_message_details_safe()
     }
 
     /// Handle bulk removal of messages from state - now simplified and focused
