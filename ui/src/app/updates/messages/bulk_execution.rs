@@ -14,10 +14,27 @@ use std::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tuirealm::terminal::TerminalAdapter;
 
+// Constants for consistent queue display names
+const DLQ_DISPLAY_NAME: &str = "Dead Letter Queue";
+const MAIN_QUEUE_DISPLAY_NAME: &str = "Main Queue";
+
+
+
 impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
+    /// Helper function to send messages to main thread with error logging
+    fn send_message_or_log_error(tx: &Sender<Msg>, msg: Msg, operation: &str) {
+        if let Err(e) = tx.send(msg) {
+            log::error!("Failed to send {} message: {}", operation, e);
+        }
+    }
+
+    /// Helper function to format queue direction display
+    fn format_queue_direction(from_queue: &str, to_queue: &str) -> String {
+        format!("From {} to {}", from_queue, to_queue)
+    }
     /// Execute bulk resend from DLQ operation
     pub fn handle_bulk_resend_from_dlq_execution(
         &mut self,
@@ -88,12 +105,14 @@ where
         let tx_to_main = self.tx_to_main.clone();
 
         // Show loading indicator
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Start(format!(
-            "Bulk resending {} messages from dead letter queue...",
-            message_ids.len()
-        )))) {
-            log::error!("Failed to send loading start message: {}", e);
-        }
+        Self::send_message_or_log_error(
+            &tx_to_main,
+            Msg::LoadingActivity(LoadingActivityMsg::Start(format!(
+                "Bulk resending {} messages from dead letter queue...",
+                message_ids.len()
+            ))),
+            "loading start",
+        );
 
         let tx_to_main_err = tx_to_main.clone();
 
@@ -148,8 +167,8 @@ where
                         &tx_to_main,
                         &tx_to_main_err,
                         AppError::ServiceBus(e.to_string()),
-                        "Dead Letter Queue",
-                        "Main Queue",
+                        DLQ_DISPLAY_NAME,
+                        MAIN_QUEUE_DISPLAY_NAME,
                     );
                 }
             }
@@ -170,9 +189,11 @@ where
         );
 
         // Stop loading indicator
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
-            log::error!("Failed to send loading stop message: {}", e);
-        }
+        Self::send_message_or_log_error(
+            tx_to_main,
+            Msg::LoadingActivity(LoadingActivityMsg::Stop),
+            "loading stop",
+        );
 
         // If we have successful operations, remove those specific messages from the local state
         if result.successful > 0 && !result.successful_message_ids.is_empty() {
@@ -189,21 +210,23 @@ where
             )) {
                 log::error!("Failed to send bulk remove messages message: {}", e);
                 // Fall back to page reload if bulk removal fails
-                if let Err(e2) =
-                    tx_to_main.send(Msg::MessageActivity(MessageActivityMsg::PageChanged))
-                {
-                    log::error!("Failed to send page changed fallback message: {}", e2);
-                }
+                Self::send_message_or_log_error(
+                    tx_to_main,
+                    Msg::MessageActivity(MessageActivityMsg::PageChanged),
+                    "page changed fallback",
+                );
             }
         } else {
             // No successful operations, just reload the page to be safe
-            if let Err(e) = tx_to_main.send(Msg::MessageActivity(MessageActivityMsg::PageChanged)) {
-                log::error!("Failed to send page changed message: {}", e);
-            }
+            Self::send_message_or_log_error(
+                tx_to_main,
+                Msg::MessageActivity(MessageActivityMsg::PageChanged),
+                "page changed",
+            );
         }
 
         // Always show operation status to the user
-        Self::show_bulk_operation_status(tx_to_main, &result, "Dead Letter Queue", "Main Queue");
+        Self::show_bulk_operation_status(tx_to_main, &result, DLQ_DISPLAY_NAME, MAIN_QUEUE_DISPLAY_NAME);
     }
 
     /// Show comprehensive status of bulk operation to the user
@@ -252,8 +275,8 @@ where
         status_summary: &str,
     ) {
         let success_msg = format!(
-            "✅ Bulk resend completed successfully!\nFrom {} to {}\n\n{}",
-            from_queue, to_queue, status_summary
+            "✅ Bulk resend completed successfully!\n{}\n\n{}",
+            Self::format_queue_direction(from_queue, to_queue), status_summary
         );
 
         log::info!(
@@ -262,11 +285,11 @@ where
             result.total_requested
         );
 
-        if let Err(e) = tx_to_main.send(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
-            success_msg,
-        ))) {
-            log::error!("Failed to send success message to user: {}", e);
-        }
+        Self::send_message_or_log_error(
+            tx_to_main,
+            Msg::PopupActivity(PopupActivityMsg::ShowSuccess(success_msg)),
+            "success",
+        );
     }
 
     /// Handle partial success case
@@ -278,9 +301,8 @@ where
         status_summary: &str,
     ) {
         let detailed_msg = format!(
-            "✅ Bulk resend partially completed\nFrom {} to {}\n\n{}\n{}",
-            from_queue,
-            to_queue,
+            "✅ Bulk resend partially completed\n{}\n\n{}\n{}",
+            Self::format_queue_direction(from_queue, to_queue),
             status_summary,
             if !result.error_details.is_empty() {
                 format!("\nError details:\n• {}", result.error_details.join("\n• "))
@@ -291,11 +313,11 @@ where
 
         log::info!("⚠️ Bulk operation partial success: {}", status_summary);
 
-        if let Err(e) = tx_to_main.send(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
-            detailed_msg,
-        ))) {
-            log::error!("Failed to send success message to user: {}", e);
-        }
+        Self::send_message_or_log_error(
+            tx_to_main,
+            Msg::PopupActivity(PopupActivityMsg::ShowSuccess(detailed_msg)),
+            "partial success",
+        );
     }
 
     /// Handle complete failure case
@@ -307,9 +329,8 @@ where
         status_summary: &str,
     ) {
         let detailed_msg = format!(
-            "❌ Bulk resend failed\nFrom {} to {}\n\n{}\n{}",
-            from_queue,
-            to_queue,
+            "❌ Bulk resend failed\n{}\n\n{}\n{}",
+            Self::format_queue_direction(from_queue, to_queue),
             status_summary,
             if !result.error_details.is_empty() {
                 format!("\nError details:\n• {}", result.error_details.join("\n• "))
@@ -321,9 +342,7 @@ where
         log::error!("❌ Bulk operation failed: {}", status_summary);
 
         let error_msg = AppError::State(detailed_msg);
-        if let Err(e) = tx_to_main.send(Msg::Error(error_msg)) {
-            log::error!("Failed to send error message to user: {}", e);
-        }
+        Self::send_message_or_log_error(tx_to_main, Msg::Error(error_msg), "error");
     }
 
     /// Handles bulk resend operation errors
@@ -336,14 +355,16 @@ where
     ) {
         log::error!("Error in bulk resend operation: {}", error);
 
-        if let Err(err) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
-            log::error!("Failed to send loading stop message: {}", err);
-        }
+        Self::send_message_or_log_error(
+            tx_to_main,
+            Msg::LoadingActivity(LoadingActivityMsg::Stop),
+            "loading stop on error",
+        );
 
         // Enhance error message with queue information
         let enhanced_error = AppError::State(format!(
-            "❌ Bulk resend operation failed\nFrom {} to {}\n\nError: {}",
-            from_queue, to_queue, error
+            "❌ Bulk resend operation failed\n{}\n\nError: {}",
+            Self::format_queue_direction(from_queue, to_queue), error
         ));
 
         let _ = tx_to_main_err.send(Msg::Error(enhanced_error));

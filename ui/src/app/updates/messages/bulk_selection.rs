@@ -173,7 +173,7 @@ where
     }
 
     /// Handle bulk resend from DLQ operation
-    pub fn handle_bulk_resend_from_dlq_messages(
+    pub fn handle_bulk_resend_from_dlq(
         &mut self,
         message_ids: Vec<MessageIdentifier>,
     ) -> Option<Msg> {
@@ -235,6 +235,6 @@ where
             return None;
         }
 
-        self.handle_bulk_resend_from_dlq_messages(selected_messages)
+        self.handle_bulk_resend_from_dlq(selected_messages)
     }
 }
