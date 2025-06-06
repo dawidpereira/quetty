@@ -70,6 +70,7 @@ pub enum MessageActivityMsg {
         total_pages_loaded: usize,
     },
     NewMessagesLoaded(Vec<MessageModel>), // New messages loaded from API
+    BackfillMessagesLoaded(Vec<MessageModel>), // Messages loaded for backfilling current page
     PageChanged,                          // Just changed page within already loaded messages
     SendMessageToDLQ(usize),              // Send message at index to dead letter queue
     ResendMessageFromDLQ(usize),          // Resend message from DLQ back to main queue

@@ -1,6 +1,5 @@
 use crate::app::model::Model;
-use crate::components::common::{LoadingActivityMsg, Msg, MessageActivityMsg};
-use crate::config::CONFIG;
+use crate::components::common::{LoadingActivityMsg, MessageActivityMsg, Msg};
 use crate::error::{AppError, AppResult};
 use server::consumer::Consumer;
 use server::model::MessageModel;
@@ -13,9 +12,11 @@ impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
-    pub fn load_new_messages_from_api(&mut self) -> AppResult<()> {
+    /// Load a specific count of messages from API
+    pub fn load_messages_from_api_with_count(&mut self, message_count: u32) -> AppResult<()> {
         log::debug!(
-            "Loading new messages from API, last_sequence: {:?}",
+            "Loading {} messages from API, last_sequence: {:?}",
+            message_count,
             self.queue_state.message_pagination.last_loaded_sequence
         );
 
@@ -33,19 +34,23 @@ where
             .map(|seq| seq + 1);
 
         taskpool.execute(async move {
-            Self::execute_message_loading_task(tx_to_main, tx_to_main_err, consumer, from_sequence)
-                .await;
+            Self::execute_message_loading_task_with_count(
+                tx_to_main,
+                tx_to_main_err,
+                consumer,
+                from_sequence,
+                message_count,
+            )
+            .await;
         });
 
         Ok(())
     }
 
     fn send_loading_start_message(&self, tx_to_main: &Sender<Msg>) {
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
-            LoadingActivityMsg::Start(
-                "Loading more messages...".to_string(),
-            ),
-        )) {
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Start(
+            "Loading more messages...".to_string(),
+        ))) {
             log::error!("Failed to send loading start message: {}", e);
         }
     }
@@ -57,36 +62,47 @@ where
         })
     }
 
-    async fn execute_message_loading_task(
+    async fn execute_message_loading_task_with_count(
         tx_to_main: Sender<Msg>,
         tx_to_main_err: Sender<Msg>,
         consumer: Arc<Mutex<Consumer>>,
         from_sequence: Option<i64>,
+        message_count: u32,
     ) {
-        let result =
-            Self::load_messages_from_consumer(tx_to_main.clone(), consumer, from_sequence).await;
+        let result = Self::load_messages_from_consumer_with_count(
+            tx_to_main.clone(),
+            consumer,
+            from_sequence,
+            message_count,
+        )
+        .await;
 
         if let Err(e) = result {
             Self::handle_loading_error(tx_to_main, tx_to_main_err, e);
         }
     }
 
-    async fn load_messages_from_consumer(
+    async fn load_messages_from_consumer_with_count(
         tx_to_main: Sender<Msg>,
         consumer: Arc<Mutex<Consumer>>,
         from_sequence: Option<i64>,
+        message_count: u32,
     ) -> Result<(), AppError> {
         let mut consumer = consumer.lock().await;
 
         let messages = consumer
-            .peek_messages(CONFIG.max_messages(), from_sequence)
+            .peek_messages(message_count, from_sequence)
             .await
             .map_err(|e| {
                 log::error!("Failed to peek messages: {}", e);
                 AppError::ServiceBus(e.to_string())
             })?;
 
-        log::info!("Loaded {} new messages from API", messages.len());
+        log::info!(
+            "Loaded {} new messages from API (requested {})",
+            messages.len(),
+            message_count
+        );
 
         Self::send_loading_stop_message(&tx_to_main);
         Self::send_loaded_messages(&tx_to_main, messages)?;
@@ -95,9 +111,7 @@ where
     }
 
     fn send_loading_stop_message(tx_to_main: &Sender<Msg>) {
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
-            LoadingActivityMsg::Stop,
-        )) {
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
             log::error!("Failed to send loading stop message: {}", e);
         }
     }
@@ -108,9 +122,9 @@ where
     ) -> Result<(), AppError> {
         if !messages.is_empty() {
             tx_to_main
-                .send(Msg::MessageActivity(
-                    MessageActivityMsg::NewMessagesLoaded(messages),
-                ))
+                .send(Msg::MessageActivity(MessageActivityMsg::NewMessagesLoaded(
+                    messages,
+                )))
                 .map_err(|e| {
                     log::error!("Failed to send new messages loaded message: {}", e);
                     AppError::Component(e.to_string())
@@ -121,28 +135,19 @@ where
         Ok(())
     }
 
-    fn send_page_changed_fallback(
-        tx_to_main: &Sender<Msg>,
-    ) -> Result<(), AppError> {
+    fn send_page_changed_fallback(tx_to_main: &Sender<Msg>) -> Result<(), AppError> {
         tx_to_main
-            .send(Msg::MessageActivity(
-                MessageActivityMsg::PageChanged,
-            ))
+            .send(Msg::MessageActivity(MessageActivityMsg::PageChanged))
             .map_err(|e| {
                 log::error!("Failed to send page changed message: {}", e);
                 AppError::Component(e.to_string())
             })
     }
 
-    fn handle_loading_error(
-        tx_to_main: Sender<Msg>,
-        tx_to_main_err: Sender<Msg>,
-        error: AppError,
-    ) {
+    fn handle_loading_error(tx_to_main: Sender<Msg>, tx_to_main_err: Sender<Msg>, error: AppError) {
         log::error!("Error in message loading task: {}", error);
 
         Self::send_loading_stop_message(&tx_to_main);
         let _ = tx_to_main_err.send(Msg::Error(error));
     }
-} 
- 
+}

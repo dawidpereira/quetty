@@ -96,12 +96,13 @@ where
     }
 
     fn create_pagination_info(&self) -> PaginationInfo {
-        let current_page_size = self
+        // Get current page size directly from pagination state to avoid timing issues
+        let page_size = crate::config::CONFIG.max_messages();
+        let current_page_messages = self
             .queue_state
-            .messages
-            .as_ref()
-            .map(|msgs| msgs.len())
-            .unwrap_or(0);
+            .message_pagination
+            .get_current_page_messages(page_size);
+        let current_page_size = current_page_messages.len();
 
         PaginationInfo {
             current_page: self.queue_state.message_pagination.current_page,
