@@ -141,6 +141,7 @@ where
                 bulk_config.max_batch_size(),
                 bulk_config.operation_timeout_secs(),
                 bulk_config.order_warning_threshold(),
+                bulk_config.batch_size_multiplier(),
             );
 
             let bulk_handler = BulkOperationHandler::new(bulk_operation_config);

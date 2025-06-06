@@ -77,19 +77,10 @@ impl MessageIdentifier {
 /// Configuration for bulk operations
 #[derive(Debug, Clone)]
 pub struct BulkOperationConfig {
-    pub max_batch_size: u32,
-    pub operation_timeout_secs: u64,
-    pub order_warning_threshold: u32,
-}
-
-impl Default for BulkOperationConfig {
-    fn default() -> Self {
-        Self {
-            max_batch_size: 2048,
-            operation_timeout_secs: 300,
-            order_warning_threshold: 2048,
-        }
-    }
+    pub max_batch_size: Option<u32>,
+    pub operation_timeout_secs: Option<u64>,
+    pub order_warning_threshold: Option<u32>,
+    pub batch_size_multiplier: Option<usize>,
 }
 
 impl BulkOperationConfig {
@@ -98,12 +89,34 @@ impl BulkOperationConfig {
         max_batch_size: u32,
         operation_timeout_secs: u64,
         order_warning_threshold: u32,
+        batch_size_multiplier: usize,
     ) -> Self {
         Self {
-            max_batch_size,
-            operation_timeout_secs,
-            order_warning_threshold,
+            max_batch_size: Some(max_batch_size),
+            operation_timeout_secs: Some(operation_timeout_secs),
+            order_warning_threshold: Some(order_warning_threshold),
+            batch_size_multiplier: Some(batch_size_multiplier),
         }
+    }
+
+    /// Get the maximum batch size for bulk operations (default: 2048)
+    pub fn max_batch_size(&self) -> u32 {
+        self.max_batch_size.unwrap_or(2048)
+    }
+
+    /// Get the timeout for bulk operations (default: 300 seconds)
+    pub fn operation_timeout_secs(&self) -> u64 {
+        self.operation_timeout_secs.unwrap_or(300)
+    }
+
+    /// Get the warning threshold for message order preservation (default: 2048)
+    pub fn order_warning_threshold(&self) -> u32 {
+        self.order_warning_threshold.unwrap_or(2048)
+    }
+
+    /// Get the batch size multiplier for target estimation (default: 2)
+    pub fn batch_size_multiplier(&self) -> usize {
+        self.batch_size_multiplier.unwrap_or(2)
     }
 }
 
@@ -159,11 +172,10 @@ impl BulkOperationHandler {
             return Ok(result);
         }
         // Use a multiplier for batch size to efficiently retrieve messages
-        // We use 2x target count to reduce round trips while staying within limits
-        const BATCH_SIZE_MULTIPLIER: usize = 2;
+        // We use configurable multiplier to reduce round trips while staying within limits
         let batch_size = std::cmp::min(
-            target_messages.len() * BATCH_SIZE_MULTIPLIER,
-            self.config.max_batch_size as usize,
+            target_messages.len() * self.config.batch_size_multiplier(),
+            self.config.max_batch_size() as usize,
         );
 
         log::info!(
@@ -179,7 +191,7 @@ impl BulkOperationHandler {
             .collect();
 
         // Execute the bulk resend operation with timeout
-        let operation_timeout = Duration::from_secs(self.config.operation_timeout_secs);
+        let operation_timeout = Duration::from_secs(self.config.operation_timeout_secs());
         let bulk_result = timeout(
             operation_timeout,
             self.execute_bulk_resend_operation(context, target_map, batch_size),
@@ -191,7 +203,7 @@ impl BulkOperationHandler {
             Err(_) => {
                 let timeout_error = format!(
                     "Bulk resend operation timed out after {} seconds",
-                    self.config.operation_timeout_secs
+                    self.config.operation_timeout_secs()
                 );
                 log::error!("{}", timeout_error);
                 result.add_failure(timeout_error);
@@ -615,6 +627,6 @@ impl BulkOperationHandler {
 
     /// Check if the bulk operation should show a warning about message order
     pub fn should_warn_about_order(&self, max_message_index: usize) -> bool {
-        max_message_index > self.config.order_warning_threshold as usize
+        max_message_index > self.config.order_warning_threshold() as usize
     }
 }

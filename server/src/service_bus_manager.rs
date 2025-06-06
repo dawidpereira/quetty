@@ -6,13 +6,13 @@ impl ServiceBusManager {
     ) -> Result<String, Box<dyn std::error::Error>> {
         let url = format!(
             "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
-            config.tenant_id
+            config.tenant_id()
         );
         let client = reqwest::Client::new();
         let params = [
             ("grant_type", "client_credentials"),
-            ("client_id", &config.client_id),
-            ("client_secret", &config.client_secret),
+            ("client_id", config.client_id()),
+            ("client_secret", config.client_secret()),
             ("scope", "https://management.azure.com/.default"),
         ];
         let resp = client.post(url).form(&params).send().await?;
@@ -30,7 +30,7 @@ impl ServiceBusManager {
         let token = Self::get_azure_ad_token(config).await?;
         let url = format!(
             "https://management.azure.com/subscriptions/{}/resourceGroups/{}/providers/Microsoft.ServiceBus/namespaces/{}/queues?api-version=2017-04-01",
-            config.subscription_id, config.resource_group, config.namespace
+            config.subscription_id(), config.resource_group(), config.namespace()
         );
         let client = reqwest::Client::new();
         let resp = client.get(url).bearer_auth(token).send().await?;
@@ -52,7 +52,7 @@ impl ServiceBusManager {
         let token = Self::get_azure_ad_token(config).await?;
         let url = format!(
             "https://management.azure.com/subscriptions/{}/resourceGroups/{}/providers/Microsoft.ServiceBus/namespaces?api-version=2017-04-01",
-            config.subscription_id, config.resource_group
+            config.subscription_id(), config.resource_group()
         );
         let client = reqwest::Client::new();
         let resp = client.get(url).bearer_auth(token).send().await?;
@@ -69,33 +69,39 @@ impl ServiceBusManager {
     }
 }
 
-#[derive(Clone, Debug, Default, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize)]
 pub struct AzureAdConfig {
-    tenant_id: String,
-    client_id: String,
-    client_secret: String,
-    subscription_id: String,
-    resource_group: String,
-    pub namespace: String,
+    tenant_id: Option<String>,
+    client_id: Option<String>,
+    client_secret: Option<String>,
+    subscription_id: Option<String>,
+    resource_group: Option<String>,
+    pub namespace: Option<String>,
 }
 
 impl AzureAdConfig {
     pub fn tenant_id(&self) -> &str {
-        &self.tenant_id
+        self.tenant_id.as_deref()
+            .expect("AZURE_AD__TENANT_ID is required but not found in configuration or environment variables. Please set this value in .env file or environment.")
     }
     pub fn client_id(&self) -> &str {
-        &self.client_id
+        self.client_id.as_deref()
+            .expect("AZURE_AD__CLIENT_ID is required but not found in configuration or environment variables. Please set this value in .env file or environment.")
     }
     pub fn client_secret(&self) -> &str {
-        &self.client_secret
+        self.client_secret.as_deref()
+            .expect("AZURE_AD__CLIENT_SECRET is required but not found in configuration or environment variables. Please set this value in .env file or environment.")
     }
     pub fn subscription_id(&self) -> &str {
-        &self.subscription_id
+        self.subscription_id.as_deref()
+            .expect("AZURE_AD__SUBSCRIPTION_ID is required but not found in configuration or environment variables. Please set this value in .env file or environment.")
     }
     pub fn resource_group(&self) -> &str {
-        &self.resource_group
+        self.resource_group.as_deref()
+            .expect("AZURE_AD__RESOURCE_GROUP is required but not found in configuration or environment variables. Please set this value in .env file or environment.")
     }
     pub fn namespace(&self) -> &str {
-        &self.namespace
+        self.namespace.as_deref()
+            .expect("AZURE_AD__NAMESPACE is required but not found in configuration or environment variables. Please set this value in .env file or environment.")
     }
 }
