@@ -35,8 +35,6 @@ pub struct PaginationInfo {
 
 pub struct Messages {
     component: Table,
-    // Store selection info for building the table
-    selected_messages: Vec<MessageIdentifier>,
 }
 
 const CMD_RESULT_MESSAGE_SELECTED: &str = "MessageSelected";
@@ -129,7 +127,6 @@ impl Messages {
 
         Self {
             component,
-            selected_messages,
         }
     }
 
