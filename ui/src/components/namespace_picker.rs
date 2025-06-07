@@ -3,10 +3,11 @@ use crate::components::common::{LoadingActivityMsg, Msg, NamespaceActivityMsg};
 use crate::config;
 use crate::config::CONFIG;
 use crate::error::{AppError, AppResult};
+use crate::theme::ThemeManager;
 use server::service_bus_manager::ServiceBusManager;
 use tuirealm::command::{Cmd, CmdResult};
 use tuirealm::event::{Key, KeyEvent};
-use tuirealm::props::{Alignment, Color, Style, TextModifiers};
+use tuirealm::props::{Alignment, Style, TextModifiers};
 use tuirealm::ratatui::layout::Rect;
 use tuirealm::ratatui::widgets::{List, ListItem};
 use tuirealm::terminal::TerminalAdapter;
@@ -32,14 +33,40 @@ impl NamespacePicker {
 
 impl MockComponent for NamespacePicker {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
+        let theme = ThemeManager::global();
+
+        // Calculate consistent width for namespace icons and names
+        let formatted_items: Vec<String> = self
+            .namespaces
+            .iter()
+            .map(|ns| format!("🏢 {}", ns))
+            .collect();
+
+        // Find maximum width needed for proper alignment
+        let max_width = formatted_items
+            .iter()
+            .map(|item| item.len())
+            .max()
+            .unwrap_or(30);
+        let padding_width = max_width + 4;
+
         let items: Vec<ListItem> = self
             .namespaces
             .iter()
             .enumerate()
             .map(|(i, ns)| {
-                let mut item = ListItem::new(ns.clone());
+                let namespace_text =
+                    format!("{:width$}", format!("🏢 {}", ns), width = padding_width);
+                let mut item = ListItem::new(namespace_text);
                 if i == self.selected {
-                    item = item.style(Style::default().add_modifier(TextModifiers::REVERSED));
+                    item = item.style(
+                        Style::default()
+                            .fg(theme.namespace_list_item())
+                            .bg(theme.surface())
+                            .add_modifier(TextModifiers::BOLD),
+                    );
+                } else {
+                    item = item.style(Style::default().fg(theme.namespace_list_item()));
                 }
                 item
             })
@@ -48,12 +75,22 @@ impl MockComponent for NamespacePicker {
             .block(
                 tuirealm::ratatui::widgets::Block::default()
                     .borders(tuirealm::ratatui::widgets::Borders::ALL)
-                    .border_style(Style::default().fg(Color::Green))
-                    .title(" Select a namespace ")
-                    .title_alignment(Alignment::Center),
+                    .border_style(Style::default().fg(theme.primary_accent()))
+                    .title("  🌐 Select a Namespace  ")
+                    .title_alignment(Alignment::Center)
+                    .title_style(
+                        Style::default()
+                            .fg(theme.title_accent())
+                            .add_modifier(TextModifiers::BOLD),
+                    ),
             )
-            .highlight_style(Style::default().fg(Color::Yellow))
-            .highlight_symbol("> ");
+            .highlight_style(
+                Style::default()
+                    .fg(theme.namespace_list_item())
+                    .bg(theme.surface())
+                    .add_modifier(TextModifiers::BOLD),
+            )
+            .highlight_symbol("▶ ");
         frame.render_widget(list, area);
     }
     fn query(&self, _attr: Attribute) -> Option<AttrValue> {

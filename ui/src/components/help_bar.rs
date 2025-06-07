@@ -1,6 +1,7 @@
 use crate::components::common::{ComponentId, Msg, QueueType};
 use crate::config;
-use tuirealm::props::{Alignment, Color};
+use crate::theme::ThemeManager;
+use tuirealm::props::Alignment;
 use tuirealm::ratatui::layout::Rect;
 use tuirealm::ratatui::style::Style;
 use tuirealm::ratatui::text::{Line, Span, Text};
@@ -13,8 +14,11 @@ pub struct HelpBar {
 
 impl HelpBar {
     pub fn new() -> Self {
+        let theme = ThemeManager::global();
         Self {
-            style: Style::default().fg(Color::White).bg(Color::DarkGray),
+            style: Style::default()
+                .fg(theme.text_primary())
+                .bg(theme.surface()),
         }
     }
 
@@ -168,23 +172,27 @@ impl HelpBar {
         selected_count: Option<usize>,
     ) {
         let help_text = self.get_help_text(active_component, queue_type, bulk_mode, selected_count);
+        let theme = ThemeManager::global();
         let mut spans: Vec<Span> = Vec::new();
 
         // Add each shortcut pair with separators
         for (i, (text, highlight)) in help_text.iter().enumerate() {
             // Add separator before each pair (except the first one)
             if i > 0 && i % 2 == 0 {
-                spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
+                spans.push(Span::styled(" │ ", Style::default().fg(theme.text_muted())));
             }
 
             // Add the shortcut text
             if *highlight {
                 spans.push(Span::styled(
                     text.clone(),
-                    Style::default().fg(Color::Yellow),
+                    Style::default().fg(theme.shortcut_key()),
                 ));
             } else {
-                spans.push(Span::raw(text.clone()));
+                spans.push(Span::styled(
+                    text.clone(),
+                    Style::default().fg(theme.shortcut_description()),
+                ));
             }
         }
 

@@ -1,9 +1,10 @@
 use crate::components::common::{Msg, PopupActivityMsg};
+use crate::theme::ThemeManager;
 use tui_realm_stdlib::Paragraph;
 use tuirealm::{
     Component, Event, MockComponent, NoUserEvent,
     event::{Key, KeyEvent},
-    props::{Alignment, BorderType, Borders, Color, TextModifiers, TextSpan},
+    props::{Alignment, BorderType, Borders, TextModifiers, TextSpan},
     ratatui::{
         Frame,
         layout::Rect,
@@ -19,15 +20,16 @@ pub struct SuccessPopup {
 
 impl SuccessPopup {
     pub fn new(message: &str) -> Self {
+        let theme = ThemeManager::global();
         Self {
             component: Paragraph::default()
                 .borders(
                     Borders::default()
-                        .color(Color::Green)
+                        .color(theme.status_success())
                         .modifiers(BorderType::Rounded),
                 )
-                .title(" Success ", Alignment::Center)
-                .foreground(Color::Green)
+                .title(" ✅ Success ", Alignment::Center)
+                .foreground(theme.status_success())
                 .modifiers(TextModifiers::BOLD)
                 .alignment(Alignment::Center)
                 .text(&[TextSpan::from(message)]),
@@ -38,16 +40,19 @@ impl SuccessPopup {
 
 impl MockComponent for SuccessPopup {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
+        let theme = ThemeManager::global();
         // Create the border block
         let block = Block::default()
             .borders(tuirealm::ratatui::widgets::Borders::ALL)
             .border_type(tuirealm::ratatui::widgets::BorderType::Rounded)
-            .border_style(
+            .border_style(tuirealm::ratatui::style::Style::default().fg(theme.status_success()))
+            .title(" ✅ Success ")
+            .title_alignment(tuirealm::ratatui::layout::Alignment::Center)
+            .title_style(
                 tuirealm::ratatui::style::Style::default()
-                    .fg(tuirealm::ratatui::style::Color::Green),
-            )
-            .title(" Success ")
-            .title_alignment(tuirealm::ratatui::layout::Alignment::Center);
+                    .fg(theme.status_success())
+                    .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
+            );
 
         // Split the message into lines and create centered text
         let mut lines = Vec::new();
@@ -64,7 +69,7 @@ impl MockComponent for SuccessPopup {
             .wrap(Wrap { trim: true })
             .style(
                 tuirealm::ratatui::style::Style::default()
-                    .fg(tuirealm::ratatui::style::Color::Green)
+                    .fg(theme.status_success())
                     .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
             );
 

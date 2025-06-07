@@ -1,82 +1,49 @@
+# A clean light theme for Quetty with excellent readability and professional appearance
+
 [metadata]
 name = "Quetty Light"
-description = "Default light theme for Quetty queue manager"
+description = "A clean light theme for Quetty with excellent readability and professional appearance"
 author = "Dawid Pereira"
 
 [colors]
-# Base colors - Light theme with good contrast
-background = "#eff1f5"
-surface = "#e6e9ef"
-overlay = "#dce0e8"
+# === Core Text Colors ===
+text_primary = "#24292f" # Dark charcoal - primary text throughout app
+text_muted = "#8c959f"   # Light gray - help bar separators
 
-# Text colors - High contrast for readability on light background
-text_primary = "#4c4f69"
-text_secondary = "#5c5f77"
-text_muted = "#9399b2"
-text_disabled = "#bcc0cc"
+# === Layout Colors ===
+surface = "#f7f9fc" # Very light blue-gray - background for pickers
 
-# Queue-specific colors - Darker for visibility on light background
-queue_name = "#1e66f5"
-queue_count = "#179299"
-namespace_name = "#8839ef"
+# === Accent Colors ===
+primary_accent = "#0969da" # GitHub blue - focused borders, active states, status text
+title_accent = "#24292f"   # Dark charcoal - component titles
+header_accent = "#1a7f37"  # Forest green - table headers and line numbers
 
-# Message table colors - Subtle alternating rows
-message_row = "#eff1f5"
-message_row_selected = "#e6e9ef"
-message_row_alternate = "#f4f4f4"
-message_id = "#df8e1d"
-message_sequence = "#04a5e5"
-message_timestamp = "#ea76cb"
-message_delivery_count = "#fe640b"
+# === Selection Colors ===
+selection_bg = "#8250df" # Purple - selection background
+selection_fg = "#ffffff" # White - selection foreground
 
-# Table structure colors - Clear borders and headers
-table_border = "#9399b2"
-table_border_focused = "#1e66f5"
-table_header = "#e6e9ef"
-table_header_text = "#d20f39"
+# === Message Table Colors ===
+message_sequence = "#9a6700"       # Dark yellow - sequence numbers
+message_id = "#cf222e"             # Red - message identifiers
+message_timestamp = "#0969da"      # Blue - timestamps
+message_delivery_count = "#8250df" # Purple - delivery counts
+queue_count = "#1a7f37"            # Forest green - for queue counts (legacy field)
 
-# Selection and highlighting - Visible but not harsh
-selection_bg = "#ccd0da"
-selection_fg = "#4c4f69"
-highlight_symbol = "#d20f39"
-focus_indicator = "#1e66f5"
+# === List Item Colors ===
+namespace_list_item = "#8250df" # Purple - namespace picker items
 
-# Interactive element colors - Consistent with status meanings
-button_primary = "#1e66f5"
-button_secondary = "#9399b2"
-button_danger = "#d20f39"
-button_text = "#4c4f69"
+# === Status Colors ===
+status_success = "#1a7f37" # Forest green - success messages
+status_warning = "#9a6700" # Dark yellow - warning messages
+status_error = "#cf222e"   # Red - error messages
+status_info = "#0969da"    # Blue - queue picker items
+status_loading = "#8250df" # Purple - loading indicator
 
-# Status and feedback colors - Universal meanings with good contrast
-status_success = "#40a02b"
-status_warning = "#df8e1d"
-status_error = "#d20f39"
-status_info = "#1e66f5"
-status_loading = "#fe640b"
+# === Help System Colors ===
+shortcut_key = "#9a6700"         # Dark yellow - keyboard shortcuts
+shortcut_description = "#656d76" # Medium gray - help descriptions
+help_section_title = "#8250df"   # Purple - help section titles
 
-# Popup colors - Attention-grabbing but readable
-popup_background = "#e6e9ef"
-popup_border = "#df8e1d"
-popup_title = "#df8e1d"
-popup_text = "#4c4f69"
-
-# Bulk selection colors - Clear indication of selection state
-bulk_checkbox_checked = "#40a02b"
-bulk_checkbox_unchecked = "#9399b2"
-bulk_selection_count = "#04a5e5"
-
-# Dead letter queue colors - Warning indication
-dlq_indicator = "#fe640b"
-dlq_queue_name = "#df8e1d"
-
-# Navigation and pagination colors - Helpful hints
-pagination_info = "#5c5f77"
-navigation_hint = "#179299"
-navigation_active = "#1e66f5"
-navigation_inactive = "#9399b2"
-
-# Help and shortcuts colors - Educational content
-shortcut_key = "#40a02b"
-shortcut_description = "#5c5f77"
-help_section_title = "#8839ef"
-
+# === Popup System Colors (used by confirmation popup) ===
+popup_background = "#ffffff" # White background
+popup_text = "#656d76"       # Medium gray text

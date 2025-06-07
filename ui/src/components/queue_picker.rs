@@ -5,12 +5,13 @@ use crate::components::common::{
 use crate::config;
 use crate::config::CONFIG;
 use crate::error::{AppError, AppResult};
+use crate::theme::ThemeManager;
 use azservicebus::ServiceBusReceiverOptions;
 use server::consumer::ServiceBusClientExt;
 use server::service_bus_manager::ServiceBusManager;
 use tuirealm::command::CmdResult;
 use tuirealm::event::{Key, KeyEvent};
-use tuirealm::props::{Alignment, Color, Style, TextModifiers};
+use tuirealm::props::{Alignment, Style, TextModifiers};
 use tuirealm::ratatui::layout::Rect;
 use tuirealm::ratatui::widgets::{List, ListItem};
 use tuirealm::terminal::TerminalAdapter;
@@ -35,14 +36,54 @@ impl QueuePicker {
 
 impl MockComponent for QueuePicker {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
+        let theme = ThemeManager::global();
+
+        // Calculate consistent width for queue icons and names
+        let formatted_items: Vec<String> = self
+            .queues
+            .iter()
+            .map(|q| {
+                if q.ends_with("/$deadletter") {
+                    format!("💀 {}", q.replace("/$deadletter", " (DLQ)"))
+                } else {
+                    format!("📬 {}", q)
+                }
+            })
+            .collect();
+
+        // Find maximum width needed for proper alignment
+        let max_width = formatted_items
+            .iter()
+            .map(|item| item.len())
+            .max()
+            .unwrap_or(30);
+        let padding_width = max_width + 4;
+
         let items: Vec<ListItem> = self
             .queues
             .iter()
             .enumerate()
             .map(|(i, q)| {
-                let mut item = ListItem::new(q.clone());
+                let queue_text = if q.ends_with("/$deadletter") {
+                    format!(
+                        "{:width$}",
+                        format!("💀 {}", q.replace("/$deadletter", " (DLQ)")),
+                        width = padding_width
+                    )
+                } else {
+                    format!("{:width$}", format!("📬 {}", q), width = padding_width)
+                };
+
+                let mut item = ListItem::new(queue_text);
                 if i == self.selected {
-                    item = item.style(Style::default().add_modifier(TextModifiers::REVERSED));
+                    item = item.style(
+                        Style::default()
+                            .fg(theme.status_info())
+                            .bg(theme.surface())
+                            .add_modifier(TextModifiers::BOLD),
+                    );
+                } else {
+                    item = item.style(Style::default().fg(theme.status_info()));
                 }
                 item
             })
@@ -51,12 +92,22 @@ impl MockComponent for QueuePicker {
             .block(
                 tuirealm::ratatui::widgets::Block::default()
                     .borders(tuirealm::ratatui::widgets::Borders::ALL)
-                    .border_style(Style::default().fg(Color::Green))
-                    .title(" Select a queue ")
-                    .title_alignment(Alignment::Center),
+                    .border_style(Style::default().fg(theme.primary_accent()))
+                    .title("  🗂️  Select a Queue  ")
+                    .title_alignment(Alignment::Center)
+                    .title_style(
+                        Style::default()
+                            .fg(theme.title_accent())
+                            .add_modifier(TextModifiers::BOLD),
+                    ),
             )
-            .highlight_style(Style::default().fg(Color::Yellow))
-            .highlight_symbol("> ");
+            .highlight_style(
+                Style::default()
+                    .fg(theme.status_info())
+                    .bg(theme.surface())
+                    .add_modifier(TextModifiers::BOLD),
+            )
+            .highlight_symbol("▶ ");
         frame.render_widget(list, area);
     }
     fn query(&self, _attr: tuirealm::Attribute) -> Option<tuirealm::AttrValue> {

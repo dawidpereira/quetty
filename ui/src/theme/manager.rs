@@ -80,36 +80,11 @@ impl ThemeManager {
         &self.current_theme.metadata.name
     }
 
-    // Base colors
-    pub fn background(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.background)
-    }
-
-    pub fn surface(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.surface)
-    }
-
-    pub fn overlay(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.overlay)
-    }
-
-    // Text colors
+    // === Core Text Colors ===
     pub fn text_primary(&self) -> Color {
         self.current_theme
             .colors
             .hex_to_color(&self.current_theme.colors.text_primary)
-    }
-
-    pub fn text_secondary(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.text_secondary)
     }
 
     pub fn text_muted(&self) -> Color {
@@ -118,76 +93,33 @@ impl ThemeManager {
             .hex_to_color(&self.current_theme.colors.text_muted)
     }
 
-    // Queue-specific colors
-    pub fn queue_name(&self) -> Color {
+    // === Layout Colors ===
+    pub fn surface(&self) -> Color {
         self.current_theme
             .colors
-            .hex_to_color(&self.current_theme.colors.queue_name)
+            .hex_to_color(&self.current_theme.colors.surface)
     }
 
-    pub fn queue_count(&self) -> Color {
+    // === Accent Colors ===
+    pub fn primary_accent(&self) -> Color {
         self.current_theme
             .colors
-            .hex_to_color(&self.current_theme.colors.queue_count)
+            .hex_to_color(&self.current_theme.colors.primary_accent)
     }
 
-    pub fn namespace_name(&self) -> Color {
+    pub fn title_accent(&self) -> Color {
         self.current_theme
             .colors
-            .hex_to_color(&self.current_theme.colors.namespace_name)
+            .hex_to_color(&self.current_theme.colors.title_accent)
     }
 
-    // Message table colors
-    pub fn message_row(&self) -> Color {
+    pub fn header_accent(&self) -> Color {
         self.current_theme
             .colors
-            .hex_to_color(&self.current_theme.colors.message_row)
+            .hex_to_color(&self.current_theme.colors.header_accent)
     }
 
-    pub fn message_row_selected(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.message_row_selected)
-    }
-
-    pub fn message_id(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.message_id)
-    }
-
-    pub fn message_sequence(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.message_sequence)
-    }
-
-    pub fn message_timestamp(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.message_timestamp)
-    }
-
-    // Table structure colors
-    pub fn table_border(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.table_border)
-    }
-
-    pub fn table_border_focused(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.table_border_focused)
-    }
-
-    pub fn table_header(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.table_header)
-    }
-
-    // Selection and highlighting
+    // === Selection Colors ===
     pub fn selection_bg(&self) -> Color {
         self.current_theme
             .colors
@@ -200,13 +132,39 @@ impl ThemeManager {
             .hex_to_color(&self.current_theme.colors.selection_fg)
     }
 
-    pub fn highlight_symbol(&self) -> Color {
+    // === Message Table Colors ===
+    pub fn message_sequence(&self) -> Color {
         self.current_theme
             .colors
-            .hex_to_color(&self.current_theme.colors.highlight_symbol)
+            .hex_to_color(&self.current_theme.colors.message_sequence)
     }
 
-    // Status colors
+    pub fn message_id(&self) -> Color {
+        self.current_theme
+            .colors
+            .hex_to_color(&self.current_theme.colors.message_id)
+    }
+
+    pub fn message_timestamp(&self) -> Color {
+        self.current_theme
+            .colors
+            .hex_to_color(&self.current_theme.colors.message_timestamp)
+    }
+
+    pub fn message_delivery_count(&self) -> Color {
+        self.current_theme
+            .colors
+            .hex_to_color(&self.current_theme.colors.message_delivery_count)
+    }
+
+    // === List Item Colors ===
+    pub fn namespace_list_item(&self) -> Color {
+        self.current_theme
+            .colors
+            .hex_to_color(&self.current_theme.colors.namespace_list_item)
+    }
+
+    // === Status Colors ===
     pub fn status_success(&self) -> Color {
         self.current_theme
             .colors
@@ -237,77 +195,7 @@ impl ThemeManager {
             .hex_to_color(&self.current_theme.colors.status_loading)
     }
 
-    // Popup colors
-    pub fn popup_background(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.popup_background)
-    }
-
-    pub fn popup_border(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.popup_border)
-    }
-
-    pub fn popup_title(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.popup_title)
-    }
-
-    pub fn popup_text(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.popup_text)
-    }
-
-    // Bulk selection colors
-    pub fn bulk_checkbox_checked(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.bulk_checkbox_checked)
-    }
-
-    pub fn bulk_checkbox_unchecked(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.bulk_checkbox_unchecked)
-    }
-
-    // DLQ colors
-    pub fn dlq_indicator(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.dlq_indicator)
-    }
-
-    pub fn dlq_queue_name(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.dlq_queue_name)
-    }
-
-    // Navigation colors
-    pub fn pagination_info(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.pagination_info)
-    }
-
-    pub fn navigation_hint(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.navigation_hint)
-    }
-
-    pub fn navigation_active(&self) -> Color {
-        self.current_theme
-            .colors
-            .hex_to_color(&self.current_theme.colors.navigation_active)
-    }
-
-    // Help colors
+    // === Help System Colors ===
     pub fn shortcut_key(&self) -> Color {
         self.current_theme
             .colors
@@ -326,6 +214,19 @@ impl ThemeManager {
             .hex_to_color(&self.current_theme.colors.help_section_title)
     }
 
+    // === Popup System Colors (used by confirmation popup) ===
+    pub fn popup_background(&self) -> Color {
+        self.current_theme
+            .colors
+            .hex_to_color(&self.current_theme.colors.popup_background)
+    }
+
+    pub fn popup_text(&self) -> Color {
+        self.current_theme
+            .colors
+            .hex_to_color(&self.current_theme.colors.popup_text)
+    }
+
     /// Get available themes
     pub fn discover_themes(&self) -> AppResult<Vec<(String, Vec<String>)>> {
         self.loader.discover_themes()
@@ -336,3 +237,4 @@ impl ThemeManager {
         self.loader.themes_dir_exists()
     }
 }
+

@@ -12,6 +12,12 @@ where
     T: TerminalAdapter,
 {
     pub fn remount_message_details(&mut self, index: usize) -> AppResult<()> {
+        // Automatically determine focus based on which component is currently active
+        let is_focused = match self.app.focus() {
+            Some(focused_id) => *focused_id == ComponentId::MessageDetails,
+            None => false, // Default to unfocused if no component is focused
+        };
+
         let message = if let Some(messages) = &self.queue_state.messages {
             messages.get(index).cloned()
         } else {
@@ -21,7 +27,7 @@ where
         self.app
             .remount(
                 ComponentId::MessageDetails,
-                Box::new(MessageDetails::new(message)),
+                Box::new(MessageDetails::new_with_focus(message, is_focused)),
                 Vec::default(),
             )
             .map_err(|e| AppError::Component(e.to_string()))?;
@@ -72,6 +78,78 @@ where
                     self.queue_state.messages.as_ref(),
                     Some(pagination_info),
                     selected_messages,
+                )),
+                Vec::default(),
+            )
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        // Restore cursor position using the Application's attr method (or reset to 0)
+        let target_position = current_position.unwrap_or(0);
+        if target_position > 0 || !preserve_cursor {
+            log::debug!("Setting cursor position to: {}", target_position);
+            match self.app.attr(
+                &ComponentId::Messages,
+                tuirealm::Attribute::Custom("cursor_position"),
+                tuirealm::AttrValue::Number(target_position as isize),
+            ) {
+                Ok(_) => log::debug!("Successfully set cursor position attribute"),
+                Err(e) => log::warn!("Failed to set cursor position attribute: {}", e),
+            }
+        }
+
+        self.redraw = true;
+        Ok(())
+    }
+
+    pub fn remount_messages_with_focus(&mut self, is_focused: bool) -> AppResult<()> {
+        self.remount_messages_with_cursor_and_focus_control(true, is_focused)
+    }
+
+    pub fn remount_messages_with_cursor_and_focus_control(
+        &mut self,
+        preserve_cursor: bool,
+        is_focused: bool,
+    ) -> AppResult<()> {
+        log::debug!(
+            "Remounting messages component, preserve_cursor: {}, is_focused: {}",
+            preserve_cursor,
+            is_focused
+        );
+
+        // Preserve the current cursor position only if requested
+        let current_position = if preserve_cursor && self.app.mounted(&ComponentId::Messages) {
+            match self.app.state(&ComponentId::Messages) {
+                Ok(tuirealm::State::One(tuirealm::StateValue::Usize(index))) => {
+                    log::debug!("Preserving cursor position: {}", index);
+                    Some(index)
+                }
+                _ => {
+                    log::debug!("No cursor position to preserve");
+                    None
+                }
+            }
+        } else {
+            if !preserve_cursor {
+                log::debug!("Resetting cursor to position 0");
+            } else {
+                log::debug!("Messages component not mounted");
+            }
+            None
+        };
+
+        let pagination_info = self.create_pagination_info();
+
+        // Get current selections for display
+        let selected_messages = self.queue_state.bulk_selection.get_selected_messages();
+
+        self.app
+            .remount(
+                ComponentId::Messages,
+                Box::new(Messages::new_with_pagination_selections_and_focus(
+                    self.queue_state.messages.as_ref(),
+                    Some(pagination_info),
+                    selected_messages,
+                    is_focused,
                 )),
                 Vec::default(),
             )

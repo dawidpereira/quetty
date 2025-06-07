@@ -1,12 +1,13 @@
 use crate::components::common::Msg;
 use crate::config;
+use crate::theme::ThemeManager;
 use tuirealm::{
     Component, Event, Frame, MockComponent, NoUserEvent,
     event::{Key, KeyEvent, KeyModifiers},
-    props::{BorderType, Color},
+    props::BorderType,
     ratatui::{
-        layout::{Constraint, Layout, Rect},
-        style::Style,
+        layout::{Alignment, Constraint, Layout, Rect},
+        style::{Modifier, Style},
         text::{Line, Span, Text},
         widgets::{Block, Paragraph as RatatuiParagraph},
     },
@@ -22,11 +23,13 @@ impl HelpScreen {
 
 impl MockComponent for HelpScreen {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
+        let theme = ThemeManager::global();
         let block = Block::default()
-            .title("📖 Keyboard Shortcuts Help")
+            .title("  📖 Keyboard Shortcuts Help  ")
             .borders(tuirealm::ratatui::widgets::Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Cyan));
+            .border_style(Style::default().fg(theme.primary_accent()))
+            .title_style(Style::default().fg(theme.title_accent()));
 
         // Create layout with header and scrollable content
         let chunks = Layout::default()
@@ -35,23 +38,54 @@ impl MockComponent for HelpScreen {
             .split(area);
 
         let keys = config::CONFIG.keys();
+
+        // Define all key combinations to calculate consistent width
+        let key_combinations = vec![
+            format!("[{}]", keys.quit()),
+            format!("[{}]", keys.help()),
+            "[Esc]".to_string(),
+            format!("[↑] [{}]", keys.up()),
+            format!("[↓] [{}]", keys.down()),
+            format!("[Enter] [{}]", keys.queue_select()),
+            "[PgUp] [PgDn]".to_string(),
+            format!("[{}] [{}]", keys.next_page(), keys.alt_next_page()),
+            format!("[{}] [{}]", keys.prev_page(), keys.alt_prev_page()),
+            "[d]".to_string(),
+            "[Enter]".to_string(),
+            format!("[{}]", keys.toggle_selection()),
+            format!("[Ctrl+{}]", keys.select_all_page()),
+            "[Ctrl+Shift+A]".to_string(),
+            format!(
+                "[{}] [Ctrl+{}]",
+                keys.delete_message(),
+                keys.alt_delete_message()
+            ),
+            format!("[{}] [Ctrl+{}]", keys.send_to_dlq(), keys.send_to_dlq()),
+            format!("[{}]", keys.resend_from_dlq()),
+            format!("[{}]", keys.resend_and_delete_from_dlq()),
+            "[←] [→]".to_string(),
+            format!("[↑] [↓] [{}] [{}]", keys.up(), keys.down()),
+        ];
+
+        // Find the maximum width needed for key combinations
+        let max_key_width = key_combinations.iter().map(|k| k.len()).max().unwrap_or(20);
+        let padding_width = max_key_width + 4; // Add some extra padding
+
         let header_text = Text::from(vec![
             Line::from(vec![Span::styled(
-                "Quetty - Azure Service Bus Queue Manager",
-                Style::default().fg(Color::Yellow),
+                format!("Press [Esc] or [{}] to close this help screen", keys.help()),
+                Style::default()
+                    .fg(theme.shortcut_description())
+                    .add_modifier(Modifier::BOLD),
             )]),
-            Line::from(Span::raw(format!(
-                "Press [Esc] or [{}] to close this help screen",
-                keys.help()
-            ))),
             Line::from(vec![Span::styled(
                 "⚠️  DLQ operations are in development - use with caution",
-                Style::default().fg(Color::Red),
+                Style::default().fg(theme.status_warning()),
             )]),
         ]);
 
         let header_para = RatatuiParagraph::new(header_text)
-            .alignment(tuirealm::ratatui::layout::Alignment::Center)
+            .alignment(Alignment::Center)
             .block(Block::default());
 
         // Help content with organized sections - using configured keys
@@ -59,114 +93,398 @@ impl MockComponent for HelpScreen {
             // Global Actions
             Line::from(vec![Span::styled(
                 "🌐 GLOBAL ACTIONS",
-                Style::default().fg(Color::Green),
+                Style::default()
+                    .fg(theme.help_section_title())
+                    .add_modifier(Modifier::BOLD),
             )]),
             Line::from(""),
-            Line::from(format!("  [{}]              Quit application", keys.quit())),
-            Line::from(format!(
-                "  [{}]              Toggle this help screen",
-                keys.help()
-            )),
-            Line::from("  [Esc]            Go back / Cancel operation"),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[{}]", keys.quit()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Quit application",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[{}]", keys.help()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Toggle this help screen",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!("  {:width$}", "[Esc]", width = padding_width),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Go back / Cancel operation",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
             Line::from(""),
             // Navigation
             Line::from(vec![Span::styled(
                 "🧭 NAVIGATION",
-                Style::default().fg(Color::Green),
+                Style::default()
+                    .fg(theme.help_section_title())
+                    .add_modifier(Modifier::BOLD),
             )]),
             Line::from(""),
-            Line::from(format!("  [↑] [{}]          Move up", keys.up())),
-            Line::from(format!("  [↓] [{}]          Move down", keys.down())),
-            Line::from(format!(
-                "  [Enter] [{}]      Select / Open item",
-                keys.queue_select()
-            )),
-            Line::from("  [PgUp] [PgDn]    Scroll page up/down"),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[↑] [{}]", keys.up()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("Move up", Style::default().fg(theme.shortcut_description())),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[↓] [{}]", keys.down()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Move down",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[Enter] [{}]", keys.queue_select()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Select / Open item",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!("  {:width$}", "[PgUp] [PgDn]", width = padding_width),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Scroll page up/down",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
             Line::from(""),
             // Queue & Message Management
             Line::from(vec![Span::styled(
                 "📋 QUEUE & MESSAGE MANAGEMENT",
-                Style::default().fg(Color::Green),
+                Style::default()
+                    .fg(theme.help_section_title())
+                    .add_modifier(Modifier::BOLD),
             )]),
             Line::from(""),
-            Line::from(format!(
-                "  [{}] [{}]          Next page",
-                keys.next_page(),
-                keys.alt_next_page()
-            )),
-            Line::from(format!(
-                "  [{}] [{}]         Previous page",
-                keys.prev_page(),
-                keys.alt_prev_page()
-            )),
-            Line::from("  [d]              Toggle between Main ↔ Dead Letter Queue"),
-            Line::from("  [Enter]          View message details"),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[{}] [{}]", keys.next_page(), keys.alt_next_page()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Next page",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[{}] [{}]", keys.prev_page(), keys.alt_prev_page()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Previous page",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!("  {:width$}", "[d]", width = padding_width),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Toggle between Main ↔ Dead Letter Queue",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!("  {:width$}", "[Enter]", width = padding_width),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "View message details",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
             Line::from(""),
             // Bulk Selection
             Line::from(vec![Span::styled(
                 "📦 BULK SELECTION MODE",
-                Style::default().fg(Color::Green),
+                Style::default()
+                    .fg(theme.help_section_title())
+                    .add_modifier(Modifier::BOLD),
             )]),
             Line::from(""),
-            Line::from(format!(
-                "  [{}]          Toggle selection for current message",
-                keys.toggle_selection()
-            )),
-            Line::from(format!(
-                "  [Ctrl+{}]         Select all messages on current page",
-                keys.select_all_page()
-            )),
-            Line::from("  [Ctrl+Shift+A]   Select all loaded messages (all pages)"),
-            Line::from("  [Esc]            Clear selections / Exit bulk mode"),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[{}]", keys.toggle_selection()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Toggle selection for current message",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[Ctrl+{}]", keys.select_all_page()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Select all messages on current page",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!("  {:width$}", "[Ctrl+Shift+A]", width = padding_width),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Select all loaded messages (all pages)",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!("  {:width$}", "[Esc]", width = padding_width),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Clear selections / Exit bulk mode",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
             Line::from(""),
             // Message Operations
             Line::from(vec![Span::styled(
                 "⚡ MESSAGE OPERATIONS",
-                Style::default().fg(Color::Green),
+                Style::default()
+                    .fg(theme.help_section_title())
+                    .add_modifier(Modifier::BOLD),
             )]),
             Line::from(""),
-            Line::from(format!(
-                "  [{}] [Ctrl+{}]     Delete message(s) with confirmation",
-                keys.delete_message(),
-                keys.alt_delete_message()
-            )),
-            Line::from(format!(
-                "  [{}] [Ctrl+{}]     Send message(s) to DLQ (⚠️ DEV)",
-                keys.send_to_dlq(),
-                keys.send_to_dlq()
-            )),
-            Line::from(format!(
-                "  [{}]              Resend from DLQ to main queue (keep in DLQ)",
-                keys.resend_from_dlq()
-            )),
-            Line::from(format!(
-                "  [{}]              Resend and delete from DLQ (⚠️ DEV)",
-                keys.resend_and_delete_from_dlq()
-            )),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!(
+                            "[{}] [Ctrl+{}]",
+                            keys.delete_message(),
+                            keys.alt_delete_message()
+                        ),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Delete message(s) with confirmation",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[{}] [Ctrl+{}]", keys.send_to_dlq(), keys.send_to_dlq()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Send message(s) to DLQ (⚠️ DEV)",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[{}]", keys.resend_from_dlq()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Resend from DLQ to main queue (keep in DLQ)",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[{}]", keys.resend_and_delete_from_dlq()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Resend and delete from DLQ (⚠️ DEV)",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
             Line::from(""),
             Line::from(vec![Span::styled(
                 "💡 Note: Operations work on selected messages in bulk mode,",
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(theme.status_info()),
             )]),
             Line::from(vec![Span::styled(
                 "        or on current message when no selections exist.",
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(theme.status_info()),
             )]),
             Line::from(""),
             // Message Details View
             Line::from(vec![Span::styled(
                 "🔍 MESSAGE DETAILS VIEW",
-                Style::default().fg(Color::Green),
+                Style::default()
+                    .fg(theme.help_section_title())
+                    .add_modifier(Modifier::BOLD),
             )]),
             Line::from(""),
-            Line::from("  [←] [→]          Move cursor left/right"),
-            Line::from(format!(
-                "  [↑] [↓] [{}] [{}]  Scroll content up/down",
-                keys.up(),
-                keys.down()
-            )),
-            Line::from("  [PgUp] [PgDn]    Scroll content page up/down"),
-            Line::from("  [Esc]            Return to message list"),
+            Line::from(vec![
+                Span::styled(
+                    format!("  {:width$}", "[←] [→]", width = padding_width),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Move cursor left/right",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[↑] [↓] [{}] [{}]", keys.up(), keys.down()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Scroll content up/down",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!("  {:width$}", "[PgUp] [PgDn]", width = padding_width),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Scroll content page up/down",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!("  {:width$}", "[Esc]", width = padding_width),
+                    Style::default()
+                        .fg(theme.shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Return to message list",
+                    Style::default().fg(theme.shortcut_description()),
+                ),
+            ]),
         ]);
 
         let content_para = RatatuiParagraph::new(help_content)

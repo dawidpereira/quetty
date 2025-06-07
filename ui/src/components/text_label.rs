@@ -5,6 +5,7 @@ use tuirealm::{
 };
 
 use crate::components::common::Msg;
+use crate::theme::ThemeManager;
 
 #[derive(MockComponent)]
 pub struct TextLabel {
@@ -13,10 +14,11 @@ pub struct TextLabel {
 
 impl TextLabel {
     pub fn new(text: String) -> Self {
+        let theme = ThemeManager::global();
         let component = Label::default()
             .text(text)
             .alignment(Alignment::Center)
-            .foreground(Color::Green)
+            .foreground(theme.help_section_title())
             .background(Color::Reset)
             .modifiers(TextModifiers::BOLD);
 
