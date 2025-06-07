@@ -11,18 +11,19 @@ pub enum QueueType {
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum ComponentId {
-    Label,
+    GlobalKeyWatcher,
+    NamespacePicker,
+    QueuePicker,
     Messages,
     MessageDetails,
-    QueuePicker,
-    NamespacePicker,
-    ThemePicker,
-    GlobalKeyWatcher,
+    LoadingIndicator,
     ErrorPopup,
     SuccessPopup,
     ConfirmationPopup,
-    LoadingIndicator,
+    NumberInputPopup,
     HelpScreen,
+    ThemePicker,
+    TextLabel,
 }
 
 #[derive(Debug, PartialEq)]
@@ -103,6 +104,12 @@ pub enum MessageActivityMsg {
     // Message editing operations
     SendEditedMessage(String), // Send edited content as new message
     ReplaceEditedMessage(String, MessageIdentifier), // Replace original message with edited content
+
+    // Message composition operations
+    ComposeNewMessage,        // Open empty message details in edit mode
+    SetMessageRepeatCount,    // Open popup to set how many times to send message
+    UpdateRepeatCount(usize), // Internal: Update the repeat count value
+    MessagesSentSuccessfully, // Trigger auto-reload after successful message sending
 }
 
 #[derive(Debug, PartialEq)]
@@ -123,6 +130,13 @@ pub enum PopupActivityMsg {
         message: String,
         on_confirm: Box<Msg>,
     },
+    ShowNumberInput {
+        title: String,
+        message: String,
+        min_value: usize,
+        max_value: usize,
+    },
+    NumberInputResult(usize),
     ConfirmationResult(bool),
 }
 
@@ -137,7 +151,10 @@ impl PartialEq for PopupActivityMsg {
                 PopupActivityMsg::ConfirmationResult(b1),
                 PopupActivityMsg::ConfirmationResult(b2),
             ) => b1 == b2,
-            // ShowConfirmation is not compared due to Box<Msg>
+            (PopupActivityMsg::NumberInputResult(n1), PopupActivityMsg::NumberInputResult(n2)) => {
+                n1 == n2
+            }
+            // ShowConfirmation and ShowNumberInput are not compared due to Box types
             _ => false,
         }
     }

@@ -114,6 +114,11 @@ pub struct KeyBindingsConfig {
     key_queue_select: Option<char>,
     key_namespace_select: Option<char>,
 
+    // Message composition keys
+    key_toggle_dlq: Option<char>,
+    key_compose_multiple: Option<char>,
+    key_compose_single: Option<char>,
+
     // Confirmation keys
     key_confirm_yes: Option<char>,
     key_confirm_no: Option<char>,
@@ -283,6 +288,17 @@ impl KeyBindingsConfig {
     }
 
     // Confirmation keys
+    // Message composition keys
+    pub fn toggle_dlq(&self) -> char {
+        self.key_toggle_dlq.unwrap_or('d')
+    }
+    pub fn compose_multiple(&self) -> char {
+        self.key_compose_multiple.unwrap_or('m')
+    }
+    pub fn compose_single(&self) -> char {
+        self.key_compose_single.unwrap_or('n') // Note: This will be used with Ctrl modifier
+    }
+
     pub fn confirm_yes(&self) -> char {
         self.key_confirm_yes.unwrap_or('y')
     }

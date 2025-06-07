@@ -634,9 +634,29 @@ impl Component<Msg, NoUserEvent> for Messages {
                 return Some(Msg::MessageActivity(MessageActivityMsg::PreviousPage));
             }
             Event::Keyboard(KeyEvent {
-                code: Key::Char('d'),
+                code: Key::Char(c),
                 modifiers: KeyModifiers::NONE,
-            }) => return Some(Msg::QueueActivity(QueueActivityMsg::ToggleDeadLetterQueue)),
+            }) if c == config::CONFIG.keys().toggle_dlq() => {
+                return Some(Msg::QueueActivity(QueueActivityMsg::ToggleDeadLetterQueue));
+            }
+
+            // Message composition keys
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(c),
+                modifiers: KeyModifiers::NONE,
+            }) if c == config::CONFIG.keys().compose_multiple() => {
+                // Multiple messages - set repeat count then compose
+                return Some(Msg::MessageActivity(
+                    MessageActivityMsg::SetMessageRepeatCount,
+                ));
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(c),
+                modifiers: KeyModifiers::CONTROL,
+            }) if c == config::CONFIG.keys().compose_single() => {
+                // Single message - open empty message composition
+                return Some(Msg::MessageActivity(MessageActivityMsg::ComposeNewMessage));
+            }
 
             _ => CmdResult::None,
         };

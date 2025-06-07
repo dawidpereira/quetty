@@ -14,6 +14,10 @@ use std::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tuirealm::terminal::TerminalAdapter;
 
+// Constants for bulk send configuration
+const BULK_SEND_MIN_COUNT: usize = 1;
+const BULK_SEND_MAX_COUNT: usize = 1000;
+
 pub mod bulk;
 pub mod bulk_execution;
 pub mod loading;
@@ -98,6 +102,14 @@ where
             }
             MessageActivityMsg::ReplaceEditedMessage(content, message_id) => {
                 self.handle_replace_edited_message(content, message_id)
+            }
+
+            // Message composition operations
+            MessageActivityMsg::ComposeNewMessage => self.handle_compose_new_message(),
+            MessageActivityMsg::SetMessageRepeatCount => self.handle_set_message_repeat_count(),
+            MessageActivityMsg::UpdateRepeatCount(count) => self.handle_update_repeat_count(count),
+            MessageActivityMsg::MessagesSentSuccessfully => {
+                self.handle_messages_sent_successfully()
             }
         }
     }
@@ -318,7 +330,7 @@ where
     }
 
     /// Calculate pagination state after message removal - common logic
-    fn calculate_pagination_after_removal(&mut self, _removed_count: usize) -> (usize, usize) {
+    fn calculate_pagination_after_removal(&self, _removed_count: usize) -> (usize, usize) {
         let page_size = CONFIG.max_messages();
         let remaining_message_count = self
             .queue_state
@@ -596,6 +608,34 @@ where
         Ok(())
     }
 
+    /// Helper function to send a message multiple times
+    async fn send_message_multiple_times(
+        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+        queue_name: String,
+        content: String,
+        count: usize,
+    ) -> Result<(), AppError> {
+        log::info!("Sending message {} times to queue: {}", count, queue_name);
+
+        // Send messages sequentially to avoid overwhelming the service
+        for i in 1..=count {
+            log::debug!("Sending message {}/{} to queue: {}", i, count, queue_name);
+            Self::send_message_to_queue(
+                service_bus_client.clone(),
+                queue_name.clone(),
+                content.clone(),
+            )
+            .await?;
+        }
+
+        log::info!(
+            "Successfully sent {} messages to queue: {}",
+            count,
+            queue_name
+        );
+        Ok(())
+    }
+
     /// Helper function to handle task completion messages
     fn send_completion_messages(
         tx_to_main: &Sender<Msg>,
@@ -612,6 +652,11 @@ where
                 )));
                 let _ =
                     tx_to_main.send(Msg::MessageActivity(MessageActivityMsg::CancelEditMessage));
+
+                // Trigger auto-reload to show newly sent messages (if page not full)
+                let _ = tx_to_main.send(Msg::MessageActivity(
+                    MessageActivityMsg::MessagesSentSuccessfully,
+                ));
             }
             Err(e) => {
                 log::error!("Task failed: {}", e);
@@ -629,32 +674,51 @@ where
     }
 
     /// Handle sending edited message content as a new message
-    fn handle_send_edited_message(&mut self, content: String) -> Option<Msg> {
+    fn handle_send_edited_message(&self, content: String) -> Option<Msg> {
         let queue_name = match self.get_current_queue() {
             Ok(name) => name,
             Err(e) => return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(e))),
         };
 
-        log::info!("Sending edited message content to queue: {}", queue_name);
+        let repeat_count = self.queue_state.message_repeat_count;
+        log::info!(
+            "Sending edited message content to queue: {} ({} times)",
+            queue_name,
+            repeat_count
+        );
 
-        // Start loading screen
+        // Start loading screen with repeat count info
+        let loading_message = if repeat_count == 1 {
+            "Sending message...".to_string()
+        } else {
+            format!("Sending message {} times...", repeat_count)
+        };
+
         let feedback_msg = Some(Msg::LoadingActivity(LoadingActivityMsg::Start(
-            "Sending edited message...".to_string(),
+            loading_message,
         )));
 
-        // Start async task to send the message
+        // Start async task to send the message(s)
         let service_bus_client = self.service_bus_client.clone();
         let tx_to_main = self.tx_to_main.clone();
         let taskpool = &self.taskpool;
 
         let task = async move {
-            let result = Self::send_message_to_queue(service_bus_client, queue_name, content).await;
-
-            Self::send_completion_messages(
-                &tx_to_main,
-                result,
-                "✅ Edited message sent successfully!",
+            let result = Self::send_message_multiple_times(
+                service_bus_client,
+                queue_name,
+                content,
+                repeat_count,
             )
+            .await;
+
+            let success_message = if repeat_count == 1 {
+                "✅ Message sent successfully!".to_string()
+            } else {
+                format!("✅ {} messages sent successfully!", repeat_count)
+            };
+
+            Self::send_completion_messages(&tx_to_main, result, &success_message)
         };
 
         taskpool.execute(task);
@@ -665,7 +729,7 @@ where
 
     /// Handle replacing original message with edited content (send new + delete original)
     fn handle_replace_edited_message(
-        &mut self,
+        &self,
         content: String,
         message_id: MessageIdentifier,
     ) -> Option<Msg> {
@@ -760,5 +824,147 @@ where
                 Ok(()) // Not an error - message may have been processed elsewhere
             }
         }
+    }
+
+    /// Handle opening empty message details in edit mode for composition
+    fn handle_compose_new_message(&mut self) -> Option<Msg> {
+        // Remount messages with unfocused state (white border)
+        if let Err(e) = self.remount_messages_with_focus(false) {
+            return Some(Msg::Error(e));
+        }
+
+        self.app_state = AppState::MessageDetails;
+
+        // Set focus to message details component
+        if let Err(e) = self.app.active(&ComponentId::MessageDetails) {
+            log::error!("Failed to activate message details: {}", e);
+        }
+
+        // Remount message details in composition mode (empty, edit mode)
+        if let Err(e) = self.remount_message_details_for_composition() {
+            return Some(Msg::Error(e));
+        }
+
+        Some(Msg::ForceRedraw)
+    }
+
+    /// Handle setting the repeat count for bulk message sending
+    fn handle_set_message_repeat_count(&self) -> Option<Msg> {
+        // Show number input popup
+        Some(Msg::PopupActivity(PopupActivityMsg::ShowNumberInput {
+            title: "Bulk Send Message".to_string(),
+            message: "How many times should the message be sent?".to_string(),
+            min_value: BULK_SEND_MIN_COUNT,
+            max_value: BULK_SEND_MAX_COUNT,
+        }))
+    }
+
+    /// Handle updating the repeat count (internal message)
+    fn handle_update_repeat_count(&mut self, count: usize) -> Option<Msg> {
+        self.queue_state.message_repeat_count = count;
+        self.handle_compose_new_message()
+    }
+
+    /// Handle successful message sending by auto-reload only for empty queues
+    fn handle_messages_sent_successfully(&mut self) -> Option<Msg> {
+        let current_messages = self
+            .queue_state
+            .message_pagination
+            .get_current_page_messages(CONFIG.max_messages());
+
+        // Only auto-reload if the queue appears to be empty (0 messages shown)
+        // This is the only case where auto-reload makes sense with Azure Service Bus
+        if current_messages.is_empty() {
+            log::info!("Queue appears empty, auto-reloading to show newly sent messages");
+
+            // Reset entire pagination state to start fresh
+            self.reset_pagination_state();
+
+            // Force a fresh load from the beginning (like initial queue load)
+            self.load_messages_from_beginning().err().map(Msg::Error)
+        } else {
+            log::info!(
+                "Queue has {} messages, skipping auto-reload (newly sent messages may not be visible due to Azure Service Bus message ordering)",
+                current_messages.len()
+            );
+            None
+        }
+    }
+
+    /// Load messages from the beginning (fresh start), similar to initial queue load
+    fn load_messages_from_beginning(&self) -> Result<(), AppError> {
+        let taskpool = &self.taskpool;
+        let tx_to_main = self.tx_to_main.clone();
+
+        // Show loading indicator
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Start(
+            "Loading messages...".to_string(),
+        ))) {
+            log::error!("Failed to send loading start message: {e}");
+        }
+
+        let consumer = self.queue_state.consumer.clone().ok_or_else(|| {
+            log::error!("No consumer available");
+            AppError::State("No consumer available".to_string())
+        })?;
+
+        let tx_to_main_err = tx_to_main.clone();
+        taskpool.execute(async move {
+            let result = Self::execute_fresh_message_load(tx_to_main.clone(), consumer).await;
+
+            if let Err(e) = result {
+                log::error!("Error loading messages from beginning: {e}");
+
+                // Stop loading indicator even if there was an error
+                if let Err(err) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
+                    log::error!("Failed to send loading stop message: {err}");
+                }
+
+                // Send error message
+                let _ = tx_to_main_err.send(Msg::Error(e));
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Execute fresh message loading from the beginning
+    async fn execute_fresh_message_load(
+        tx_to_main: Sender<Msg>,
+        consumer: Arc<Mutex<Consumer>>,
+    ) -> Result<(), AppError> {
+        let mut consumer = consumer.lock().await;
+
+        // Load from beginning (None sequence) with max messages
+        let messages = consumer
+            .peek_messages(CONFIG.max_messages(), None)
+            .await
+            .map_err(|e| {
+                log::error!("Failed to peek messages from beginning: {e}");
+                AppError::ServiceBus(e.to_string())
+            })?;
+
+        log::info!("Loaded {} messages from beginning", messages.len());
+
+        // Stop loading indicator
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
+            log::error!("Failed to send loading stop message: {e}");
+        }
+
+        // Send as new messages loaded to trigger proper pagination setup
+        let activity_msg = if messages.is_empty() {
+            MessageActivityMsg::MessagesLoaded(messages)
+        } else {
+            MessageActivityMsg::NewMessagesLoaded(messages)
+        };
+
+        tx_to_main
+            .send(Msg::MessageActivity(activity_msg))
+            .map_err(|e| {
+                log::error!("Failed to send messages loaded message: {e}");
+                AppError::Component(e.to_string())
+            })?;
+
+        Ok(())
     }
 }

@@ -8,6 +8,7 @@ pub mod loading_indicator;
 pub mod message_details;
 pub mod messages;
 pub mod namespace_picker;
+pub mod number_input_popup;
 pub mod queue_picker;
 pub mod success_popup;
 pub mod text_label;
