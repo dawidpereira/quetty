@@ -338,13 +338,6 @@ impl Messages {
         // Always use wide layout behavior (right-aligned delivery count)
         let use_narrow_layout = false;
 
-        log::debug!(
-            "Layout calc: available={}, content={}, widths={:?}",
-            available_width,
-            content_width,
-            widths
-        );
-
         (headers, widths, use_narrow_layout)
     }
 
@@ -357,15 +350,7 @@ impl Messages {
         let count_str = count.to_string();
         // Always use right alignment for better visual hierarchy
         let padding = width.saturating_sub(count_str.len());
-        let result = format!("{}{}", " ".repeat(padding), count_str);
-        log::trace!(
-            "Right-aligned delivery count {} -> '{}' (width={}, padding={})",
-            count,
-            result,
-            width,
-            padding
-        );
-        result
+        format!("{}{}", " ".repeat(padding), count_str)
     }
 
     /// Get the current selection index

@@ -99,6 +99,10 @@ pub enum MessageActivityMsg {
 
     // Bulk state management - remove multiple messages from local state
     BulkRemoveMessagesFromState(Vec<MessageIdentifier>),
+
+    // Message editing operations
+    SendEditedMessage(String), // Send edited content as new message
+    ReplaceEditedMessage(String, MessageIdentifier), // Replace original message with edited content
 }
 
 #[derive(Debug, PartialEq)]
