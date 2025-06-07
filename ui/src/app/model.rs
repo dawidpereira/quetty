@@ -1,6 +1,8 @@
 use crate::app::queue_state::QueueState;
 use crate::app::view::*;
-use crate::components::common::{ComponentId, LoadingActivityMsg, Msg, PopupActivityMsg};
+use crate::components::common::{
+    ComponentId, LoadingActivityMsg, MessageActivityMsg, Msg, PopupActivityMsg,
+};
 use crate::components::confirmation_popup::ConfirmationPopup;
 use crate::components::error_popup::ErrorPopup;
 use crate::components::global_key_watcher::GlobalKeyWatcher;
@@ -71,6 +73,9 @@ where
 
     // Pending confirmation action (message to execute on confirmation)
     pub pending_confirmation_action: Option<Box<Msg>>,
+
+    // Track if we're currently in message editing mode
+    pub is_editing_message: bool,
 }
 
 impl Model<CrosstermTerminalAdapter> {
@@ -103,6 +108,7 @@ impl Model<CrosstermTerminalAdapter> {
             active_component: ComponentId::NamespacePicker,
             queue_state,
             pending_confirmation_action: None,
+            is_editing_message: false,
         };
 
         // Initialize loading indicator
@@ -712,6 +718,19 @@ where
 
         Ok(())
     }
+
+    /// Update the GlobalKeyWatcher's editing state
+    pub fn update_global_key_watcher_editing_state(&mut self) -> AppResult<()> {
+        self.app
+            .remount(
+                ComponentId::GlobalKeyWatcher,
+                Box::new(GlobalKeyWatcher::new(self.is_editing_message)),
+                vec![Sub::new(SubEventClause::Any, SubClause::Always)],
+            )
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        Ok(())
+    }
 }
 
 impl<T> Update<Msg> for Model<T>
@@ -730,6 +749,20 @@ where
                     None
                 }
 
+                Msg::MessageActivity(MessageActivityMsg::EditingModeStarted) => {
+                    self.is_editing_message = true;
+                    if let Err(e) = self.update_global_key_watcher_editing_state() {
+                        log::error!("Failed to update global key watcher: {}", e);
+                    }
+                    None
+                }
+                Msg::MessageActivity(MessageActivityMsg::EditingModeStopped) => {
+                    self.is_editing_message = false;
+                    if let Err(e) = self.update_global_key_watcher_editing_state() {
+                        log::error!("Failed to update global key watcher: {}", e);
+                    }
+                    None
+                }
                 Msg::MessageActivity(msg) => self.update_messages(msg),
                 Msg::QueueActivity(msg) => self.update_queue(msg),
                 Msg::NamespaceActivity(msg) => self.update_namespace(msg),

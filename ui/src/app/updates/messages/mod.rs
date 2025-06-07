@@ -111,6 +111,12 @@ where
             MessageActivityMsg::MessagesSentSuccessfully => {
                 self.handle_messages_sent_successfully()
             }
+
+            // Editing mode state tracking - handled in main update method
+            MessageActivityMsg::EditingModeStarted | MessageActivityMsg::EditingModeStopped => {
+                // These are handled in the main update method, not here
+                None
+            }
         }
     }
 
@@ -137,6 +143,12 @@ where
     }
 
     fn handle_cancel_edit_message(&mut self) -> Option<Msg> {
+        // Reset editing state
+        self.is_editing_message = false;
+        if let Err(e) = self.update_global_key_watcher_editing_state() {
+            log::error!("Failed to update global key watcher: {}", e);
+        }
+
         // Remount messages with focused state (teal border)
         if let Err(e) = self.remount_messages_with_focus(true) {
             return Some(Msg::Error(e));
@@ -843,6 +855,12 @@ where
         // Remount message details in composition mode (empty, edit mode)
         if let Err(e) = self.remount_message_details_for_composition() {
             return Some(Msg::Error(e));
+        }
+
+        // Set editing state since composition mode starts in edit mode
+        self.is_editing_message = true;
+        if let Err(e) = self.update_global_key_watcher_editing_state() {
+            log::error!("Failed to update global key watcher: {}", e);
         }
 
         Some(Msg::ForceRedraw)
