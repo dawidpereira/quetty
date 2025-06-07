@@ -541,7 +541,7 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
                 if self.is_editing {
                     // In edit mode: restore original content and exit edit mode
                     self.restore_original_content();
-                    return Some(Msg::ForceRedraw);
+                    return Some(Msg::MessageActivity(MessageActivityMsg::EditingModeStopped));
                 } else {
                     // Not in edit mode: exit to message list
                     return Some(Msg::MessageActivity(MessageActivityMsg::CancelEditMessage));
@@ -596,7 +596,7 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
                 modifiers: KeyModifiers::NONE,
             }) if !self.is_editing => {
                 self.toggle_edit_mode();
-                return Some(Msg::ForceRedraw);
+                return Some(Msg::MessageActivity(MessageActivityMsg::EditingModeStarted));
             }
 
             // Editing keys (only when in edit mode)

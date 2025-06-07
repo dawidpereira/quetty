@@ -110,6 +110,10 @@ pub enum MessageActivityMsg {
     SetMessageRepeatCount,    // Open popup to set how many times to send message
     UpdateRepeatCount(usize), // Internal: Update the repeat count value
     MessagesSentSuccessfully, // Trigger auto-reload after successful message sending
+
+    // Message editing mode state tracking
+    EditingModeStarted, // Notify that message details entered edit mode
+    EditingModeStopped, // Notify that message details exited edit mode
 }
 
 #[derive(Debug, PartialEq)]
