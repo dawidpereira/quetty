@@ -30,46 +30,22 @@ impl MockComponent for HelpScreen {
             .border_style(Style::default().fg(ThemeManager::primary_accent()))
             .title_style(Style::default().fg(ThemeManager::title_accent()));
 
-        // Create layout with header and scrollable content
+        // Create layout with header and two-column content
         let chunks = Layout::default()
             .constraints([Constraint::Length(3), Constraint::Min(0)])
             .margin(1)
             .split(area);
 
+        // Split content area into two columns
+        let columns = Layout::default()
+            .direction(tuirealm::ratatui::layout::Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(chunks[1]);
+
         let keys = config::CONFIG.keys();
 
-        // Define all key combinations to calculate consistent width
-        let key_combinations = vec![
-            format!("[{}]", keys.quit()),
-            format!("[{}]", keys.help()),
-            format!("[{}]", keys.theme()),
-            "[Esc]".to_string(),
-            format!("[↑] [{}]", keys.up()),
-            format!("[↓] [{}]", keys.down()),
-            format!("[Enter] [{}]", keys.queue_select()),
-            "[PgUp] [PgDn]".to_string(),
-            format!("[{}] [{}]", keys.next_page(), keys.alt_next_page()),
-            format!("[{}] [{}]", keys.prev_page(), keys.alt_prev_page()),
-            "[d]".to_string(),
-            "[Enter]".to_string(),
-            format!("[{}]", keys.toggle_selection()),
-            format!("[Ctrl+{}]", keys.select_all_page()),
-            "[Ctrl+Shift+A]".to_string(),
-            format!(
-                "[{}] [Ctrl+{}]",
-                keys.delete_message(),
-                keys.alt_delete_message()
-            ),
-            format!("[{}] [Ctrl+{}]", keys.send_to_dlq(), keys.send_to_dlq()),
-            format!("[{}]", keys.resend_from_dlq()),
-            format!("[{}]", keys.resend_and_delete_from_dlq()),
-            "[←] [→]".to_string(),
-            format!("[↑] [↓] [{}] [{}]", keys.up(), keys.down()),
-        ];
-
-        // Find the maximum width needed for key combinations
-        let max_key_width = key_combinations.iter().map(|k| k.len()).max().unwrap_or(20);
-        let padding_width = max_key_width + 4; // Add some extra padding
+        // Define key width for consistent alignment
+        let key_width = 20;
 
         let header_text = Text::from(vec![
             Line::from(vec![Span::styled(
@@ -88,8 +64,8 @@ impl MockComponent for HelpScreen {
             .alignment(Alignment::Center)
             .block(Block::default());
 
-        // Help content with organized sections - using configured keys
-        let help_content = Text::from(vec![
+        // LEFT COLUMN - Global Actions, Navigation, Queue Management
+        let left_content = Text::from(vec![
             // Global Actions
             Line::from(vec![Span::styled(
                 "🌐 GLOBAL ACTIONS",
@@ -100,11 +76,7 @@ impl MockComponent for HelpScreen {
             Line::from(""),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[{}]", keys.quit()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[{}]", keys.quit()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -116,11 +88,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[{}]", keys.help()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[{}]", keys.help()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -132,11 +100,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[{}]", keys.theme()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[{}]", keys.theme()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -148,7 +112,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!("  {:width$}", "[Esc]", width = padding_width),
+                    format!("  {:width$}", "[Esc]", width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -159,6 +123,7 @@ impl MockComponent for HelpScreen {
                 ),
             ]),
             Line::from(""),
+            
             // Navigation
             Line::from(vec![Span::styled(
                 "🧭 NAVIGATION",
@@ -169,11 +134,7 @@ impl MockComponent for HelpScreen {
             Line::from(""),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[↑] [{}]", keys.up()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[↑] [{}]", keys.up()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -185,11 +146,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[↓] [{}]", keys.down()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[↓] [{}]", keys.down()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -201,11 +158,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[Enter] [{}]", keys.queue_select()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[Enter] [{}]", keys.queue_select()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -217,7 +170,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!("  {:width$}", "[PgUp] [PgDn]", width = padding_width),
+                    format!("  {:width$}", "[PgUp] [PgDn]", width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -228,6 +181,7 @@ impl MockComponent for HelpScreen {
                 ),
             ]),
             Line::from(""),
+            
             // Queue & Message Management
             Line::from(vec![Span::styled(
                 "📋 QUEUE & MESSAGE MANAGEMENT",
@@ -238,11 +192,7 @@ impl MockComponent for HelpScreen {
             Line::from(""),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[{}] [{}]", keys.next_page(), keys.alt_next_page()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[{}] [{}]", keys.next_page(), keys.alt_next_page()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -254,11 +204,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[{}] [{}]", keys.prev_page(), keys.alt_prev_page()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[{}] [{}]", keys.prev_page(), keys.alt_prev_page()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -270,19 +216,19 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!("  {:width$}", "[d]", width = padding_width),
+                    format!("  {:width$}", format!("[{}]", keys.toggle_dlq()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    "Toggle between Main ↔ Dead Letter Queue",
+                    "Toggle Main ↔ Dead Letter Queue",
                     Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!("  {:width$}", "[Enter]", width = padding_width),
+                    format!("  {:width$}", "[Enter]", width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -293,6 +239,77 @@ impl MockComponent for HelpScreen {
                 ),
             ]),
             Line::from(""),
+            
+            // Message Composition
+            Line::from(vec![Span::styled(
+                "✍️ MESSAGE COMPOSITION",
+                Style::default()
+                    .fg(ThemeManager::help_section_title())
+                    .add_modifier(Modifier::BOLD),
+            )]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(
+                    format!("  {:width$}", format!("[{}]", keys.compose_multiple()), width = key_width),
+                    Style::default()
+                        .fg(ThemeManager::shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Compose multiple messages",
+                    Style::default().fg(ThemeManager::shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!("  {:width$}", format!("[Ctrl+{}]", keys.compose_single()), width = key_width),
+                    Style::default()
+                        .fg(ThemeManager::shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Compose single message",
+                    Style::default().fg(ThemeManager::shortcut_description()),
+                ),
+            ]),
+            Line::from(""),
+            
+            // Confirmation Keys
+            Line::from(vec![Span::styled(
+                "✅ CONFIRMATIONS",
+                Style::default()
+                    .fg(ThemeManager::help_section_title())
+                    .add_modifier(Modifier::BOLD),
+            )]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(
+                    format!("  {:width$}", format!("[{}]", keys.confirm_yes()), width = key_width),
+                    Style::default()
+                        .fg(ThemeManager::shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Confirm Yes",
+                    Style::default().fg(ThemeManager::shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!("  {:width$}", format!("[{}]", keys.confirm_no()), width = key_width),
+                    Style::default()
+                        .fg(ThemeManager::shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Confirm No",
+                    Style::default().fg(ThemeManager::shortcut_description()),
+                ),
+            ]),
+        ]);
+
+        // RIGHT COLUMN - Bulk Selection, Message Operations, Message Details
+        let right_content = Text::from(vec![
             // Bulk Selection
             Line::from(vec![Span::styled(
                 "📦 BULK SELECTION MODE",
@@ -303,11 +320,7 @@ impl MockComponent for HelpScreen {
             Line::from(""),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[{}]", keys.toggle_selection()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[{}]", keys.toggle_selection()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -319,11 +332,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[Ctrl+{}]", keys.select_all_page()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[Ctrl+{}]", keys.select_all_page()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -335,7 +344,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!("  {:width$}", "[Ctrl+Shift+A]", width = padding_width),
+                    format!("  {:width$}", "[Ctrl+Shift+A]", width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -347,7 +356,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!("  {:width$}", "[Esc]", width = padding_width),
+                    format!("  {:width$}", "[Esc]", width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -358,6 +367,7 @@ impl MockComponent for HelpScreen {
                 ),
             ]),
             Line::from(""),
+            
             // Message Operations
             Line::from(vec![Span::styled(
                 "⚡ MESSAGE OPERATIONS",
@@ -368,15 +378,7 @@ impl MockComponent for HelpScreen {
             Line::from(""),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!(
-                            "[{}] [Ctrl+{}]",
-                            keys.delete_message(),
-                            keys.alt_delete_message()
-                        ),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[{}] [Ctrl+{}]", keys.delete_message(), keys.alt_delete_message()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -388,11 +390,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[{}] [Ctrl+{}]", keys.send_to_dlq(), keys.send_to_dlq()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[{}] [Ctrl+{}]", keys.send_to_dlq(), keys.send_to_dlq()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -404,11 +402,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[{}]", keys.resend_from_dlq()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[{}]", keys.resend_from_dlq()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -420,11 +414,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[{}]", keys.resend_and_delete_from_dlq()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[{}]", keys.resend_and_delete_from_dlq()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -444,6 +434,7 @@ impl MockComponent for HelpScreen {
                 Style::default().fg(ThemeManager::status_info()),
             )]),
             Line::from(""),
+            
             // Message Details View
             Line::from(vec![Span::styled(
                 "🔍 MESSAGE DETAILS VIEW",
@@ -454,7 +445,7 @@ impl MockComponent for HelpScreen {
             Line::from(""),
             Line::from(vec![
                 Span::styled(
-                    format!("  {:width$}", "[←] [→]", width = padding_width),
+                    format!("  {:width$}", "[←] [→]", width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -466,11 +457,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[↑] [↓] [{}] [{}]", keys.up(), keys.down()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[↑] [↓] [{}] [{}]", keys.up(), keys.down()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -482,7 +469,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!("  {:width$}", "[PgUp] [PgDn]", width = padding_width),
+                    format!("  {:width$}", "[PgUp] [PgDn]", width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -494,11 +481,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[{}] [Ctrl+{}]", keys.yank_message(), keys.copy_message()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[{}] [Ctrl+{}]", keys.yank_message(), keys.copy_message()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -510,7 +493,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!("  {:width$}", "[e] [i]", width = padding_width),
+                    format!("  {:width$}", "[e] [i]", width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -522,11 +505,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[Ctrl+{}]", keys.send_edited_message()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[Ctrl+{}]", keys.send_edited_message()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -538,11 +517,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {:width$}",
-                        format!("[Ctrl+{}]", keys.replace_edited_message()),
-                        width = padding_width
-                    ),
+                    format!("  {:width$}", format!("[Ctrl+{}]", keys.replace_edited_message()), width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -554,7 +529,7 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!("  {:width$}", "[Esc]", width = padding_width),
+                    format!("  {:width$}", "[Esc]", width = key_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
@@ -566,14 +541,19 @@ impl MockComponent for HelpScreen {
             ]),
         ]);
 
-        let content_para = RatatuiParagraph::new(help_content)
+        let left_para = RatatuiParagraph::new(left_content)
+            .block(Block::default())
+            .wrap(tuirealm::ratatui::widgets::Wrap { trim: true });
+
+        let right_para = RatatuiParagraph::new(right_content)
             .block(Block::default())
             .wrap(tuirealm::ratatui::widgets::Wrap { trim: true });
 
         // Render components
         frame.render_widget(block, area);
         frame.render_widget(header_para, chunks[0]);
-        frame.render_widget(content_para, chunks[1]);
+        frame.render_widget(left_para, columns[0]);
+        frame.render_widget(right_para, columns[1]);
     }
 
     fn query(&self, _attr: tuirealm::Attribute) -> Option<tuirealm::AttrValue> {
