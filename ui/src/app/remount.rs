@@ -35,6 +35,31 @@ where
         Ok(())
     }
 
+    pub fn remount_message_details_for_composition(&mut self) -> AppResult<()> {
+        // Always focused when in composition mode
+        let is_focused = true;
+
+        // No message - empty composition mode
+        let message = None;
+
+        // Get the current repeat count from queue state
+        let repeat_count = self.queue_state.message_repeat_count;
+
+        self.app
+            .remount(
+                ComponentId::MessageDetails,
+                Box::new(MessageDetails::new_for_composition_with_repeat_count(
+                    message,
+                    is_focused,
+                    repeat_count,
+                )),
+                Vec::default(),
+            )
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        Ok(())
+    }
+
     pub fn remount_messages(&mut self) -> AppResult<()> {
         self.remount_messages_with_cursor_control(true)
     }

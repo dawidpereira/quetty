@@ -25,8 +25,9 @@ pub struct MessageDetails {
     cursor_col: usize,
     is_focused: bool,
     visible_lines: usize,
-    is_editing: bool, // Track if we're in edit mode
-    is_dirty: bool,   // Track if content has been modified
+    is_editing: bool,            // Track if we're in edit mode
+    is_dirty: bool,              // Track if content has been modified
+    repeat_count: Option<usize>, // Track how many times message will be sent (for composition mode)
 }
 
 impl MessageDetails {
@@ -49,6 +50,31 @@ impl MessageDetails {
             visible_lines: 0,
             is_editing: false,
             is_dirty: false,
+            repeat_count: None,
+        }
+    }
+
+    pub fn new_for_composition_with_repeat_count(
+        message: Option<MessageModel>,
+        is_focused: bool,
+        repeat_count: usize,
+    ) -> Self {
+        // Start with empty content for composition
+        let message_content = vec![String::new()];
+        let original_content = message_content.clone();
+
+        Self {
+            message_content,
+            original_content,
+            current_message: message,
+            scroll_offset: 0,
+            cursor_line: 0,
+            cursor_col: 0,
+            is_focused,
+            visible_lines: 0,
+            is_editing: true, // Start in edit mode for composition
+            is_dirty: false,
+            repeat_count: Some(repeat_count),
         }
     }
 
@@ -294,10 +320,23 @@ impl MessageDetails {
     fn create_status_bar(&self) -> Paragraph {
         let status_text = if self.is_editing {
             let keys = config::CONFIG.keys();
+
+            // Add repeat count info if we're in composition mode
+            let repeat_info = if let Some(count) = self.repeat_count {
+                if count == 1 {
+                    " | Will send 1 time".to_string()
+                } else {
+                    format!(" | Will send {} times", count)
+                }
+            } else {
+                String::new()
+            };
+
             format!(
-                "Ln {}, Col {} | EDIT MODE | Ctrl+{}: Send | Ctrl+{}: Replace | ESC: Cancel",
+                "Ln {}, Col {} | EDIT MODE{} | Ctrl+{}: Send | Ctrl+{}: Replace | ESC: Cancel",
                 self.cursor_line + self.scroll_offset + 1,
                 self.cursor_col + 1,
+                repeat_info,
                 keys.send_edited_message(),
                 keys.replace_edited_message()
             )

@@ -90,6 +90,35 @@ pub fn view_success_popup(
     Ok(())
 }
 
+// Render the number input popup centered on the screen
+pub fn view_number_input_popup(
+    app: &mut Application<ComponentId, Msg, NoUserEvent>,
+    f: &mut Frame,
+) -> Result<(), AppError> {
+    // Create a centered box for the number input popup
+    let popup_width = 70;
+    let popup_height = 14;
+    let area = f.area();
+
+    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+
+    let popup_area = Rect::new(
+        popup_x,
+        popup_y,
+        popup_width.min(area.width),
+        popup_height.min(area.height),
+    );
+
+    app.view(&ComponentId::NumberInputPopup, f, popup_area);
+
+    // Make sure the popup has focus
+    app.active(&ComponentId::NumberInputPopup)
+        .map_err(|e| AppError::Component(e.to_string()))?;
+
+    Ok(())
+}
+
 // Higher-order function to wrap view functions with popup handling
 pub fn with_popup<F>(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,
@@ -104,7 +133,12 @@ where
         &[Rect],
     ) -> Result<(), AppError>,
 {
-    // First, try to render the confirmation popup if it exists
+    // First, try to render the number input popup if it exists (highest priority)
+    if app.mounted(&ComponentId::NumberInputPopup) {
+        return view_number_input_popup(app, f);
+    }
+
+    // Then, try to render the confirmation popup if it exists
     if app.mounted(&ComponentId::ConfirmationPopup) {
         return view_confirmation_popup(app, f);
     }

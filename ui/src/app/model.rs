@@ -9,6 +9,7 @@ use crate::components::loading_indicator::LoadingIndicator;
 use crate::components::message_details::MessageDetails;
 use crate::components::messages::Messages;
 use crate::components::namespace_picker::NamespacePicker;
+use crate::components::number_input_popup::NumberInputPopup;
 use crate::components::queue_picker::QueuePicker;
 use crate::components::success_popup::SuccessPopup;
 use crate::components::text_label::TextLabel;
@@ -181,7 +182,7 @@ where
                 )
                 .split(f.area());
 
-            self.app.view(&ComponentId::Label, f, chunks[1]);
+            self.app.view(&ComponentId::TextLabel, f, chunks[1]);
 
             // Update active component based on current app state
             self.active_component = match self.app_state {
@@ -215,6 +216,7 @@ where
             if !self.app.mounted(&ComponentId::ErrorPopup)
                 && !self.app.mounted(&ComponentId::SuccessPopup)
                 && !self.app.mounted(&ComponentId::ConfirmationPopup)
+                && !self.app.mounted(&ComponentId::NumberInputPopup)
                 && !self.app.mounted(&ComponentId::ThemePicker)
             {
                 // Create a temporary help bar with the active component
@@ -263,7 +265,7 @@ where
                 .tick_interval(config::CONFIG.tick_interval()),
         );
         app.mount(
-            ComponentId::Label,
+            ComponentId::TextLabel,
             Box::new(TextLabel::new(
                 "Quetty, the cutest queue manager <3".to_string(),
             )),
@@ -498,10 +500,87 @@ where
         Ok(())
     }
 
+    /// Mount number input popup and give focus to it
+    pub fn mount_number_input_popup(
+        &mut self,
+        title: String,
+        message: String,
+        min_value: usize,
+        max_value: usize,
+    ) -> AppResult<()> {
+        log::debug!("Displaying number input popup: {}", message);
+
+        self.app
+            .remount(
+                ComponentId::NumberInputPopup,
+                Box::new(NumberInputPopup::new(title, message, min_value, max_value)),
+                Vec::default(),
+            )
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        self.app
+            .active(&ComponentId::NumberInputPopup)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        self.redraw = true;
+
+        Ok(())
+    }
+
     /// Unmount confirmation popup and return focus to previous component
     pub fn unmount_confirmation_popup(&mut self) -> AppResult<()> {
         self.app
             .umount(&ComponentId::ConfirmationPopup)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        // Return to appropriate state
+        match self.app_state {
+            AppState::NamespacePicker => {
+                self.app
+                    .active(&ComponentId::NamespacePicker)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::QueuePicker => {
+                self.app
+                    .active(&ComponentId::QueuePicker)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::MessagePicker => {
+                self.app
+                    .active(&ComponentId::Messages)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::MessageDetails => {
+                self.app
+                    .active(&ComponentId::MessageDetails)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::Loading => {
+                // If we were showing a loading indicator, just continue showing it
+                // No need to activate any specific component
+                // The loading indicator will be updated or closed by its own message flow
+            }
+            AppState::HelpScreen => {
+                self.app
+                    .active(&ComponentId::HelpScreen)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::ThemePicker => {
+                self.app
+                    .active(&ComponentId::ThemePicker)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+        }
+
+        self.redraw = true;
+
+        Ok(())
+    }
+
+    /// Unmount number input popup and return focus to previous component
+    pub fn unmount_number_input_popup(&mut self) -> AppResult<()> {
+        self.app
+            .umount(&ComponentId::NumberInputPopup)
             .map_err(|e| AppError::Component(e.to_string()))?;
 
         // Return to appropriate state

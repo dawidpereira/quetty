@@ -220,7 +220,7 @@ impl HelpBar {
 impl MockComponent for HelpBar {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         // Default view with no active component
-        self.view_with_active(frame, area, &ComponentId::Label);
+        self.view_with_active(frame, area, &ComponentId::TextLabel);
     }
 
     fn query(&self, _attr: tuirealm::Attribute) -> Option<tuirealm::AttrValue> {

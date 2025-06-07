@@ -103,6 +103,8 @@ pub struct QueueState {
     pub message_pagination: MessagePaginationState,
     /// Bulk selection state
     pub bulk_selection: BulkSelectionState,
+    /// Message repeat count for bulk sending (1-1000)
+    pub message_repeat_count: usize,
 }
 
 impl Default for QueueState {
@@ -115,6 +117,7 @@ impl Default for QueueState {
             messages: None,
             message_pagination: MessagePaginationState::default(),
             bulk_selection: BulkSelectionState::default(),
+            message_repeat_count: 1, // Default to sending once
         }
     }
 }

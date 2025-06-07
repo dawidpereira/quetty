@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn StdError>> {
                         model
                             .app
                             .attr(
-                                &ComponentId::Label,
+                                &ComponentId::TextLabel,
                                 Attribute::Text,
                                 AttrValue::String(format!("Application error: {}", err)),
                             )

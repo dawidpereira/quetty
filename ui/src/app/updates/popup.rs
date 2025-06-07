@@ -21,6 +21,13 @@ where
             PopupActivityMsg::ConfirmationResult(confirmed) => {
                 self.handle_confirmation_result(confirmed)
             }
+            PopupActivityMsg::ShowNumberInput {
+                title,
+                message,
+                min_value,
+                max_value,
+            } => self.handle_show_number_input(title, message, min_value, max_value),
+            PopupActivityMsg::NumberInputResult(value) => self.handle_number_input_result(value),
         }
     }
 
@@ -101,5 +108,41 @@ where
             self.pending_confirmation_action = None;
             None
         }
+    }
+
+    fn handle_show_number_input(
+        &mut self,
+        title: String,
+        message: String,
+        min_value: usize,
+        max_value: usize,
+    ) -> Option<Msg> {
+        // Use the new NumberInputPopup component
+        if let Err(e) = self.mount_number_input_popup(title, message, min_value, max_value) {
+            log::error!("Failed to mount number input popup: {}", e);
+            Some(Msg::Error(e))
+        } else {
+            None
+        }
+    }
+
+    fn handle_number_input_result(&mut self, value: usize) -> Option<Msg> {
+        log::debug!("Handling number input result: value={}", value);
+
+        // Unmount the number input popup
+        if let Err(e) = self.unmount_number_input_popup() {
+            log::error!("Failed to unmount number input popup: {}", e);
+        }
+
+        // If value is 0, it means cancel
+        if value == 0 {
+            log::debug!("Number input cancelled");
+            return None;
+        }
+
+        // Convert the number input result to update repeat count
+        Some(Msg::MessageActivity(
+            crate::components::common::MessageActivityMsg::UpdateRepeatCount(value),
+        ))
     }
 }
