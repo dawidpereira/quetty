@@ -4,6 +4,10 @@
 name = "Quetty Light"
 description = "A clean light theme for Quetty with excellent readability and professional appearance"
 author = "Dawid Pereira"
+theme_name = "quetty"
+flavor_name = "light"
+theme_icon = "⚡"
+flavor_icon = "☀️"
 
 [colors]
 # === Core Text Colors ===

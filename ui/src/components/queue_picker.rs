@@ -36,8 +36,6 @@ impl QueuePicker {
 
 impl MockComponent for QueuePicker {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        let theme = ThemeManager::global();
-
         // Calculate consistent width for queue icons and names
         let formatted_items: Vec<String> = self
             .queues
@@ -78,12 +76,12 @@ impl MockComponent for QueuePicker {
                 if i == self.selected {
                     item = item.style(
                         Style::default()
-                            .fg(theme.status_info())
-                            .bg(theme.surface())
+                            .fg(ThemeManager::status_info())
+                            .bg(ThemeManager::surface())
                             .add_modifier(TextModifiers::BOLD),
                     );
                 } else {
-                    item = item.style(Style::default().fg(theme.status_info()));
+                    item = item.style(Style::default().fg(ThemeManager::status_info()));
                 }
                 item
             })
@@ -92,19 +90,19 @@ impl MockComponent for QueuePicker {
             .block(
                 tuirealm::ratatui::widgets::Block::default()
                     .borders(tuirealm::ratatui::widgets::Borders::ALL)
-                    .border_style(Style::default().fg(theme.primary_accent()))
+                    .border_style(Style::default().fg(ThemeManager::primary_accent()))
                     .title("  🗂️  Select a Queue  ")
                     .title_alignment(Alignment::Center)
                     .title_style(
                         Style::default()
-                            .fg(theme.title_accent())
+                            .fg(ThemeManager::title_accent())
                             .add_modifier(TextModifiers::BOLD),
                     ),
             )
             .highlight_style(
                 Style::default()
-                    .fg(theme.status_info())
-                    .bg(theme.surface())
+                    .fg(ThemeManager::status_info())
+                    .bg(ThemeManager::surface())
                     .add_modifier(TextModifiers::BOLD),
             )
             .highlight_symbol("▶ ");

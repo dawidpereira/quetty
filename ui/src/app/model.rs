@@ -12,11 +12,12 @@ use crate::components::namespace_picker::NamespacePicker;
 use crate::components::queue_picker::QueuePicker;
 use crate::components::success_popup::SuccessPopup;
 use crate::components::text_label::TextLabel;
+use crate::components::theme_picker::ThemePicker;
 use crate::config;
 use crate::error::{AppError, AppResult, handle_error};
 use azservicebus::core::BasicRetryPolicy;
 use azservicebus::{ServiceBusClient, ServiceBusClientOptions};
-use copypasta::{ClipboardContext, ClipboardProvider};
+
 use server::taskpool::TaskPool;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -34,6 +35,7 @@ pub enum AppState {
     MessageDetails,
     Loading,
     HelpScreen,
+    ThemePicker,
 }
 
 /// Application model
@@ -173,6 +175,7 @@ where
                 AppState::MessageDetails => ComponentId::MessageDetails,
                 AppState::Loading => ComponentId::LoadingIndicator,
                 AppState::HelpScreen => ComponentId::HelpScreen,
+                AppState::ThemePicker => ComponentId::ThemePicker,
             };
 
             // Apply the view based on the app state, with error popup handling
@@ -189,12 +192,14 @@ where
                 }
                 AppState::Loading => with_popup(&mut self.app, f, &chunks, view_loading),
                 AppState::HelpScreen => with_popup(&mut self.app, f, &chunks, view_help_screen),
+                AppState::ThemePicker => view_theme_picker(&mut self.app, f, &chunks),
             };
 
             // View help bar (if not showing any popup) with active component
             if !self.app.mounted(&ComponentId::ErrorPopup)
                 && !self.app.mounted(&ComponentId::SuccessPopup)
                 && !self.app.mounted(&ComponentId::ConfirmationPopup)
+                && !self.app.mounted(&ComponentId::ThemePicker)
             {
                 // Create a temporary help bar with the active component
                 let mut help_bar = HelpBar::new();
@@ -373,6 +378,11 @@ where
                     .active(&ComponentId::HelpScreen)
                     .map_err(|e| AppError::Component(e.to_string()))?;
             }
+            AppState::ThemePicker => {
+                self.app
+                    .active(&ComponentId::ThemePicker)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
         }
 
         self.redraw = true;
@@ -437,6 +447,11 @@ where
             AppState::HelpScreen => {
                 self.app
                     .active(&ComponentId::HelpScreen)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::ThemePicker => {
+                self.app
+                    .active(&ComponentId::ThemePicker)
                     .map_err(|e| AppError::Component(e.to_string()))?;
             }
         }
@@ -505,6 +520,97 @@ where
                     .active(&ComponentId::HelpScreen)
                     .map_err(|e| AppError::Component(e.to_string()))?;
             }
+            AppState::ThemePicker => {
+                self.app
+                    .active(&ComponentId::ThemePicker)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+        }
+
+        self.redraw = true;
+
+        Ok(())
+    }
+
+    /// Mount theme picker and give focus to it
+    pub fn mount_theme_picker(&mut self) -> AppResult<()> {
+        log::debug!("Displaying theme picker");
+
+        let mut theme_picker = ThemePicker::new();
+        theme_picker.load_themes();
+
+        self.app
+            .remount(
+                ComponentId::ThemePicker,
+                Box::new(theme_picker),
+                Vec::default(),
+            )
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        self.app
+            .active(&ComponentId::ThemePicker)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        // Store previous state
+        self.previous_state = Some(self.app_state.clone());
+        self.app_state = AppState::ThemePicker;
+        self.redraw = true;
+
+        Ok(())
+    }
+
+    /// Unmount theme picker and return focus to previous component
+    pub fn unmount_theme_picker(&mut self) -> AppResult<()> {
+        self.app
+            .umount(&ComponentId::ThemePicker)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        // Return to previous state
+        if let Some(prev_state) = self.previous_state.take() {
+            self.app_state = prev_state;
+        } else {
+            self.app_state = AppState::NamespacePicker;
+        }
+
+        // Return to appropriate component based on state
+        match self.app_state {
+            AppState::NamespacePicker => {
+                self.app
+                    .active(&ComponentId::NamespacePicker)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::QueuePicker => {
+                self.app
+                    .active(&ComponentId::QueuePicker)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::MessagePicker => {
+                self.app
+                    .active(&ComponentId::Messages)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::MessageDetails => {
+                self.app
+                    .active(&ComponentId::MessageDetails)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::Loading => {
+                // If we were showing a loading indicator, just continue showing it
+                // No need to activate any specific component
+                // The loading indicator will be updated or closed by its own message flow
+            }
+            AppState::HelpScreen => {
+                self.app
+                    .active(&ComponentId::HelpScreen)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::ThemePicker => {
+                // This shouldn't happen, but just in case
+                self.app_state = AppState::NamespacePicker;
+                self.app
+                    .active(&ComponentId::NamespacePicker)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
         }
 
         self.redraw = true;
@@ -528,31 +634,11 @@ where
                     self.quit = true; // Terminate
                     None
                 }
-                Msg::Submit(lines) => {
-                    match ClipboardContext::new() {
-                        Ok(mut ctx) => {
-                            if let Err(e) = ctx.set_contents(lines.join("\n")) {
-                                if let Err(err) = self.mount_error_popup(&AppError::Component(
-                                    format!("Error copying to clipboard: {}", e),
-                                )) {
-                                    log::error!("Failed to mount error popup: {}", err);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            if let Err(err) = self.mount_error_popup(&AppError::Component(format!(
-                                "Failed to initialize clipboard: {}",
-                                e
-                            ))) {
-                                log::error!("Failed to mount error popup: {}", err);
-                            }
-                        }
-                    }
-                    None
-                }
+
                 Msg::MessageActivity(msg) => self.update_messages(msg),
                 Msg::QueueActivity(msg) => self.update_queue(msg),
                 Msg::NamespaceActivity(msg) => self.update_namespace(msg),
+                Msg::ThemeActivity(msg) => self.update_theme(msg),
                 Msg::LoadingActivity(msg) => self.update_loading(msg),
                 Msg::PopupActivity(msg) => self.update_popup(msg),
                 Msg::Error(e) => {
@@ -560,6 +646,14 @@ where
                     self.update_popup(PopupActivityMsg::ShowError(e))
                 }
                 Msg::ToggleHelpScreen => self.update_help(),
+                Msg::ToggleThemePicker => {
+                    if let Err(e) = self.mount_theme_picker() {
+                        log::error!("Failed to mount theme picker: {}", e);
+                        Some(Msg::Error(e))
+                    } else {
+                        None
+                    }
+                }
                 _ => None,
             };
 

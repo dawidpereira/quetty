@@ -6,6 +6,11 @@ pub struct ThemeMetadata {
     pub name: String,
     pub description: String,
     pub author: String,
+    // Optional theme-specific metadata
+    pub theme_name: Option<String>,
+    pub flavor_name: Option<String>,
+    pub theme_icon: Option<String>,
+    pub flavor_icon: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,6 +70,12 @@ pub struct ThemeConfig {
     pub flavor_name: String,
 }
 
+/// Type alias for flavor metadata: (flavor_name, theme_icon, flavor_icon)
+pub type FlavorMetadata = (String, String, String);
+
+/// Type alias for theme collection with metadata: Vec<(theme_name, flavors)>
+pub type ThemeCollectionWithMetadata = Vec<(String, Vec<FlavorMetadata>)>;
+
 impl ThemeColors {
     /// Convert a hex color string to tuirealm Color
     pub fn hex_to_color(&self, hex: &str) -> Color {
@@ -119,7 +130,7 @@ impl ThemeColors {
 impl Default for ThemeConfig {
     fn default() -> Self {
         Self {
-            theme_name: "default".to_string(),
+            theme_name: "quetty".to_string(),
             flavor_name: "dark".to_string(),
         }
     }

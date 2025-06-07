@@ -3,6 +3,10 @@
 name = "Quetty Dark"
 description = "A sleek dark theme for Quetty with excellent contrast and readability"
 author = "Dawid Pereira"
+theme_name = "quetty"
+flavor_name = "dark"
+theme_icon = "⚡"
+flavor_icon = "🌙"
 
 [colors]
 # === Core Text Colors ===

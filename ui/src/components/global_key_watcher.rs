@@ -21,6 +21,8 @@ impl Component<Msg, NoUserEvent> for GlobalKeyWatcher {
                     Some(Msg::AppClose)
                 } else if c == keys.help() {
                     Some(Msg::ToggleHelpScreen)
+                } else if c == keys.theme() {
+                    Some(Msg::ToggleThemePicker)
                 } else {
                     None
                 }

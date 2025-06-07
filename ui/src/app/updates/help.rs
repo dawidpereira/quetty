@@ -41,6 +41,11 @@ where
                             log::error!("Failed to activate message details: {}", e);
                         }
                     }
+                    AppState::ThemePicker => {
+                        if let Err(e) = self.app.active(&ComponentId::ThemePicker) {
+                            log::error!("Failed to activate theme picker: {}", e);
+                        }
+                    }
                     _ => {}
                 }
             } else {

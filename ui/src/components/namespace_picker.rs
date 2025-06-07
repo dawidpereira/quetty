@@ -33,8 +33,6 @@ impl NamespacePicker {
 
 impl MockComponent for NamespacePicker {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        let theme = ThemeManager::global();
-
         // Calculate consistent width for namespace icons and names
         let formatted_items: Vec<String> = self
             .namespaces
@@ -61,12 +59,12 @@ impl MockComponent for NamespacePicker {
                 if i == self.selected {
                     item = item.style(
                         Style::default()
-                            .fg(theme.namespace_list_item())
-                            .bg(theme.surface())
+                            .fg(ThemeManager::namespace_list_item())
+                            .bg(ThemeManager::surface())
                             .add_modifier(TextModifiers::BOLD),
                     );
                 } else {
-                    item = item.style(Style::default().fg(theme.namespace_list_item()));
+                    item = item.style(Style::default().fg(ThemeManager::namespace_list_item()));
                 }
                 item
             })
@@ -75,19 +73,19 @@ impl MockComponent for NamespacePicker {
             .block(
                 tuirealm::ratatui::widgets::Block::default()
                     .borders(tuirealm::ratatui::widgets::Borders::ALL)
-                    .border_style(Style::default().fg(theme.primary_accent()))
+                    .border_style(Style::default().fg(ThemeManager::primary_accent()))
                     .title("  🌐 Select a Namespace  ")
                     .title_alignment(Alignment::Center)
                     .title_style(
                         Style::default()
-                            .fg(theme.title_accent())
+                            .fg(ThemeManager::title_accent())
                             .add_modifier(TextModifiers::BOLD),
                     ),
             )
             .highlight_style(
                 Style::default()
-                    .fg(theme.namespace_list_item())
-                    .bg(theme.surface())
+                    .fg(ThemeManager::namespace_list_item())
+                    .bg(ThemeManager::surface())
                     .add_modifier(TextModifiers::BOLD),
             )
             .highlight_symbol("▶ ");

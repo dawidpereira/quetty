@@ -16,6 +16,7 @@ pub enum ComponentId {
     MessageDetails,
     QueuePicker,
     NamespacePicker,
+    ThemePicker,
     GlobalKeyWatcher,
     ErrorPopup,
     SuccessPopup,
@@ -28,14 +29,16 @@ pub enum ComponentId {
 pub enum Msg {
     AppClose,
     ForceRedraw,
-    Submit(Vec<String>),
+
     MessageActivity(MessageActivityMsg),
     QueueActivity(QueueActivityMsg),
     NamespaceActivity(NamespaceActivityMsg),
+    ThemeActivity(ThemeActivityMsg),
     LoadingActivity(LoadingActivityMsg),
     PopupActivity(PopupActivityMsg),
     Error(AppError),
     ToggleHelpScreen,
+    ToggleThemePicker,
 }
 
 #[derive(Debug, PartialEq)]
@@ -43,6 +46,12 @@ pub enum NamespaceActivityMsg {
     NamespaceSelected,
     NamespaceUnselected,
     NamespacesLoaded(Vec<String>),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ThemeActivityMsg {
+    ThemeSelected(String, String), // theme_name, flavor_name
+    ThemePickerClosed,
 }
 
 #[derive(Debug, PartialEq)]
