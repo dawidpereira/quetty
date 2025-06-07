@@ -9,7 +9,7 @@ use server::bulk_operations::MessageIdentifier;
 use server::model::{MessageModel, MessageState};
 use tui_realm_stdlib::Table;
 use tuirealm::Frame;
-use tuirealm::command::{Cmd, CmdResult, Direction};
+use tuirealm::command::{Cmd, CmdResult};
 use tuirealm::event::{Key, KeyEvent, KeyModifiers};
 use tuirealm::props::{Alignment, BorderType, Borders, Color, TableBuilder, TextSpan};
 use tuirealm::ratatui::layout::Rect;
@@ -281,6 +281,73 @@ impl Messages {
         let padding = width.saturating_sub(count_str.len());
         format!("{}{}", " ".repeat(padding), count_str)
     }
+
+    /// Get the current selection index
+    fn get_current_index(&self) -> usize {
+        match self.component.state() {
+            tuirealm::State::One(tuirealm::StateValue::Usize(index)) => index,
+            _ => 0,
+        }
+    }
+
+    /// Get the number of messages currently available
+    fn get_message_count(&self) -> usize {
+        self.messages.as_ref().map_or(0, |msgs| msgs.len())
+    }
+
+    /// Move selection down with bounds checking
+    fn move_down(&mut self) {
+        let current = self.get_current_index();
+        let max_index = self.get_message_count().saturating_sub(1);
+
+        if current < max_index {
+            self.component.perform(tuirealm::command::Cmd::Move(
+                tuirealm::command::Direction::Down,
+            ));
+        }
+    }
+
+    /// Move selection up with bounds checking
+    fn move_up(&mut self) {
+        let current = self.get_current_index();
+        if current > 0 {
+            self.component.perform(tuirealm::command::Cmd::Move(
+                tuirealm::command::Direction::Up,
+            ));
+        }
+    }
+
+    /// Page down with bounds checking
+    fn page_down(&mut self) {
+        let current = self.get_current_index();
+        let max_index = self.get_message_count().saturating_sub(1);
+
+        if current < max_index {
+            self.component.perform(tuirealm::command::Cmd::Scroll(
+                tuirealm::command::Direction::Down,
+            ));
+            // Ensure we don't go beyond the last item
+            let new_index = self.get_current_index();
+            if new_index > max_index {
+                // If we've gone too far, move back to the last valid index
+                while self.get_current_index() > max_index {
+                    self.component.perform(tuirealm::command::Cmd::Move(
+                        tuirealm::command::Direction::Up,
+                    ));
+                }
+            }
+        }
+    }
+
+    /// Page up with bounds checking
+    fn page_up(&mut self) {
+        let current = self.get_current_index();
+        if current > 0 {
+            self.component.perform(tuirealm::command::Cmd::Scroll(
+                tuirealm::command::Direction::Up,
+            ));
+        }
+    }
 }
 
 impl Component<Msg, NoUserEvent> for Messages {
@@ -392,42 +459,42 @@ impl Component<Msg, NoUserEvent> for Messages {
                 code: Key::Down,
                 modifiers: KeyModifiers::NONE,
             }) => {
-                self.component.perform(Cmd::Move(Direction::Down));
+                self.move_down();
                 CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
             }
             Event::Keyboard(KeyEvent {
                 code: Key::Char(c),
                 modifiers: KeyModifiers::NONE,
             }) if c == config::CONFIG.keys().down() => {
-                self.component.perform(Cmd::Move(Direction::Down));
+                self.move_down();
                 CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
             }
             Event::Keyboard(KeyEvent {
                 code: Key::Up,
                 modifiers: KeyModifiers::NONE,
             }) => {
-                self.component.perform(Cmd::Move(Direction::Up));
+                self.move_up();
                 CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
             }
             Event::Keyboard(KeyEvent {
                 code: Key::Char(c),
                 modifiers: KeyModifiers::NONE,
             }) if c == config::CONFIG.keys().up() => {
-                self.component.perform(Cmd::Move(Direction::Up));
+                self.move_up();
                 CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
             }
             Event::Keyboard(KeyEvent {
                 code: Key::PageDown,
                 modifiers: KeyModifiers::NONE,
             }) => {
-                self.component.perform(Cmd::Scroll(Direction::Down));
+                self.page_down();
                 CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
             }
             Event::Keyboard(KeyEvent {
                 code: Key::PageUp,
                 modifiers: KeyModifiers::NONE,
             }) => {
-                self.component.perform(Cmd::Scroll(Direction::Up));
+                self.page_up();
                 CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
             }
             Event::Keyboard(KeyEvent {
@@ -746,16 +813,28 @@ impl MockComponent for Messages {
             Attribute::Custom("cursor_position") => {
                 if let AttrValue::Number(position) = value {
                     log::debug!("Received cursor position attribute: {}", position);
-                    // Try to set the cursor position using the Table component's perform method
                     let target_position = position as usize;
+                    let max_index = self.get_message_count().saturating_sub(1);
 
-                    // Move cursor to target position by performing multiple Down movements
-                    // This is a workaround since we can't directly set cursor position
-                    for _ in 0..target_position {
-                        self.component.perform(Cmd::Move(Direction::Down));
+                    // Ensure target position is within bounds
+                    let bounded_position = target_position.min(max_index);
+
+                    // Reset to beginning first
+                    let current = self.get_current_index();
+                    for _ in 0..current {
+                        self.move_up();
                     }
 
-                    log::debug!("Attempted to move cursor to position: {}", target_position);
+                    // Move to target position using bounds-checked movement
+                    for _ in 0..bounded_position {
+                        self.move_down();
+                    }
+
+                    log::debug!(
+                        "Moved cursor to position: {} (requested: {})",
+                        bounded_position,
+                        target_position
+                    );
                 }
             }
             _ => {
