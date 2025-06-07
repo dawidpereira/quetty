@@ -1,0 +1,82 @@
+[metadata]
+name = "Quetty Dark"
+description = "Default dark theme for Quetty queue manager"
+author = "Dawid Pereira"
+
+[colors]
+# Base colors - Dark theme with good contrast
+background = "#1e1e2e"
+surface = "#313244"
+overlay = "#45475a"
+
+# Text colors - High contrast for readability
+text_primary = "#cdd6f4"
+text_secondary = "#bac2de"
+text_muted = "#6c7086"
+text_disabled = "#45475a"
+
+# Queue-specific colors - Distinctive but harmonious
+queue_name = "#89b4fa"
+queue_count = "#94e2d5"
+namespace_name = "#cba6f7"
+
+# Message table colors - Readable with alternating rows
+message_row = "#1e1e2e"
+message_row_selected = "#313244"
+message_row_alternate = "#181825"
+message_id = "#f9e2af"
+message_sequence = "#89dceb"
+message_timestamp = "#f5c2e7"
+message_delivery_count = "#fab387"
+
+# Table structure colors - Clear borders and headers
+table_border = "#6c7086"
+table_border_focused = "#89b4fa"
+table_header = "#313244"
+table_header_text = "#f38ba8"
+
+# Selection and highlighting - Prominent but not overwhelming
+selection_bg = "#585b70"
+selection_fg = "#cdd6f4"
+highlight_symbol = "#f38ba8"
+focus_indicator = "#89b4fa"
+
+# Interactive element colors - Consistent with status meanings
+button_primary = "#89b4fa"
+button_secondary = "#6c7086"
+button_danger = "#f38ba8"
+button_text = "#cdd6f4"
+
+# Status and feedback colors - Universal meanings with good contrast
+status_success = "#a6e3a1"
+status_warning = "#f9e2af"
+status_error = "#f38ba8"
+status_info = "#89b4fa"
+status_loading = "#fab387"
+
+# Popup colors - Attention-grabbing but readable
+popup_background = "#313244"
+popup_border = "#f9e2af"
+popup_title = "#f9e2af"
+popup_text = "#cdd6f4"
+
+# Bulk selection colors - Clear indication of selection state
+bulk_checkbox_checked = "#a6e3a1"
+bulk_checkbox_unchecked = "#6c7086"
+bulk_selection_count = "#89dceb"
+
+# Dead letter queue colors - Warning indication
+dlq_indicator = "#fab387"
+dlq_queue_name = "#f9e2af"
+
+# Navigation and pagination colors - Helpful hints
+pagination_info = "#bac2de"
+navigation_hint = "#94e2d5"
+navigation_active = "#89b4fa"
+navigation_inactive = "#6c7086"
+
+# Help and shortcuts colors - Educational content
+shortcut_key = "#a6e3a1"
+shortcut_description = "#bac2de"
+help_section_title = "#cba6f7"
+

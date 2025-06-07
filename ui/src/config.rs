@@ -1,3 +1,4 @@
+use crate::theme::types::ThemeConfig;
 use config::{Config, Environment, File};
 use lazy_static::lazy_static;
 use serde::Deserialize;
@@ -41,6 +42,7 @@ pub struct AppConfig {
     servicebus: ServicebusConfig,
     azure_ad: AzureAdConfig,
     logging: LoggingConfig,
+    theme: Option<ThemeConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -148,6 +150,9 @@ impl AppConfig {
     }
     pub fn logging(&self) -> &LoggingConfig {
         &self.logging
+    }
+    pub fn theme(&self) -> ThemeConfig {
+        self.theme.clone().unwrap_or_default()
     }
 }
 

@@ -11,6 +11,7 @@ mod app;
 mod components;
 mod config;
 mod logger;
+mod theme;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn StdError>> {
@@ -20,6 +21,14 @@ async fn main() -> Result<(), Box<dyn StdError>> {
     }
 
     info!("Starting Quetty application");
+
+    // Initialize global theme manager
+    use crate::theme::ThemeManager;
+    let theme_config = config::CONFIG.theme();
+    if let Err(e) = ThemeManager::init_global(&theme_config) {
+        log::error!("Failed to initialize theme manager: {}", e);
+        return Err(Box::new(e) as Box<dyn StdError>);
+    }
 
     // Setup model
     let mut model = Model::new().await.expect("Failed to initialize model");
@@ -39,7 +48,9 @@ async fn main() -> Result<(), Box<dyn StdError>> {
             Err(err) => {
                 error!("Application tick error: {}", err);
                 // Show error in popup
-                if let Err(e) = model.mount_error_popup(&AppError::Component(format!("Application error: {}", err))) {
+                if let Err(e) = model
+                    .mount_error_popup(&AppError::Component(format!("Application error: {}", err)))
+                {
                     error!("Failed to mount error popup: {}", e);
                     // Fallback to simpler error handling
                     assert!(
