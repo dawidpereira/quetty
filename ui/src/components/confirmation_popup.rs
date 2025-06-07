@@ -28,7 +28,7 @@ impl ConfirmationPopup {
             component: Paragraph::default()
                 .borders(
                     Borders::default()
-                        .color(theme.popup_border())
+                        .color(theme.primary_accent())
                         .modifiers(BorderType::Rounded),
                 )
                 .title(format!(" {} ", title), Alignment::Center)
@@ -50,7 +50,7 @@ impl MockComponent for ConfirmationPopup {
         let block = Block::default()
             .borders(tuirealm::ratatui::widgets::Borders::ALL)
             .border_type(tuirealm::ratatui::widgets::BorderType::Rounded)
-            .border_style(tuirealm::ratatui::style::Style::default().fg(theme.popup_border()))
+            .border_style(tuirealm::ratatui::style::Style::default().fg(theme.primary_accent()))
             .title(format!(" {} ", self.title))
             .title_alignment(tuirealm::ratatui::layout::Alignment::Center);
 

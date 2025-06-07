@@ -1,13 +1,13 @@
+use crate::components::common::Msg;
+use crate::config::CONFIG;
+use crate::theme::ThemeManager;
 use std::time::{Duration, Instant};
 use tui_realm_stdlib::Label;
 use tuirealm::{
     Component, Event, MockComponent,
     event::NoUserEvent,
-    props::{Alignment, AttrValue, Attribute, Color},
+    props::{Alignment, AttrValue, Attribute},
 };
-
-use crate::components::common::Msg;
-use crate::config::CONFIG;
 
 // Simple animation frames for loading indicator
 const SPINNER_FRAMES: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
@@ -22,6 +22,7 @@ pub struct LoadingIndicator {
 
 impl LoadingIndicator {
     pub fn new(message: &str, _indeterminate: bool) -> Self {
+        let theme = ThemeManager::global();
         let mut component = Label::default();
 
         // Set the initial text with animation frame
@@ -29,7 +30,10 @@ impl LoadingIndicator {
         component.attr(Attribute::Text, AttrValue::String(display_text));
 
         // Set text color
-        component.attr(Attribute::Foreground, AttrValue::Color(Color::LightBlue));
+        component.attr(
+            Attribute::Foreground,
+            AttrValue::Color(theme.status_loading()),
+        );
 
         // Set text alignment to center
         component.attr(
@@ -62,8 +66,6 @@ impl LoadingIndicator {
             let display_text = format!("{} {}", SPINNER_FRAMES[self.frame_index], self.message);
             self.component
                 .attr(Attribute::Text, AttrValue::String(display_text));
-
-
         }
     }
 }

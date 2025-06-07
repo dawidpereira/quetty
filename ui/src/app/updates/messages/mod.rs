@@ -9,7 +9,7 @@ pub use pagination::MessagePaginationState;
 use server::bulk_operations::MessageIdentifier;
 
 use crate::app::model::{AppState, Model};
-use crate::components::common::{MessageActivityMsg, Msg};
+use crate::components::common::{ComponentId, MessageActivityMsg, Msg};
 use crate::config::CONFIG;
 use crate::error::AppError;
 use server::consumer::Consumer;
@@ -93,28 +93,71 @@ where
 
     // Message state management methods
     fn handle_edit_message(&mut self, index: usize) -> Option<Msg> {
+        // Remount messages with unfocused state (white border)
+        if let Err(e) = self.remount_messages_with_focus(false) {
+            return Some(Msg::Error(e));
+        }
+
+        self.app_state = AppState::MessageDetails;
+
+        // Set focus to message details component BEFORE remounting
+        if let Err(e) = self.app.active(&ComponentId::MessageDetails) {
+            log::error!("Failed to activate message details: {}", e);
+        }
+
+        // Remount message details - will automatically detect focus and use teal border
         if let Err(e) = self.remount_message_details(index) {
             return Some(Msg::Error(e));
         }
-        self.app_state = AppState::MessageDetails;
+
         Some(Msg::ForceRedraw)
     }
 
     fn handle_cancel_edit_message(&mut self) -> Option<Msg> {
+        // Remount messages with focused state (teal border)
+        if let Err(e) = self.remount_messages_with_focus(true) {
+            return Some(Msg::Error(e));
+        }
+
         self.app_state = AppState::MessagePicker;
+
+        // Set focus to messages component BEFORE remounting message details
+        if let Err(e) = self.app.active(&ComponentId::Messages) {
+            log::error!("Failed to activate messages: {}", e);
+        }
+
+        // Remount message details - will automatically detect focus and use white border
+        if let Err(e) = self.remount_message_details(0) {
+            return Some(Msg::Error(e));
+        }
+
         None
     }
 
     fn handle_messages_loaded(&mut self, messages: Vec<MessageModel>) -> Option<Msg> {
         self.queue_state.messages = Some(messages);
-        if let Err(e) = self.remount_messages() {
+
+        // First remount messages with focus to ensure border color is correct
+        if let Err(e) = self.remount_messages_with_focus(true) {
             return Some(Msg::Error(e));
         }
+
+        self.app_state = AppState::MessagePicker;
+
+        // Set focus to messages component BEFORE remounting message details
+        if let Err(e) = self.app.active(&ComponentId::Messages) {
+            log::error!("Failed to activate messages: {}", e);
+        }
+
+        // Remount message details - will automatically detect focus and use white border
         if let Err(e) = self.remount_message_details(0) {
             return Some(Msg::Error(e));
         }
-        self.app_state = AppState::MessagePicker;
-        None
+
+        // Force redraw to ensure focus state is properly reflected
+        self.redraw = true;
+
+        Some(Msg::ForceRedraw)
     }
 
     fn handle_consumer_created(&mut self, consumer: Consumer) -> Option<Msg> {
@@ -173,6 +216,8 @@ where
             .all_loaded_messages
             .is_empty()
         {
+            // Messages component should be active by default for initial loads
+            // This will make message details use white border
             if let Err(e) = self.remount_message_details(0) {
                 return Some(Msg::Error(e));
             }

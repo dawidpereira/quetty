@@ -4,6 +4,7 @@ use crate::components::common::{
 };
 use crate::config;
 use crate::error::{AppError, AppResult};
+use crate::theme::ThemeManager;
 use server::bulk_operations::MessageIdentifier;
 use server::model::MessageModel;
 use tui_realm_stdlib::Table;
@@ -12,6 +13,8 @@ use tuirealm::command::{Cmd, CmdResult, Direction};
 use tuirealm::event::{Key, KeyEvent, KeyModifiers};
 use tuirealm::props::{Alignment, BorderType, Borders, Color, TableBuilder, TextSpan};
 use tuirealm::ratatui::layout::Rect;
+use tuirealm::ratatui::style::Style;
+use tuirealm::ratatui::widgets::Paragraph;
 use tuirealm::terminal::TerminalAdapter;
 use tuirealm::{
     AttrValue, Attribute, Component, Event, MockComponent, NoUserEvent, State, StateValue,
@@ -34,6 +37,14 @@ pub struct PaginationInfo {
 
 pub struct Messages {
     component: Table,
+    // Store data for direct rendering
+    messages: Option<Vec<MessageModel>>,
+    pagination_info: Option<PaginationInfo>,
+    selected_messages: Vec<MessageIdentifier>,
+    title: String,
+    headers: Vec<String>,
+    widths: Vec<u16>,
+    is_focused: bool, // Track focus state for border styling
 }
 
 const CMD_RESULT_MESSAGE_SELECTED: &str = "MessageSelected";
@@ -57,64 +68,70 @@ impl Messages {
         pagination_info: Option<PaginationInfo>,
         selected_messages: Vec<MessageIdentifier>,
     ) -> Self {
-        let (title, _) = if let Some(info) = &pagination_info {
+        Self::new_with_pagination_selections_and_focus(
+            messages,
+            pagination_info,
+            selected_messages,
+            false,
+        )
+    }
+
+    pub fn new_with_pagination_selections_and_focus(
+        messages: Option<&Vec<MessageModel>>,
+        pagination_info: Option<PaginationInfo>,
+        selected_messages: Vec<MessageIdentifier>,
+        is_focused: bool,
+    ) -> Self {
+        // Simplified title - just show queue info, no pagination details
+        let title = if let Some(info) = &pagination_info {
             let queue_display = Self::format_queue_display(info);
-            let bulk_info = Self::format_bulk_info(info);
-            let title = if info.total_messages_loaded == 0 {
-                format!(" {} - No messages available ", queue_display)
-            } else {
-                format!(
-                    " {} - Page {}/{} • {} total • {} on page {} {} ",
-                    queue_display,
-                    info.current_page + 1, // Display as 1-based
-                    info.total_pages_loaded.max(1),
-                    info.total_messages_loaded,
-                    info.current_page_size,
-                    Self::format_navigation_hints(info),
-                    bulk_info
-                )
-            };
-            (title, Vec::<MessageIdentifier>::new())
+            format!(" {} ", queue_display)
         } else {
-            (" Messages ".to_string(), Vec::<MessageIdentifier>::new())
+            " Messages ".to_string()
         };
 
         let (headers, widths) = if pagination_info.as_ref().is_some_and(|info| info.bulk_mode) {
-            // In bulk mode, add checkbox column with ASCII-style checkboxes
+            // In bulk mode, add checkbox column with circular checkboxes
             (
                 vec![
-                    "[x]",
-                    "Sequence",
-                    "Message ID",
-                    "Enqueued At",
-                    "Delivery Count",
+                    "●○".to_string(),
+                    "Sequence".to_string(),
+                    "Message ID".to_string(),
+                    "Enqueued At".to_string(),
+                    "Delivery Count".to_string(),
                 ],
                 vec![5, 9, 28, 24, 15],
             )
         } else {
             (
-                vec!["Sequence", "Message ID", "Enqueued At", "Delivery Count"],
+                vec![
+                    "Sequence".to_string(),
+                    "Message ID".to_string(),
+                    "Enqueued At".to_string(),
+                    "Delivery Count".to_string(),
+                ],
                 vec![10, 30, 25, 16],
             )
         };
 
+        let theme = ThemeManager::global();
         let component = {
             Table::default()
                 .borders(
                     Borders::default()
                         .modifiers(BorderType::Rounded)
-                        .color(Color::Green),
+                        .color(theme.primary_accent()),
                 )
                 .background(Color::Reset)
-                .foreground(Color::Green)
+                .foreground(theme.text_primary())
                 .title(&title, Alignment::Center)
                 .scroll(true)
-                .highlighted_color(Color::Yellow)
-                .highlighted_str(">")
+                .highlighted_color(theme.selection_bg())
+                .highlighted_str("► ")
                 .rewind(false)
                 .step(4)
                 .row_height(1)
-                .headers(&headers)
+                .headers(&headers.iter().map(|s| s.as_str()).collect::<Vec<_>>())
                 .column_spacing(2)
                 .widths(&widths)
                 .table(Self::build_table_from_messages(
@@ -124,25 +141,33 @@ impl Messages {
                 ))
         };
 
-        Self { component }
+        Self {
+            component,
+            messages: messages.cloned(),
+            pagination_info,
+            selected_messages,
+            title,
+            headers,
+            widths,
+            is_focused,
+        }
     }
 
     fn format_queue_display(info: &PaginationInfo) -> String {
         let queue_name = info.queue_name.as_deref().unwrap_or("Unknown Queue");
         match info.queue_type {
-            QueueType::Main => format!("Messages ({}) [Main - d→DLQ]", queue_name),
-            QueueType::DeadLetter => format!("Dead Letter Queue ({}) [DLQ - d→Main]", queue_name),
+            QueueType::Main => format!("📬 Messages ({}) [Main → d:DLQ]", queue_name),
+            QueueType::DeadLetter => {
+                format!("💀 Dead Letter Queue ({}) [DLQ → d:Main]", queue_name)
+            }
         }
     }
 
     fn format_bulk_info(info: &PaginationInfo) -> String {
         if info.bulk_mode && info.selected_count > 0 {
-            format!(
-                "• {} selected [Space=toggle, Ctrl+A=page, Ctrl+Shift+A=all, Esc=clear]",
-                info.selected_count
-            )
+            format!("• {} selected", info.selected_count)
         } else if info.bulk_mode {
-            "• Bulk mode [Space=select, Ctrl+A=page, Ctrl+Shift+A=all, Esc=exit]".to_string()
+            "• Bulk mode".to_string()
         } else {
             "".to_string()
         }
@@ -165,6 +190,25 @@ impl Messages {
         }
     }
 
+    fn format_pagination_status(info: &PaginationInfo) -> String {
+        let bulk_info = Self::format_bulk_info(info);
+        let navigation_hints = Self::format_navigation_hints(info);
+
+        if info.total_messages_loaded == 0 {
+            format!("No messages available {}", bulk_info)
+        } else {
+            format!(
+                "Page {}/{} • {} total • {} on page {} {}",
+                info.current_page + 1, // Display as 1-based
+                info.total_pages_loaded.max(1),
+                info.total_messages_loaded,
+                info.current_page_size,
+                navigation_hints,
+                bulk_info
+            )
+        }
+    }
+
     fn build_table_from_messages(
         messages: Option<&Vec<MessageModel>>,
         pagination_info: Option<&PaginationInfo>,
@@ -176,14 +220,14 @@ impl Messages {
 
             for msg in messages {
                 if bulk_mode {
-                    // Add checkbox column in bulk mode with ASCII-style checkboxes
+                    // Add checkbox column in bulk mode with themed checkboxes
                     let message_id = MessageIdentifier::from_message(msg);
-                    let checkbox = if selected_messages.contains(&message_id) {
-                        "[x]" // Checked box - ASCII style
+                    let checkbox_text = if selected_messages.contains(&message_id) {
+                        "● " // Filled circle for checked
                     } else {
-                        "[ ]" // Unchecked box - ASCII style
+                        "○ " // Empty circle for unchecked
                     };
-                    builder.add_col(TextSpan::from(checkbox));
+                    builder.add_col(TextSpan::from(checkbox_text));
                 }
 
                 builder
@@ -200,7 +244,6 @@ impl Messages {
 
     /// Create a message identifier from index - this will send a message to get the actual message data
     fn create_toggle_message_selection(index: usize) -> Msg {
-        // Send a special message that includes the index, so the handler can look up the actual message
         Msg::MessageActivity(MessageActivityMsg::ToggleMessageSelectionByIndex(index))
     }
 }
@@ -495,7 +538,157 @@ where
 
 impl MockComponent for Messages {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        self.component.view(frame, area)
+        let theme = ThemeManager::global();
+
+        // Get the current selection from the internal component
+        let table_state = self.component.state();
+        let selected_index = match table_state {
+            tuirealm::State::One(StateValue::Usize(index)) => index,
+            _ => 0,
+        };
+
+        // Build the table rows for ratatui
+        let mut rows = Vec::new();
+        if let Some(ref messages) = self.messages {
+            let bulk_mode = self
+                .pagination_info
+                .as_ref()
+                .is_some_and(|info| info.bulk_mode);
+
+            for (i, msg) in messages.iter().enumerate() {
+                let mut cells = Vec::new();
+
+                if bulk_mode {
+                    // Add checkbox column in bulk mode
+                    let message_id = MessageIdentifier::from_message(msg);
+                    let checkbox_text = if self.selected_messages.contains(&message_id) {
+                        "●"
+                    } else {
+                        "○"
+                    };
+                    cells.push(tuirealm::ratatui::widgets::Cell::from(checkbox_text));
+                }
+
+                // Add the message data cells with proper theming
+                cells.push(
+                    tuirealm::ratatui::widgets::Cell::from(msg.sequence.to_string()).style(
+                        tuirealm::ratatui::style::Style::default().fg(theme.message_sequence()),
+                    ),
+                );
+                cells.push(
+                    tuirealm::ratatui::widgets::Cell::from(msg.id.to_string())
+                        .style(tuirealm::ratatui::style::Style::default().fg(theme.message_id())),
+                );
+                cells.push(
+                    tuirealm::ratatui::widgets::Cell::from(msg.enqueued_at.to_string()).style(
+                        tuirealm::ratatui::style::Style::default().fg(theme.message_timestamp()),
+                    ),
+                );
+                cells.push(
+                    tuirealm::ratatui::widgets::Cell::from(msg.delivery_count.to_string()).style(
+                        tuirealm::ratatui::style::Style::default()
+                            .fg(theme.message_delivery_count()),
+                    ),
+                );
+
+                let mut row = tuirealm::ratatui::widgets::Row::new(cells);
+
+                // Apply selection highlighting
+                if i == selected_index {
+                    row = row.style(
+                        tuirealm::ratatui::style::Style::default()
+                            .bg(theme.selection_bg())
+                            .fg(theme.selection_fg()),
+                    );
+                }
+
+                rows.push(row);
+            }
+        }
+
+        // Create the table headers with proper theming
+        let header_cells: Vec<tuirealm::ratatui::widgets::Cell> = self
+            .headers
+            .iter()
+            .map(|h| {
+                tuirealm::ratatui::widgets::Cell::from(h.as_str()).style(
+                    tuirealm::ratatui::style::Style::default()
+                        .fg(theme.header_accent()) // Always yellow to match line numbers
+                        .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
+                )
+            })
+            .collect();
+
+        let header = tuirealm::ratatui::widgets::Row::new(header_cells).height(1);
+
+        // Create the table widget with proper theming
+        let table = tuirealm::ratatui::widgets::Table::new(
+            rows,
+            &self
+                .widths
+                .iter()
+                .map(|&w| tuirealm::ratatui::layout::Constraint::Length(w))
+                .collect::<Vec<_>>(),
+        )
+        .header(header)
+        .block(
+            tuirealm::ratatui::widgets::Block::default()
+                .borders(tuirealm::ratatui::widgets::Borders::ALL)
+                .border_type(tuirealm::ratatui::widgets::BorderType::Rounded)
+                .border_style(
+                    tuirealm::ratatui::style::Style::default().fg(if self.is_focused {
+                        theme.primary_accent() // Teal when focused
+                    } else {
+                        tuirealm::ratatui::style::Color::White // White when not focused
+                    }),
+                )
+                .title(self.title.as_str())
+                .title_alignment(tuirealm::ratatui::layout::Alignment::Center)
+                .title_style(
+                    tuirealm::ratatui::style::Style::default()
+                        .fg(theme.title_accent()) // Use pink to match message details title
+                        .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
+                ),
+        )
+        .column_spacing(2)
+        .row_highlight_style(
+            tuirealm::ratatui::style::Style::default()
+                .bg(theme.selection_bg())
+                .fg(theme.selection_fg())
+                .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
+        )
+        .highlight_symbol("► ");
+
+        // Create table state for selection
+        let mut table_state = tuirealm::ratatui::widgets::TableState::default();
+        table_state.select(Some(selected_index));
+
+        // Render the table
+        frame.render_stateful_widget(table, area, &mut table_state);
+
+        // Create status bar overlay at the bottom with pagination info
+        if let Some(ref info) = self.pagination_info {
+            let status_text = Self::format_pagination_status(info);
+            let status_bar = Paragraph::new(status_text)
+                .style(
+                    Style::default().fg(if self.is_focused {
+                        theme.primary_accent() // Teal text when focused
+                    } else {
+                        tuirealm::ratatui::style::Color::White // White text when not focused
+                    }), // No background - clean and transparent
+                )
+                .alignment(tuirealm::ratatui::layout::Alignment::Center);
+
+            // Position status bar at the exact same height as table bottom border
+            let status_area = Rect {
+                x: area.x,
+                y: area.y + area.height.saturating_sub(1),
+                width: area.width,
+                height: 1,
+            };
+
+            frame.render_widget(status_bar, status_area);
+        }
     }
 
     fn query(&self, attr: Attribute) -> Option<AttrValue> {

@@ -1,5 +1,5 @@
-use crate::app::model::Model;
-use crate::components::common::{MessageActivityMsg, Msg};
+use crate::app::model::{AppState, Model};
+use crate::components::common::{ComponentId, MessageActivityMsg, Msg};
 use crate::config::CONFIG;
 use crate::error::{AppError, AppResult};
 use server::model::MessageModel;
@@ -306,8 +306,31 @@ where
         self.update_pagination_state();
         self.send_pagination_state_update()?;
 
-        // Reset cursor to position 0 when changing pages
-        self.remount_messages_with_cursor_control(false)?;
+        // Check if this is an initial load (when we should focus messages list)
+        let is_initial_load = self.queue_state.message_pagination.current_page == 0
+            && self.queue_state.message_pagination.total_pages_loaded == 1;
+
+        if is_initial_load {
+            // Initial load: remount with focus and set proper app state
+            self.remount_messages_with_focus(true)?;
+            self.app_state = AppState::MessagePicker;
+
+            // Set focus to messages component
+            if let Err(e) = self.app.active(&ComponentId::Messages) {
+                log::error!("Failed to activate messages: {}", e);
+            }
+        } else {
+            // Normal page change: check if messages should remain focused
+            let should_stay_focused = matches!(self.app_state, AppState::MessagePicker);
+
+            if should_stay_focused {
+                // Keep focus when navigating pages (teal border)
+                self.remount_messages_with_focus(true)?;
+            } else {
+                // Reset cursor to position 0 when changing pages (no focus)
+                self.remount_messages_with_cursor_control(false)?;
+            }
+        }
 
         Ok(())
     }

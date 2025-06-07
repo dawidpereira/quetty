@@ -10,81 +10,47 @@ pub struct ThemeMetadata {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThemeColors {
-    // Base colors
-    pub background: String,
-    pub surface: String,
-    pub overlay: String,
-
-    // Text colors
+    // === Core Text Colors ===
     pub text_primary: String,
-    pub text_secondary: String,
     pub text_muted: String,
-    pub text_disabled: String,
 
-    // Queue-specific colors
-    pub queue_name: String,
-    pub queue_count: String,
-    pub namespace_name: String,
+    // === Layout Colors ===
+    pub surface: String,
 
-    // Message table colors
-    pub message_row: String,
-    pub message_row_selected: String,
-    pub message_row_alternate: String,
-    pub message_id: String,
-    pub message_sequence: String,
-    pub message_timestamp: String,
-    pub message_delivery_count: String,
+    // === Accent Colors ===
+    pub primary_accent: String,
+    pub title_accent: String,
+    pub header_accent: String,
 
-    // Table structure colors
-    pub table_border: String,
-    pub table_border_focused: String,
-    pub table_header: String,
-    pub table_header_text: String,
-
-    // Selection and highlighting
+    // === Selection Colors ===
     pub selection_bg: String,
     pub selection_fg: String,
-    pub highlight_symbol: String,
-    pub focus_indicator: String,
 
-    // Interactive element colors
-    pub button_primary: String,
-    pub button_secondary: String,
-    pub button_danger: String,
-    pub button_text: String,
+    // === Message Table Colors ===
+    pub message_sequence: String,
+    pub message_id: String,
+    pub message_timestamp: String,
+    pub message_delivery_count: String,
+    pub queue_count: String,
 
-    // Status and feedback colors
+    // === List Item Colors ===
+    pub namespace_list_item: String,
+
+    // === Status Colors ===
     pub status_success: String,
     pub status_warning: String,
     pub status_error: String,
     pub status_info: String,
     pub status_loading: String,
 
-    // Popup colors
-    pub popup_background: String,
-    pub popup_border: String,
-    pub popup_title: String,
-    pub popup_text: String,
-
-    // Bulk selection colors
-    pub bulk_checkbox_checked: String,
-    pub bulk_checkbox_unchecked: String,
-    pub bulk_selection_count: String,
-
-    // Dead letter queue colors
-    pub dlq_indicator: String,
-    pub dlq_queue_name: String,
-
-    // Navigation and pagination colors
-    pub pagination_info: String,
-    pub navigation_hint: String,
-    pub navigation_active: String,
-    pub navigation_inactive: String,
-
-    // Help and shortcuts colors
+    // === Help System Colors ===
     pub shortcut_key: String,
     pub shortcut_description: String,
     pub help_section_title: String,
+
+    // === Popup System Colors (used by confirmation popup) ===
+    pub popup_background: String,
+    pub popup_text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,171 +1,416 @@
-use server::model::{BodyData, MessageModel};
-use tui_realm_textarea::{
-    TEXTAREA_CMD_NEWLINE, TEXTAREA_CMD_PASTE, TEXTAREA_CMD_REDO, TEXTAREA_CMD_UNDO, TextArea,
-};
-use tuirealm::{
-    Component, MockComponent, NoUserEvent,
-    command::{Cmd, CmdResult, Direction},
-    event::{Event, Key, KeyEvent, KeyModifiers},
-    props::{Alignment, BorderType, Borders, Color, Style, TextModifiers},
-};
-
 use crate::components::common::{MessageActivityMsg, Msg};
+use crate::theme::ThemeManager;
+use server::model::{BodyData, MessageModel};
+use tuirealm::{
+    AttrValue, Attribute, Component, Frame, MockComponent, NoUserEvent, State, StateValue,
+    command::{Cmd, CmdResult},
+    event::{Event, Key, KeyEvent, KeyModifiers},
+    ratatui::{
+        layout::{Alignment, Rect},
+        style::{Color, Modifier, Style},
+        text::{Line, Span},
+        widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+    },
+};
 
-#[derive(MockComponent)]
 pub struct MessageDetails {
-    component: TextArea<'static>,
+    message_content: Vec<String>,
+    scroll_offset: usize,
+    cursor_line: usize,
+    cursor_col: usize,
+    is_focused: bool,
+    visible_lines: usize,
 }
 
-const CMD_CANCEL_EDIT_MESSAGE: &str = "CancelEditMessage";
-
-//TODO: Add search
 impl MessageDetails {
     pub fn new(message: Option<MessageModel>) -> Self {
-        let mut textarea = match message {
+        Self::new_with_focus(message, false)
+    }
+
+    pub fn new_with_focus(message: Option<MessageModel>, is_focused: bool) -> Self {
+        let message_content = Self::format_message_content(message);
+
+        Self {
+            message_content,
+            scroll_offset: 0,
+            cursor_line: 0,
+            cursor_col: 0,
+            is_focused,
+            visible_lines: 0,
+        }
+    }
+
+    /// Format message content based on the message data type
+    fn format_message_content(message: Option<MessageModel>) -> Vec<String> {
+        match message {
             Some(data) => {
                 match &data.body {
                     BodyData::ValidJson(json) => {
                         // If it's valid JSON, show it pretty-printed
                         match serde_json::to_string_pretty(json) {
-                            Ok(json_str) => {
-                                let lines: Vec<String> =
-                                    json_str.lines().map(String::from).collect();
-                                TextArea::new(lines)
-                            }
-                            Err(e) => TextArea::new(vec![format!("JSON formatting error: {}", e)]),
+                            Ok(json_str) => json_str.lines().map(String::from).collect(),
+                            Err(e) => vec![format!("JSON formatting error: {}", e)],
                         }
                     }
                     BodyData::RawString(body_str) => {
                         // Show raw string with line breaks
-                        let lines: Vec<String> = body_str.lines().map(String::from).collect();
-                        TextArea::new(lines)
+                        body_str.lines().map(String::from).collect()
                     }
                 }
             }
-            None => TextArea::new(vec!["No message selected".to_string()]),
+            None => vec!["No message selected".to_string()],
+        }
+    }
+
+    // === Navigation Methods ===
+
+    fn scroll_up(&mut self) {
+        if self.scroll_offset > 0 {
+            self.scroll_offset -= 1;
+        }
+    }
+
+    fn scroll_down(&mut self, visible_lines: usize) {
+        let max_scroll = if self.message_content.len() > visible_lines {
+            self.message_content.len() - visible_lines
+        } else {
+            0
         };
 
-        textarea = textarea
-            .borders(
-                Borders::default()
-                    .color(Color::Green)
-                    .modifiers(BorderType::Rounded),
-            )
-            .title(" Message details ", Alignment::Center)
-            .cursor_style(Style::default().add_modifier(TextModifiers::REVERSED))
-            .cursor_line_style(Style::default())
-            .footer_bar("Press <ESC> to quit", Style::default())
-            .line_number_style(
-                Style::default()
-                    .fg(Color::LightBlue)
-                    .add_modifier(TextModifiers::ITALIC),
-            )
-            .max_histories(64)
-            .scroll_step(4)
-            .status_bar(
-                "Ln {ROW}, Col {COL}",
-                Style::default().add_modifier(TextModifiers::REVERSED),
-            )
-            .tab_length(4);
-
-        Self {
-            component: textarea,
+        if self.scroll_offset < max_scroll {
+            self.scroll_offset += 1;
         }
+    }
+
+    fn move_cursor_up(&mut self) {
+        if self.cursor_line > 0 {
+            // Move cursor up within visible area
+            self.cursor_line -= 1;
+        } else if self.scroll_offset > 0 {
+            // At top of visible area, scroll up
+            self.scroll_offset -= 1;
+            // Keep cursor at the same relative position (top)
+        }
+
+        self.adjust_cursor_column();
+    }
+
+    fn move_cursor_down(&mut self, visible_lines: usize) {
+        let current_absolute_line = self.cursor_line + self.scroll_offset;
+
+        // Check if we can move down in the document
+        if current_absolute_line < self.message_content.len().saturating_sub(1) {
+            // If we're at the bottom of the visible area, scroll down
+            if self.cursor_line >= visible_lines.saturating_sub(1) {
+                self.scroll_offset += 1;
+                // Keep cursor at the same relative position
+            } else {
+                // Move cursor down within visible area
+                self.cursor_line += 1;
+            }
+
+            self.adjust_cursor_column();
+        }
+    }
+
+    fn move_cursor_left(&mut self) {
+        if self.cursor_col > 0 {
+            self.cursor_col -= 1;
+        }
+    }
+
+    fn move_cursor_right(&mut self) {
+        if let Some(line) = self.get_current_line() {
+            if self.cursor_col < line.len() {
+                self.cursor_col += 1;
+            }
+        }
+    }
+
+    /// Adjust cursor column to ensure it's within the current line bounds
+    fn adjust_cursor_column(&mut self) {
+        if let Some(line) = self.get_current_line() {
+            if self.cursor_col > line.len() {
+                self.cursor_col = line.len();
+            }
+        }
+    }
+
+    /// Get the current line content at cursor position
+    fn get_current_line(&self) -> Option<&String> {
+        self.message_content
+            .get(self.cursor_line + self.scroll_offset)
+    }
+
+    // === Rendering Methods ===
+
+    /// Create the block widget with proper styling
+    fn create_block(&self) -> Block {
+        let theme = ThemeManager::global();
+
+        let border_color = if self.is_focused {
+            theme.primary_accent() // Teal when focused
+        } else {
+            Color::White // White when not focused
+        };
+
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(border_color))
+            .title(" 📄 Message Details ")
+            .title_alignment(Alignment::Center)
+            .title_style(
+                Style::default()
+                    .fg(theme.title_accent()) // Use same pink as table headers
+                    .add_modifier(Modifier::BOLD),
+            )
+    }
+
+    /// Create line content with line numbers and cursor highlighting
+    fn create_content_lines(&self, visible_lines: usize) -> Vec<Line> {
+        let theme = ThemeManager::global();
+        let mut lines = Vec::new();
+        let start_line = self.scroll_offset;
+        let end_line = (start_line + visible_lines).min(self.message_content.len());
+
+        for (display_line, line_idx) in (start_line..end_line).enumerate() {
+            if let Some(content) = self.message_content.get(line_idx) {
+                let line = self.create_single_line(content, line_idx, display_line, theme);
+                lines.push(line);
+            }
+        }
+
+        lines
+    }
+
+    /// Create a single line with line number and optional cursor highlighting
+    fn create_single_line<'a>(
+        &self,
+        content: &'a str,
+        line_idx: usize,
+        display_line: usize,
+        theme: &ThemeManager,
+    ) -> Line<'a> {
+        let line_number = line_idx + 1;
+        let line_num_str = format!("{:4} ", line_number);
+
+        let mut spans = vec![Span::styled(
+            line_num_str,
+            Style::default()
+                .fg(theme.header_accent()) // Always yellow to match table headers
+                .add_modifier(Modifier::ITALIC),
+        )];
+
+        // Add cursor highlighting if this is the cursor line and we're focused
+        if display_line == self.cursor_line && self.is_focused {
+            spans.extend(self.create_cursor_highlighted_spans(content, theme));
+        } else {
+            // Normal line without cursor
+            spans.push(Span::styled(
+                content,
+                Style::default().fg(theme.text_primary()),
+            ));
+        }
+
+        Line::from(spans)
+    }
+
+    /// Create spans for a line with cursor highlighting
+    fn create_cursor_highlighted_spans<'a>(
+        &self,
+        content: &'a str,
+        theme: &ThemeManager,
+    ) -> Vec<Span<'a>> {
+        let mut spans = Vec::new();
+
+        // Split the content at cursor position
+        let (before_cursor, at_and_after_cursor) =
+            content.split_at(self.cursor_col.min(content.len()));
+
+        // Add text before cursor
+        if !before_cursor.is_empty() {
+            spans.push(Span::styled(
+                before_cursor,
+                Style::default().fg(theme.text_primary()),
+            ));
+        }
+
+        // Add cursor character with highlighting
+        if let Some(cursor_char) = at_and_after_cursor.chars().next() {
+            spans.push(Span::styled(
+                cursor_char.to_string(),
+                Style::default()
+                    .bg(theme.selection_bg()) // Same as selected message row
+                    .fg(theme.selection_fg())
+                    .add_modifier(Modifier::REVERSED),
+            ));
+
+            // Add remaining text after cursor
+            let after_cursor = &at_and_after_cursor[cursor_char.len_utf8()..];
+            if !after_cursor.is_empty() {
+                spans.push(Span::styled(
+                    after_cursor,
+                    Style::default().fg(theme.text_primary()),
+                ));
+            }
+        } else {
+            // Cursor at end of line - show a space with cursor styling
+            spans.push(Span::styled(
+                " ",
+                Style::default()
+                    .bg(theme.selection_bg())
+                    .fg(theme.selection_fg())
+                    .add_modifier(Modifier::REVERSED),
+            ));
+        }
+
+        spans
+    }
+
+    /// Create the status bar widget
+    fn create_status_bar(&self) -> Paragraph {
+        let theme = ThemeManager::global();
+
+        let status_text = format!(
+            "Ln {}, Col {} | Press <ESC> to quit",
+            self.cursor_line + self.scroll_offset + 1,
+            self.cursor_col + 1
+        );
+
+        Paragraph::new(status_text)
+            .style(
+                Style::default().fg(if self.is_focused {
+                    theme.primary_accent() // Teal text when focused
+                } else {
+                    Color::White // White text when not focused
+                }), // No background - clean and transparent
+            )
+            .alignment(Alignment::Center)
+    }
+
+    /// Calculate the area for the status bar overlay
+    fn calculate_status_area(&self, area: Rect) -> Rect {
+        Rect {
+            x: area.x,
+            y: area.y + area.height.saturating_sub(1),
+            width: area.width,
+            height: 1,
+        }
+    }
+
+    // === Event Handling Methods ===
+
+    /// Handle page navigation events
+    fn handle_page_navigation(&mut self, is_up: bool) {
+        if is_up {
+            for _ in 0..10 {
+                self.scroll_up();
+            }
+        } else {
+            for _ in 0..10 {
+                self.scroll_down(self.visible_lines);
+            }
+        }
+    }
+}
+
+impl MockComponent for MessageDetails {
+    fn view(&mut self, frame: &mut Frame, area: Rect) {
+        // Calculate available area for content (excluding borders)
+        let content_height = area.height.saturating_sub(2); // 2 for borders only
+        let visible_lines = content_height as usize;
+
+        // Store visible_lines for use in keyboard events
+        self.visible_lines = visible_lines;
+
+        // Create and render the main content
+        let content_lines = self.create_content_lines(visible_lines);
+        let block = self.create_block();
+        let paragraph = Paragraph::new(content_lines)
+            .block(block)
+            .wrap(Wrap { trim: false });
+
+        frame.render_widget(paragraph, area);
+
+        // Create and render the status bar overlay
+        let status_bar = self.create_status_bar();
+        let status_area = self.calculate_status_area(area);
+        frame.render_widget(status_bar, status_area);
+    }
+
+    fn query(&self, _attr: Attribute) -> Option<AttrValue> {
+        None
+    }
+
+    fn attr(&mut self, _attr: Attribute, _value: AttrValue) {
+        // No attributes supported
+    }
+
+    fn state(&self) -> State {
+        State::One(StateValue::Usize(self.cursor_line))
+    }
+
+    fn perform(&mut self, _cmd: Cmd) -> CmdResult {
+        CmdResult::None
     }
 }
 
 impl Component<Msg, NoUserEvent> for MessageDetails {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
-        let cmd_result = match ev {
-            // Handle modifiers actions
+        match ev {
             Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::CONTROL,
-            }) => match c {
-                'v' => self.component.perform(Cmd::Custom(TEXTAREA_CMD_PASTE)),
-                'z' => self.component.perform(Cmd::Custom(TEXTAREA_CMD_UNDO)),
-                'y' => self.component.perform(Cmd::Custom(TEXTAREA_CMD_REDO)),
-                'h' => self.component.perform(Cmd::Move(Direction::Left)),
-                'j' => self.component.perform(Cmd::Move(Direction::Down)),
-                'k' => self.component.perform(Cmd::Move(Direction::Up)),
-                'l' => self.component.perform(Cmd::Move(Direction::Right)),
-                _ => CmdResult::None,
-            },
-
-            // Handle submit
-            Event::Keyboard(KeyEvent {
-                code: Key::Enter,
-                modifiers: KeyModifiers::ALT,
-            }) => {
-                match self.component.perform(Cmd::Submit) {
-                    CmdResult::Submit(state) => {
-                        // Safely convert state to vec without unwrap
-                        match state {
-                            tuirealm::State::Vec(items) => {
-                                // Safely convert each item to string without unwrap
-                                let mut lines = Vec::new();
-                                for item in items {
-                                    match item {
-                                        tuirealm::StateValue::String(s) => lines.push(s),
-                                        _ => {
-                                            // For non-string values, provide a fallback
-                                            log::warn!(
-                                                "Unexpected state value type in message details"
-                                            );
-                                            lines.push(String::from("[Non-string content]"));
-                                        }
-                                    }
-                                }
-                                return Some(Msg::Submit(lines));
-                            }
-                            _ => {
-                                log::warn!("Unexpected state type in message details");
-                                return None;
-                            }
-                        }
-                    }
-                    _ => return None,
-                }
-            }
-
-            // Handle keys with no modifiers
-            Event::Keyboard(KeyEvent {
-                code,
+                code: Key::Esc,
                 modifiers: KeyModifiers::NONE,
-            }) => match code {
-                Key::PageDown => self.component.perform(Cmd::Scroll(Direction::Down)),
-                Key::PageUp => self.component.perform(Cmd::Scroll(Direction::Up)),
-                Key::Left => self.component.perform(Cmd::Move(Direction::Left)),
-                Key::Down => self.component.perform(Cmd::Move(Direction::Down)),
-                Key::Up => self.component.perform(Cmd::Move(Direction::Up)),
-                Key::Right => self.component.perform(Cmd::Move(Direction::Right)),
-                Key::Backspace => self.component.perform(Cmd::Delete),
-                Key::Enter => self.component.perform(Cmd::Custom(TEXTAREA_CMD_NEWLINE)),
-                Key::Tab => self.component.perform(Cmd::Type('\t')),
-                Key::Esc => CmdResult::Custom(CMD_CANCEL_EDIT_MESSAGE, self.state()),
-
-                // Handle typing
-                Key::Char(ch) => self.component.perform(Cmd::Type(ch)),
-
-                _ => CmdResult::None,
-            },
-
-            Event::Keyboard(KeyEvent { code, modifiers: _ }) => {
-                if let Key::Char(ch) = code {
-                    self.component.perform(Cmd::Type(ch))
-                } else {
-                    CmdResult::None
-                }
+            }) => {
+                return Some(Msg::MessageActivity(MessageActivityMsg::CancelEditMessage));
             }
 
-            _ => CmdResult::None,
-        };
-
-        match cmd_result {
-            CmdResult::Custom(CMD_CANCEL_EDIT_MESSAGE, _) => {
-                Some(Msg::MessageActivity(MessageActivityMsg::CancelEditMessage))
+            Event::Keyboard(KeyEvent {
+                code: Key::Up,
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                self.move_cursor_up();
             }
-            _ => Some(Msg::ForceRedraw),
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Down,
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                self.move_cursor_down(self.visible_lines);
+            }
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Left,
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                self.move_cursor_left();
+            }
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Right,
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                self.move_cursor_right();
+            }
+
+            Event::Keyboard(KeyEvent {
+                code: Key::PageUp,
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                self.handle_page_navigation(true);
+            }
+
+            Event::Keyboard(KeyEvent {
+                code: Key::PageDown,
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                self.handle_page_navigation(false);
+            }
+
+            _ => {}
         }
+
+        Some(Msg::ForceRedraw)
     }
 }
