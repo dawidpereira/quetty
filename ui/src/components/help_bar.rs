@@ -89,14 +89,22 @@ impl HelpBar {
 
                 shortcuts
             }
-            ComponentId::MessageDetails => vec![
-                ("[←/→]".to_string(), true),
-                (" Move ".to_string(), false),
-                ("[↑/↓]".to_string(), true),
-                (" Scroll ".to_string(), false),
-                ("[Esc]".to_string(), true),
-                (" Back ".to_string(), false),
-            ],
+            ComponentId::MessageDetails => {
+                let keys = config::CONFIG.keys();
+                vec![
+                    ("[←/→]".to_string(), true),
+                    (" Move ".to_string(), false),
+                    ("[↑/↓]".to_string(), true),
+                    (" Scroll ".to_string(), false),
+                    (
+                        format!("[{}/Ctrl+{}]", keys.yank_message(), keys.copy_message()),
+                        true,
+                    ),
+                    (" Copy ".to_string(), false),
+                    ("[Esc]".to_string(), true),
+                    (" Back ".to_string(), false),
+                ]
+            }
             ComponentId::QueuePicker => {
                 let keys = config::CONFIG.keys();
                 vec![

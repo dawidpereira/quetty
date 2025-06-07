@@ -494,6 +494,22 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[{}] [Ctrl+{}]", keys.yank_message(), keys.copy_message()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(ThemeManager::shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Copy message content to clipboard",
+                    Style::default().fg(ThemeManager::shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
                     format!("  {:width$}", "[Esc]", width = padding_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())

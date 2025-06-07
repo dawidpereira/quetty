@@ -101,6 +101,10 @@ pub struct KeyBindingsConfig {
     key_delete_message: Option<char>,
     key_alt_delete_message: Option<char>,
 
+    // Message details actions
+    key_copy_message: Option<char>,
+    key_yank_message: Option<char>,
+
     // Bulk selection keys
     key_toggle_selection: Option<char>,
     key_select_all_page: Option<char>,
@@ -245,6 +249,14 @@ impl KeyBindingsConfig {
     }
     pub fn alt_delete_message(&self) -> char {
         self.key_alt_delete_message.unwrap_or('X')
+    }
+
+    // Message details actions
+    pub fn copy_message(&self) -> char {
+        self.key_copy_message.unwrap_or('c')
+    }
+    pub fn yank_message(&self) -> char {
+        self.key_yank_message.unwrap_or('y')
     }
 
     // Bulk selection keys
