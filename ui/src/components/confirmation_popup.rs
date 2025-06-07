@@ -1,10 +1,11 @@
 use crate::components::common::{Msg, PopupActivityMsg};
 use crate::config;
+use crate::theme::ThemeManager;
 use tui_realm_stdlib::Paragraph;
 use tuirealm::{
     Component, Event, MockComponent, NoUserEvent,
     event::{Key, KeyEvent},
-    props::{Alignment, BorderType, Borders, Color, TextModifiers, TextSpan},
+    props::{Alignment, BorderType, Borders, TextModifiers, TextSpan},
     ratatui::{
         Frame,
         layout::Rect,
@@ -21,16 +22,17 @@ pub struct ConfirmationPopup {
 
 impl ConfirmationPopup {
     pub fn new(title: &str, message: &str) -> Self {
-        // Store the title and message for custom rendering
+        let theme = ThemeManager::global();
+
         Self {
             component: Paragraph::default()
                 .borders(
                     Borders::default()
-                        .color(Color::Yellow)
+                        .color(theme.popup_border())
                         .modifiers(BorderType::Rounded),
                 )
                 .title(format!(" {} ", title), Alignment::Center)
-                .foreground(Color::Yellow)
+                .foreground(theme.popup_text())
                 .modifiers(TextModifiers::BOLD)
                 .alignment(Alignment::Center)
                 .text(&[TextSpan::from(message)]),
@@ -42,14 +44,13 @@ impl ConfirmationPopup {
 
 impl MockComponent for ConfirmationPopup {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
+        let theme = ThemeManager::global();
+
         // Create the border block with dynamic title
         let block = Block::default()
             .borders(tuirealm::ratatui::widgets::Borders::ALL)
             .border_type(tuirealm::ratatui::widgets::BorderType::Rounded)
-            .border_style(
-                tuirealm::ratatui::style::Style::default()
-                    .fg(tuirealm::ratatui::style::Color::Yellow),
-            )
+            .border_style(tuirealm::ratatui::style::Style::default().fg(theme.popup_border()))
             .title(format!(" {} ", self.title))
             .title_alignment(tuirealm::ratatui::layout::Alignment::Center);
 
@@ -67,14 +68,14 @@ impl MockComponent for ConfirmationPopup {
             Span::styled(
                 format!("[{}] Yes", keys.confirm_yes().to_uppercase()),
                 tuirealm::ratatui::style::Style::default()
-                    .fg(tuirealm::ratatui::style::Color::Green)
+                    .fg(theme.status_success())
                     .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
             ),
             Span::raw("    "),
             Span::styled(
                 format!("[{}] No", keys.confirm_no().to_uppercase()),
                 tuirealm::ratatui::style::Style::default()
-                    .fg(tuirealm::ratatui::style::Color::Red)
+                    .fg(theme.status_error())
                     .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
             ),
         ]));
@@ -88,7 +89,7 @@ impl MockComponent for ConfirmationPopup {
             .wrap(tuirealm::ratatui::widgets::Wrap { trim: true })
             .style(
                 tuirealm::ratatui::style::Style::default()
-                    .fg(tuirealm::ratatui::style::Color::Yellow)
+                    .fg(theme.popup_text())
                     .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
             );
 

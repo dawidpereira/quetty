@@ -14,6 +14,9 @@ pub enum AppError {
 
     #[error("State error: {0}")]
     State(String),
+
+    #[error("Configuration error: {0}")]
+    Config(String),
 }
 
 impl From<io::Error> for AppError {
@@ -29,6 +32,7 @@ impl PartialEq for AppError {
             (Self::ServiceBus(a), Self::ServiceBus(b)) => a == b,
             (Self::Component(a), Self::Component(b)) => a == b,
             (Self::State(a), Self::State(b)) => a == b,
+            (Self::Config(a), Self::Config(b)) => a == b,
             _ => false,
         }
     }
@@ -43,6 +47,7 @@ pub fn handle_error(error: AppError) {
         AppError::ServiceBus(msg) => log::error!("Service Bus Error: {}", msg),
         AppError::Component(msg) => log::warn!("Component Error: {}", msg),
         AppError::State(msg) => log::warn!("State Error: {}", msg),
+        AppError::Config(msg) => log::warn!("Configuration Error: {}", msg),
     }
 
     // Note: This function is used as a fallback when the UI error popup system fails.
