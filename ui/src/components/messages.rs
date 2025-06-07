@@ -480,25 +480,60 @@ impl Component<Msg, NoUserEvent> for Messages {
                 return Some(Msg::MessageActivity(MessageActivityMsg::ClearAllSelections));
             }
 
-            // Enhanced existing operations for bulk mode
+            // Enhanced existing operations for bulk mode - context-aware send/resend
             Event::Keyboard(KeyEvent {
                 code: Key::Char(c),
                 modifiers: KeyModifiers::CONTROL,
             }) if c == config::CONFIG.keys().send_to_dlq() => {
-                // Check if we should do bulk operation or single message operation
-                // We'll send the bulk message and let the handler decide
-                return Some(Msg::MessageActivity(
-                    MessageActivityMsg::BulkSendSelectedToDLQ,
-                ));
+                // Context-aware operation based on current queue type
+                if let Some(pagination_info) = &self.pagination_info {
+                    match pagination_info.queue_type {
+                        QueueType::Main => {
+                            // In main queue: send to DLQ
+                            return Some(Msg::MessageActivity(
+                                MessageActivityMsg::BulkSendSelectedToDLQ,
+                            ));
+                        }
+                        QueueType::DeadLetter => {
+                            // In DLQ: resend to main queue (keep in DLQ)
+                            return Some(Msg::MessageActivity(
+                                MessageActivityMsg::BulkResendSelectedFromDLQ(false),
+                            ));
+                        }
+                    }
+                } else {
+                    // Fallback to send to DLQ if no pagination info available
+                    return Some(Msg::MessageActivity(
+                        MessageActivityMsg::BulkSendSelectedToDLQ,
+                    ));
+                }
             }
             Event::Keyboard(KeyEvent {
                 code: Key::Char(c),
                 modifiers: KeyModifiers::NONE,
             }) if c == config::CONFIG.keys().send_to_dlq() => {
-                // Single send to DLQ
-                return Some(Msg::MessageActivity(
-                    MessageActivityMsg::BulkSendSelectedToDLQ,
-                ));
+                // Context-aware operation based on current queue type
+                if let Some(pagination_info) = &self.pagination_info {
+                    match pagination_info.queue_type {
+                        QueueType::Main => {
+                            // In main queue: send to DLQ
+                            return Some(Msg::MessageActivity(
+                                MessageActivityMsg::BulkSendSelectedToDLQ,
+                            ));
+                        }
+                        QueueType::DeadLetter => {
+                            // In DLQ: resend to main queue (keep in DLQ)
+                            return Some(Msg::MessageActivity(
+                                MessageActivityMsg::BulkResendSelectedFromDLQ(false),
+                            ));
+                        }
+                    }
+                } else {
+                    // Fallback to send to DLQ if no pagination info available
+                    return Some(Msg::MessageActivity(
+                        MessageActivityMsg::BulkSendSelectedToDLQ,
+                    ));
+                }
             }
             Event::Keyboard(KeyEvent {
                 code: Key::Char(c),
