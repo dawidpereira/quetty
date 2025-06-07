@@ -17,7 +17,6 @@ use crate::config;
 use crate::error::{AppError, AppResult, handle_error};
 use azservicebus::core::BasicRetryPolicy;
 use azservicebus::{ServiceBusClient, ServiceBusClientOptions};
-
 use server::taskpool::TaskPool;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -142,9 +141,26 @@ where
     T: TerminalAdapter,
 {
     pub fn update_outside_msg(&mut self) {
-        if let Ok(msg) = self.rx_to_main.try_recv() {
-            self.update(Some(msg));
+        // Handle messages sent from background tasks
+        while let Ok(msg) = self.rx_to_main.try_recv() {
+            if let Some(msg) = self.update(Some(msg)) {
+                let _ = self.update(Some(msg));
+            }
         }
+    }
+
+    /// Shutdown the application and clean up resources
+    pub fn shutdown(&mut self) {
+        log::info!("Shutting down application");
+
+        // Cancel all running tasks
+        self.taskpool.cancel_all();
+
+        // Close the semaphore to prevent new tasks
+        self.taskpool.close();
+
+        // Set quit flag
+        self.quit = true;
     }
 
     pub fn view(&mut self) -> AppResult<()> {
@@ -631,7 +647,7 @@ where
             // Process the message and handle any resulting errors
             let result = match msg {
                 Msg::AppClose => {
-                    self.quit = true; // Terminate
+                    self.shutdown(); // Properly shutdown and terminate
                     None
                 }
 

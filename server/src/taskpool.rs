@@ -1,23 +1,19 @@
-pub(crate) use std::sync::Arc;
-
 use futures_util::Future;
+use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub struct TaskPool {
     semaphore: Arc<Semaphore>,
-    cancel_token: CancellationToken,
+    cancel_token: Arc<CancellationToken>,
 }
 
 impl TaskPool {
     pub fn new(n_tasks: usize) -> TaskPool {
-        let semaphore = Arc::new(Semaphore::new(n_tasks));
-        let cancel_token = CancellationToken::new();
-
         TaskPool {
-            semaphore,
-            cancel_token,
+            semaphore: Arc::new(Semaphore::new(n_tasks)),
+            cancel_token: Arc::new(CancellationToken::new()),
         }
     }
 
@@ -29,44 +25,40 @@ impl TaskPool {
         let semaphore = self.semaphore.clone();
         let token = self.cancel_token.clone();
 
-        log::debug!(
-            "TaskPool: Spawning new task, available permits: {}",
-            semaphore.available_permits()
-        );
-
         tokio::spawn(async move {
-            log::debug!("TaskPool: Task spawned, attempting to acquire semaphore permit");
-
             let main = async {
-                match semaphore.acquire().await {
-                    Ok(_permit) => {
-                        log::debug!("TaskPool: Semaphore permit acquired, executing task");
-                        func.await;
-                        log::debug!("TaskPool: Task execution completed");
-                    }
-                    Err(e) => {
-                        log::error!("TaskPool: Failed to acquire semaphore: {}", e);
-                    }
+                if let Ok(_permit) = semaphore.acquire().await {
+                    func.await;
+                } else {
+                    log::error!("TaskPool: Failed to acquire semaphore permit");
                 }
             };
 
             tokio::select! {
-                () = main => {
-                    log::debug!("TaskPool: Task finished normally");
-                },
+                () = main => {},
                 () = token.cancelled() => {
                     log::debug!("TaskPool: Task cancelled");
                 }
             }
         });
+    }
 
-        log::debug!("TaskPool: Task submitted to tokio spawn");
+    /// Cancel all running tasks
+    pub fn cancel_all(&self) {
+        self.cancel_token.cancel();
+    }
+
+    /// Close the semaphore to prevent new tasks from acquiring permits
+    pub fn close(&self) {
+        self.semaphore.close();
     }
 }
 
 impl Drop for TaskPool {
     fn drop(&mut self) {
-        self.semaphore.close();
-        self.cancel_token.cancel();
+        // Only close the semaphore when the last reference is dropped
+        if Arc::strong_count(&self.semaphore) == 1 {
+            self.semaphore.close();
+        }
     }
 }
