@@ -22,17 +22,15 @@ pub struct ConfirmationPopup {
 
 impl ConfirmationPopup {
     pub fn new(title: &str, message: &str) -> Self {
-        let theme = ThemeManager::global();
-
         Self {
             component: Paragraph::default()
                 .borders(
                     Borders::default()
-                        .color(theme.primary_accent())
+                        .color(ThemeManager::primary_accent())
                         .modifiers(BorderType::Rounded),
                 )
                 .title(format!(" {} ", title), Alignment::Center)
-                .foreground(theme.popup_text())
+                .foreground(ThemeManager::popup_text())
                 .modifiers(TextModifiers::BOLD)
                 .alignment(Alignment::Center)
                 .text(&[TextSpan::from(message)]),
@@ -44,13 +42,13 @@ impl ConfirmationPopup {
 
 impl MockComponent for ConfirmationPopup {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        let theme = ThemeManager::global();
-
         // Create the border block with dynamic title
         let block = Block::default()
             .borders(tuirealm::ratatui::widgets::Borders::ALL)
             .border_type(tuirealm::ratatui::widgets::BorderType::Rounded)
-            .border_style(tuirealm::ratatui::style::Style::default().fg(theme.primary_accent()))
+            .border_style(
+                tuirealm::ratatui::style::Style::default().fg(ThemeManager::primary_accent()),
+            )
             .title(format!(" {} ", self.title))
             .title_alignment(tuirealm::ratatui::layout::Alignment::Center);
 
@@ -68,14 +66,14 @@ impl MockComponent for ConfirmationPopup {
             Span::styled(
                 format!("[{}] Yes", keys.confirm_yes().to_uppercase()),
                 tuirealm::ratatui::style::Style::default()
-                    .fg(theme.status_success())
+                    .fg(ThemeManager::status_success())
                     .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
             ),
             Span::raw("    "),
             Span::styled(
                 format!("[{}] No", keys.confirm_no().to_uppercase()),
                 tuirealm::ratatui::style::Style::default()
-                    .fg(theme.status_error())
+                    .fg(ThemeManager::status_error())
                     .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
             ),
         ]));
@@ -89,7 +87,7 @@ impl MockComponent for ConfirmationPopup {
             .wrap(tuirealm::ratatui::widgets::Wrap { trim: true })
             .style(
                 tuirealm::ratatui::style::Style::default()
-                    .fg(theme.popup_text())
+                    .fg(ThemeManager::popup_text())
                     .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
             );
 

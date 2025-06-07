@@ -11,3 +11,4 @@ pub mod namespace_picker;
 pub mod queue_picker;
 pub mod success_popup;
 pub mod text_label;
+pub mod theme_picker;

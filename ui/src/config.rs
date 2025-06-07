@@ -84,6 +84,7 @@ pub struct KeyBindingsConfig {
     // Global keys
     key_quit: Option<char>,
     key_help: Option<char>,
+    key_theme: Option<char>,
 
     // Navigation keys
     key_down: Option<char>,
@@ -204,6 +205,9 @@ impl KeyBindingsConfig {
     }
     pub fn help(&self) -> char {
         self.key_help.unwrap_or('h')
+    }
+    pub fn theme(&self) -> char {
+        self.key_theme.unwrap_or('t')
     }
 
     // Navigation keys

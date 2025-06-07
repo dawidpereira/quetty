@@ -14,11 +14,10 @@ pub struct TextLabel {
 
 impl TextLabel {
     pub fn new(text: String) -> Self {
-        let theme = ThemeManager::global();
         let component = Label::default()
             .text(text)
             .alignment(Alignment::Center)
-            .foreground(theme.help_section_title())
+            .foreground(ThemeManager::help_section_title())
             .background(Color::Reset)
             .modifiers(TextModifiers::BOLD);
 

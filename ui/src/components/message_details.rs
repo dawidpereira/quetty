@@ -146,10 +146,8 @@ impl MessageDetails {
 
     /// Create the block widget with proper styling
     fn create_block(&self) -> Block {
-        let theme = ThemeManager::global();
-
         let border_color = if self.is_focused {
-            theme.primary_accent() // Teal when focused
+            ThemeManager::primary_accent() // Teal when focused
         } else {
             Color::White // White when not focused
         };
@@ -162,21 +160,20 @@ impl MessageDetails {
             .title_alignment(Alignment::Center)
             .title_style(
                 Style::default()
-                    .fg(theme.title_accent()) // Use same pink as table headers
+                    .fg(ThemeManager::title_accent()) // Use same pink as table headers
                     .add_modifier(Modifier::BOLD),
             )
     }
 
     /// Create line content with line numbers and cursor highlighting
     fn create_content_lines(&self, visible_lines: usize) -> Vec<Line> {
-        let theme = ThemeManager::global();
         let mut lines = Vec::new();
         let start_line = self.scroll_offset;
         let end_line = (start_line + visible_lines).min(self.message_content.len());
 
         for (display_line, line_idx) in (start_line..end_line).enumerate() {
             if let Some(content) = self.message_content.get(line_idx) {
-                let line = self.create_single_line(content, line_idx, display_line, theme);
+                let line = self.create_single_line(content, line_idx, display_line);
                 lines.push(line);
             }
         }
@@ -190,7 +187,6 @@ impl MessageDetails {
         content: &'a str,
         line_idx: usize,
         display_line: usize,
-        theme: &ThemeManager,
     ) -> Line<'a> {
         let line_number = line_idx + 1;
         let line_num_str = format!("{:4} ", line_number);
@@ -198,18 +194,18 @@ impl MessageDetails {
         let mut spans = vec![Span::styled(
             line_num_str,
             Style::default()
-                .fg(theme.header_accent()) // Always yellow to match table headers
+                .fg(ThemeManager::header_accent()) // Always yellow to match table headers
                 .add_modifier(Modifier::ITALIC),
         )];
 
         // Add cursor highlighting if this is the cursor line and we're focused
         if display_line == self.cursor_line && self.is_focused {
-            spans.extend(self.create_cursor_highlighted_spans(content, theme));
+            spans.extend(self.create_cursor_highlighted_spans(content));
         } else {
             // Normal line without cursor
             spans.push(Span::styled(
                 content,
-                Style::default().fg(theme.text_primary()),
+                Style::default().fg(ThemeManager::text_primary()),
             ));
         }
 
@@ -217,11 +213,7 @@ impl MessageDetails {
     }
 
     /// Create spans for a line with cursor highlighting
-    fn create_cursor_highlighted_spans<'a>(
-        &self,
-        content: &'a str,
-        theme: &ThemeManager,
-    ) -> Vec<Span<'a>> {
+    fn create_cursor_highlighted_spans<'a>(&self, content: &'a str) -> Vec<Span<'a>> {
         let mut spans = Vec::new();
 
         // Split the content at cursor position
@@ -232,7 +224,7 @@ impl MessageDetails {
         if !before_cursor.is_empty() {
             spans.push(Span::styled(
                 before_cursor,
-                Style::default().fg(theme.text_primary()),
+                Style::default().fg(ThemeManager::text_primary()),
             ));
         }
 
@@ -241,8 +233,8 @@ impl MessageDetails {
             spans.push(Span::styled(
                 cursor_char.to_string(),
                 Style::default()
-                    .bg(theme.selection_bg()) // Same as selected message row
-                    .fg(theme.selection_fg())
+                    .bg(ThemeManager::selection_bg()) // Same as selected message row
+                    .fg(ThemeManager::selection_fg())
                     .add_modifier(Modifier::REVERSED),
             ));
 
@@ -251,7 +243,7 @@ impl MessageDetails {
             if !after_cursor.is_empty() {
                 spans.push(Span::styled(
                     after_cursor,
-                    Style::default().fg(theme.text_primary()),
+                    Style::default().fg(ThemeManager::text_primary()),
                 ));
             }
         } else {
@@ -259,8 +251,8 @@ impl MessageDetails {
             spans.push(Span::styled(
                 " ",
                 Style::default()
-                    .bg(theme.selection_bg())
-                    .fg(theme.selection_fg())
+                    .bg(ThemeManager::selection_bg())
+                    .fg(ThemeManager::selection_fg())
                     .add_modifier(Modifier::REVERSED),
             ));
         }
@@ -270,8 +262,6 @@ impl MessageDetails {
 
     /// Create the status bar widget
     fn create_status_bar(&self) -> Paragraph {
-        let theme = ThemeManager::global();
-
         let status_text = format!(
             "Ln {}, Col {} | Press <ESC> to quit",
             self.cursor_line + self.scroll_offset + 1,
@@ -281,7 +271,7 @@ impl MessageDetails {
         Paragraph::new(status_text)
             .style(
                 Style::default().fg(if self.is_focused {
-                    theme.primary_accent() // Teal text when focused
+                    ThemeManager::primary_accent() // Teal text when focused
                 } else {
                     Color::White // White text when not focused
                 }), // No background - clean and transparent

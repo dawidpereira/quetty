@@ -22,7 +22,6 @@ pub struct LoadingIndicator {
 
 impl LoadingIndicator {
     pub fn new(message: &str, _indeterminate: bool) -> Self {
-        let theme = ThemeManager::global();
         let mut component = Label::default();
 
         // Set the initial text with animation frame
@@ -32,7 +31,7 @@ impl LoadingIndicator {
         // Set text color
         component.attr(
             Attribute::Foreground,
-            AttrValue::Color(theme.status_loading()),
+            AttrValue::Color(ThemeManager::status_loading()),
         );
 
         // Set text alignment to center

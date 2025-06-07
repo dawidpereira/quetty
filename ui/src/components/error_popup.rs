@@ -17,17 +17,16 @@ impl ErrorPopup {
     pub fn new(error: &AppError) -> Self {
         // Format error message
         let error_msg = format!("{}", error);
-        let theme = ThemeManager::global();
 
         Self {
             component: Paragraph::default()
                 .borders(
                     Borders::default()
-                        .color(theme.status_error())
+                        .color(ThemeManager::status_error())
                         .modifiers(BorderType::Rounded),
                 )
                 .title(" ❌ Error ", Alignment::Center)
-                .foreground(theme.status_error())
+                .foreground(ThemeManager::status_error())
                 .modifiers(TextModifiers::BOLD)
                 .alignment(Alignment::Center)
                 .text(&[TextSpan::from(error_msg)]),

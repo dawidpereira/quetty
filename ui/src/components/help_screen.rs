@@ -23,13 +23,12 @@ impl HelpScreen {
 
 impl MockComponent for HelpScreen {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        let theme = ThemeManager::global();
         let block = Block::default()
             .title("  📖 Keyboard Shortcuts Help  ")
             .borders(tuirealm::ratatui::widgets::Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(theme.primary_accent()))
-            .title_style(Style::default().fg(theme.title_accent()));
+            .border_style(Style::default().fg(ThemeManager::primary_accent()))
+            .title_style(Style::default().fg(ThemeManager::title_accent()));
 
         // Create layout with header and scrollable content
         let chunks = Layout::default()
@@ -43,6 +42,7 @@ impl MockComponent for HelpScreen {
         let key_combinations = vec![
             format!("[{}]", keys.quit()),
             format!("[{}]", keys.help()),
+            format!("[{}]", keys.theme()),
             "[Esc]".to_string(),
             format!("[↑] [{}]", keys.up()),
             format!("[↓] [{}]", keys.down()),
@@ -75,12 +75,12 @@ impl MockComponent for HelpScreen {
             Line::from(vec![Span::styled(
                 format!("Press [Esc] or [{}] to close this help screen", keys.help()),
                 Style::default()
-                    .fg(theme.shortcut_description())
+                    .fg(ThemeManager::shortcut_description())
                     .add_modifier(Modifier::BOLD),
             )]),
             Line::from(vec![Span::styled(
                 "⚠️  DLQ operations are in development - use with caution",
-                Style::default().fg(theme.status_warning()),
+                Style::default().fg(ThemeManager::status_warning()),
             )]),
         ]);
 
@@ -94,7 +94,7 @@ impl MockComponent for HelpScreen {
             Line::from(vec![Span::styled(
                 "🌐 GLOBAL ACTIONS",
                 Style::default()
-                    .fg(theme.help_section_title())
+                    .fg(ThemeManager::help_section_title())
                     .add_modifier(Modifier::BOLD),
             )]),
             Line::from(""),
@@ -106,12 +106,12 @@ impl MockComponent for HelpScreen {
                         width = padding_width
                     ),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Quit application",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
@@ -122,24 +122,40 @@ impl MockComponent for HelpScreen {
                         width = padding_width
                     ),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Toggle this help screen",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[{}]", keys.theme()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(ThemeManager::shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Open theme picker",
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
                 Span::styled(
                     format!("  {:width$}", "[Esc]", width = padding_width),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Go back / Cancel operation",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(""),
@@ -147,7 +163,7 @@ impl MockComponent for HelpScreen {
             Line::from(vec![Span::styled(
                 "🧭 NAVIGATION",
                 Style::default()
-                    .fg(theme.help_section_title())
+                    .fg(ThemeManager::help_section_title())
                     .add_modifier(Modifier::BOLD),
             )]),
             Line::from(""),
@@ -159,10 +175,13 @@ impl MockComponent for HelpScreen {
                         width = padding_width
                     ),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled("Move up", Style::default().fg(theme.shortcut_description())),
+                Span::styled(
+                    "Move up",
+                    Style::default().fg(ThemeManager::shortcut_description()),
+                ),
             ]),
             Line::from(vec![
                 Span::styled(
@@ -172,12 +191,12 @@ impl MockComponent for HelpScreen {
                         width = padding_width
                     ),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Move down",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
@@ -188,24 +207,24 @@ impl MockComponent for HelpScreen {
                         width = padding_width
                     ),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Select / Open item",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
                 Span::styled(
                     format!("  {:width$}", "[PgUp] [PgDn]", width = padding_width),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Scroll page up/down",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(""),
@@ -213,7 +232,7 @@ impl MockComponent for HelpScreen {
             Line::from(vec![Span::styled(
                 "📋 QUEUE & MESSAGE MANAGEMENT",
                 Style::default()
-                    .fg(theme.help_section_title())
+                    .fg(ThemeManager::help_section_title())
                     .add_modifier(Modifier::BOLD),
             )]),
             Line::from(""),
@@ -225,12 +244,12 @@ impl MockComponent for HelpScreen {
                         width = padding_width
                     ),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Next page",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
@@ -241,36 +260,36 @@ impl MockComponent for HelpScreen {
                         width = padding_width
                     ),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Previous page",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
                 Span::styled(
                     format!("  {:width$}", "[d]", width = padding_width),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Toggle between Main ↔ Dead Letter Queue",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
                 Span::styled(
                     format!("  {:width$}", "[Enter]", width = padding_width),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "View message details",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(""),
@@ -278,7 +297,7 @@ impl MockComponent for HelpScreen {
             Line::from(vec![Span::styled(
                 "📦 BULK SELECTION MODE",
                 Style::default()
-                    .fg(theme.help_section_title())
+                    .fg(ThemeManager::help_section_title())
                     .add_modifier(Modifier::BOLD),
             )]),
             Line::from(""),
@@ -290,12 +309,12 @@ impl MockComponent for HelpScreen {
                         width = padding_width
                     ),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Toggle selection for current message",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
@@ -306,36 +325,36 @@ impl MockComponent for HelpScreen {
                         width = padding_width
                     ),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Select all messages on current page",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
                 Span::styled(
                     format!("  {:width$}", "[Ctrl+Shift+A]", width = padding_width),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Select all loaded messages (all pages)",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
                 Span::styled(
                     format!("  {:width$}", "[Esc]", width = padding_width),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Clear selections / Exit bulk mode",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(""),
@@ -343,7 +362,7 @@ impl MockComponent for HelpScreen {
             Line::from(vec![Span::styled(
                 "⚡ MESSAGE OPERATIONS",
                 Style::default()
-                    .fg(theme.help_section_title())
+                    .fg(ThemeManager::help_section_title())
                     .add_modifier(Modifier::BOLD),
             )]),
             Line::from(""),
@@ -359,12 +378,12 @@ impl MockComponent for HelpScreen {
                         width = padding_width
                     ),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Delete message(s) with confirmation",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
@@ -375,12 +394,12 @@ impl MockComponent for HelpScreen {
                         width = padding_width
                     ),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Send message(s) to DLQ (⚠️ DEV)",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
@@ -391,12 +410,12 @@ impl MockComponent for HelpScreen {
                         width = padding_width
                     ),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Resend from DLQ to main queue (keep in DLQ)",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
@@ -407,29 +426,29 @@ impl MockComponent for HelpScreen {
                         width = padding_width
                     ),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Resend and delete from DLQ (⚠️ DEV)",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(""),
             Line::from(vec![Span::styled(
                 "💡 Note: Operations work on selected messages in bulk mode,",
-                Style::default().fg(theme.status_info()),
+                Style::default().fg(ThemeManager::status_info()),
             )]),
             Line::from(vec![Span::styled(
                 "        or on current message when no selections exist.",
-                Style::default().fg(theme.status_info()),
+                Style::default().fg(ThemeManager::status_info()),
             )]),
             Line::from(""),
             // Message Details View
             Line::from(vec![Span::styled(
                 "🔍 MESSAGE DETAILS VIEW",
                 Style::default()
-                    .fg(theme.help_section_title())
+                    .fg(ThemeManager::help_section_title())
                     .add_modifier(Modifier::BOLD),
             )]),
             Line::from(""),
@@ -437,12 +456,12 @@ impl MockComponent for HelpScreen {
                 Span::styled(
                     format!("  {:width$}", "[←] [→]", width = padding_width),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Move cursor left/right",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
@@ -453,36 +472,36 @@ impl MockComponent for HelpScreen {
                         width = padding_width
                     ),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Scroll content up/down",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
                 Span::styled(
                     format!("  {:width$}", "[PgUp] [PgDn]", width = padding_width),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Scroll content page up/down",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
             Line::from(vec![
                 Span::styled(
                     format!("  {:width$}", "[Esc]", width = padding_width),
                     Style::default()
-                        .fg(theme.shortcut_key())
+                        .fg(ThemeManager::shortcut_key())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "Return to message list",
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ),
             ]),
         ]);

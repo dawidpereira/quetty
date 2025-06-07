@@ -114,19 +114,18 @@ impl Messages {
             )
         };
 
-        let theme = ThemeManager::global();
         let component = {
             Table::default()
                 .borders(
                     Borders::default()
                         .modifiers(BorderType::Rounded)
-                        .color(theme.primary_accent()),
+                        .color(ThemeManager::primary_accent()),
                 )
                 .background(Color::Reset)
-                .foreground(theme.text_primary())
+                .foreground(ThemeManager::text_primary())
                 .title(&title, Alignment::Center)
                 .scroll(true)
-                .highlighted_color(theme.selection_bg())
+                .highlighted_color(ThemeManager::selection_bg())
                 .highlighted_str("► ")
                 .rewind(false)
                 .step(4)
@@ -538,8 +537,6 @@ where
 
 impl MockComponent for Messages {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        let theme = ThemeManager::global();
-
         // Get the current selection from the internal component
         let table_state = self.component.state();
         let selected_index = match table_state {
@@ -572,22 +569,25 @@ impl MockComponent for Messages {
                 // Add the message data cells with proper theming
                 cells.push(
                     tuirealm::ratatui::widgets::Cell::from(msg.sequence.to_string()).style(
-                        tuirealm::ratatui::style::Style::default().fg(theme.message_sequence()),
+                        tuirealm::ratatui::style::Style::default()
+                            .fg(ThemeManager::message_sequence()),
                     ),
                 );
                 cells.push(
-                    tuirealm::ratatui::widgets::Cell::from(msg.id.to_string())
-                        .style(tuirealm::ratatui::style::Style::default().fg(theme.message_id())),
+                    tuirealm::ratatui::widgets::Cell::from(msg.id.to_string()).style(
+                        tuirealm::ratatui::style::Style::default().fg(ThemeManager::message_id()),
+                    ),
                 );
                 cells.push(
                     tuirealm::ratatui::widgets::Cell::from(msg.enqueued_at.to_string()).style(
-                        tuirealm::ratatui::style::Style::default().fg(theme.message_timestamp()),
+                        tuirealm::ratatui::style::Style::default()
+                            .fg(ThemeManager::message_timestamp()),
                     ),
                 );
                 cells.push(
                     tuirealm::ratatui::widgets::Cell::from(msg.delivery_count.to_string()).style(
                         tuirealm::ratatui::style::Style::default()
-                            .fg(theme.message_delivery_count()),
+                            .fg(ThemeManager::message_delivery_count()),
                     ),
                 );
 
@@ -597,8 +597,8 @@ impl MockComponent for Messages {
                 if i == selected_index {
                     row = row.style(
                         tuirealm::ratatui::style::Style::default()
-                            .bg(theme.selection_bg())
-                            .fg(theme.selection_fg()),
+                            .bg(ThemeManager::selection_bg())
+                            .fg(ThemeManager::selection_fg()),
                     );
                 }
 
@@ -613,7 +613,7 @@ impl MockComponent for Messages {
             .map(|h| {
                 tuirealm::ratatui::widgets::Cell::from(h.as_str()).style(
                     tuirealm::ratatui::style::Style::default()
-                        .fg(theme.header_accent()) // Always yellow to match line numbers
+                        .fg(ThemeManager::header_accent()) // Always yellow to match line numbers
                         .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
                 )
             })
@@ -637,7 +637,7 @@ impl MockComponent for Messages {
                 .border_type(tuirealm::ratatui::widgets::BorderType::Rounded)
                 .border_style(
                     tuirealm::ratatui::style::Style::default().fg(if self.is_focused {
-                        theme.primary_accent() // Teal when focused
+                        ThemeManager::primary_accent() // Teal when focused
                     } else {
                         tuirealm::ratatui::style::Color::White // White when not focused
                     }),
@@ -646,15 +646,15 @@ impl MockComponent for Messages {
                 .title_alignment(tuirealm::ratatui::layout::Alignment::Center)
                 .title_style(
                     tuirealm::ratatui::style::Style::default()
-                        .fg(theme.title_accent()) // Use pink to match message details title
+                        .fg(ThemeManager::title_accent()) // Use pink to match message details title
                         .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
                 ),
         )
         .column_spacing(2)
         .row_highlight_style(
             tuirealm::ratatui::style::Style::default()
-                .bg(theme.selection_bg())
-                .fg(theme.selection_fg())
+                .bg(ThemeManager::selection_bg())
+                .fg(ThemeManager::selection_fg())
                 .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
         )
         .highlight_symbol("► ");
@@ -672,7 +672,7 @@ impl MockComponent for Messages {
             let status_bar = Paragraph::new(status_text)
                 .style(
                     Style::default().fg(if self.is_focused {
-                        theme.primary_accent() // Teal text when focused
+                        ThemeManager::primary_accent() // Teal text when focused
                     } else {
                         tuirealm::ratatui::style::Color::White // White text when not focused
                     }), // No background - clean and transparent

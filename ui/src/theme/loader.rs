@@ -13,12 +13,6 @@ impl ThemeLoader {
         Self { themes_dir }
     }
 
-    pub fn with_themes_dir<P: Into<PathBuf>>(themes_dir: P) -> Self {
-        Self {
-            themes_dir: themes_dir.into(),
-        }
-    }
-
     /// Load a specific theme by name and flavor
     pub fn load_theme(&self, theme_name: &str, flavor_name: &str) -> AppResult<Theme> {
         let theme_path = self
@@ -41,13 +35,21 @@ impl ThemeLoader {
             ))
         })?;
 
-        let theme: Theme = toml::from_str(&content).map_err(|e| {
+        let mut theme: Theme = toml::from_str(&content).map_err(|e| {
             AppError::Config(format!(
                 "Failed to parse theme file {}: {}",
                 theme_path.display(),
                 e
             ))
         })?;
+
+        // If theme_name or flavor_name are not set in metadata, extract from path
+        if theme.metadata.theme_name.is_none() {
+            theme.metadata.theme_name = Some(theme_name.to_string());
+        }
+        if theme.metadata.flavor_name.is_none() {
+            theme.metadata.flavor_name = Some(flavor_name.to_string());
+        }
 
         log::info!(
             "Loaded theme: {} ({}) from {}",
@@ -77,7 +79,7 @@ impl ThemeLoader {
 
     /// Load the default dark theme
     pub fn load_default_theme(&self) -> AppResult<Theme> {
-        self.load_theme("default", "dark")
+        self.load_theme("quetty", "dark")
     }
 
     /// Discover all available themes and flavors
@@ -140,15 +142,5 @@ impl ThemeLoader {
 
         flavors.sort();
         Ok(flavors)
-    }
-
-    /// Check if themes directory exists
-    pub fn themes_dir_exists(&self) -> bool {
-        self.themes_dir.exists() && self.themes_dir.is_dir()
-    }
-
-    /// Get the themes directory path
-    pub fn themes_dir(&self) -> &PathBuf {
-        &self.themes_dir
     }
 }

@@ -20,16 +20,15 @@ pub struct SuccessPopup {
 
 impl SuccessPopup {
     pub fn new(message: &str) -> Self {
-        let theme = ThemeManager::global();
         Self {
             component: Paragraph::default()
                 .borders(
                     Borders::default()
-                        .color(theme.status_success())
+                        .color(ThemeManager::status_success())
                         .modifiers(BorderType::Rounded),
                 )
                 .title(" ✅ Success ", Alignment::Center)
-                .foreground(theme.status_success())
+                .foreground(ThemeManager::status_success())
                 .modifiers(TextModifiers::BOLD)
                 .alignment(Alignment::Center)
                 .text(&[TextSpan::from(message)]),
@@ -40,17 +39,18 @@ impl SuccessPopup {
 
 impl MockComponent for SuccessPopup {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        let theme = ThemeManager::global();
         // Create the border block
         let block = Block::default()
             .borders(tuirealm::ratatui::widgets::Borders::ALL)
             .border_type(tuirealm::ratatui::widgets::BorderType::Rounded)
-            .border_style(tuirealm::ratatui::style::Style::default().fg(theme.status_success()))
+            .border_style(
+                tuirealm::ratatui::style::Style::default().fg(ThemeManager::status_success()),
+            )
             .title(" ✅ Success ")
             .title_alignment(tuirealm::ratatui::layout::Alignment::Center)
             .title_style(
                 tuirealm::ratatui::style::Style::default()
-                    .fg(theme.status_success())
+                    .fg(ThemeManager::status_success())
                     .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
             );
 
@@ -69,7 +69,7 @@ impl MockComponent for SuccessPopup {
             .wrap(Wrap { trim: true })
             .style(
                 tuirealm::ratatui::style::Style::default()
-                    .fg(theme.status_success())
+                    .fg(ThemeManager::status_success())
                     .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
             );
 

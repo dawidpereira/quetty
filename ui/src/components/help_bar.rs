@@ -14,11 +14,10 @@ pub struct HelpBar {
 
 impl HelpBar {
     pub fn new() -> Self {
-        let theme = ThemeManager::global();
         Self {
             style: Style::default()
-                .fg(theme.text_primary())
-                .bg(theme.surface()),
+                .fg(ThemeManager::text_primary())
+                .bg(ThemeManager::surface()),
         }
     }
 
@@ -172,26 +171,29 @@ impl HelpBar {
         selected_count: Option<usize>,
     ) {
         let help_text = self.get_help_text(active_component, queue_type, bulk_mode, selected_count);
-        let theme = ThemeManager::global();
+
         let mut spans: Vec<Span> = Vec::new();
 
         // Add each shortcut pair with separators
         for (i, (text, highlight)) in help_text.iter().enumerate() {
             // Add separator before each pair (except the first one)
             if i > 0 && i % 2 == 0 {
-                spans.push(Span::styled(" │ ", Style::default().fg(theme.text_muted())));
+                spans.push(Span::styled(
+                    " │ ",
+                    Style::default().fg(ThemeManager::text_muted()),
+                ));
             }
 
             // Add the shortcut text
             if *highlight {
                 spans.push(Span::styled(
                     text.clone(),
-                    Style::default().fg(theme.shortcut_key()),
+                    Style::default().fg(ThemeManager::shortcut_key()),
                 ));
             } else {
                 spans.push(Span::styled(
                     text.clone(),
-                    Style::default().fg(theme.shortcut_description()),
+                    Style::default().fg(ThemeManager::shortcut_description()),
                 ));
             }
         }

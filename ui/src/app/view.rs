@@ -247,3 +247,30 @@ pub fn view_help_screen(
 
     Ok(())
 }
+
+// View function for theme picker
+pub fn view_theme_picker(
+    app: &mut Application<ComponentId, Msg, NoUserEvent>,
+    f: &mut Frame,
+    _chunks: &[Rect],
+) -> Result<(), AppError> {
+    // Create a centered box for the theme picker
+    let popup_width = 60;
+    let popup_height = 20;
+    let area = f.area();
+
+    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+
+    let popup_area = Rect::new(
+        popup_x,
+        popup_y,
+        popup_width.min(area.width),
+        popup_height.min(area.height),
+    );
+
+    app.view(&ComponentId::ThemePicker, f, popup_area);
+    app.active(&ComponentId::ThemePicker)
+        .map_err(|e| AppError::Component(e.to_string()))?;
+    Ok(())
+}
