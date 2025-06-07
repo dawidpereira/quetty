@@ -44,7 +44,8 @@ pub struct Messages {
     title: String,
     headers: Vec<String>,
     widths: Vec<u16>,
-    is_focused: bool, // Track focus state for border styling
+    is_focused: bool,    // Track focus state for border styling
+    narrow_layout: bool, // Track if we're using narrow layout for responsive formatting
 }
 
 const CMD_RESULT_MESSAGE_SELECTED: &str = "MessageSelected";
@@ -90,30 +91,10 @@ impl Messages {
             " Messages ".to_string()
         };
 
-        let (headers, widths) = if pagination_info.as_ref().is_some_and(|info| info.bulk_mode) {
-            (
-                vec![
-                    "".to_string(), // Checkbox column
-                    "Sequence".to_string(),
-                    "Message ID".to_string(),
-                    "Enqueued At".to_string(),
-                    "State".to_string(),
-                    "Delivery Count".to_string(),
-                ],
-                vec![3, 9, 25, 28, 12, 15],
-            )
-        } else {
-            (
-                vec![
-                    "Sequence".to_string(),
-                    "Message ID".to_string(),
-                    "Enqueued At".to_string(),
-                    "State".to_string(),
-                    "Delivery Count".to_string(),
-                ],
-                vec![10, 25, 30, 12, 16],
-            )
-        };
+        let (headers, widths, use_narrow_layout) = Self::calculate_responsive_layout(
+            120, // Default width, will be recalculated in view()
+            pagination_info.as_ref().is_some_and(|info| info.bulk_mode),
+        );
 
         let component = {
             Table::default()
@@ -138,6 +119,8 @@ impl Messages {
                     messages,
                     pagination_info.as_ref(),
                     &selected_messages,
+                    &widths,
+                    use_narrow_layout,
                 ))
         };
 
@@ -150,6 +133,7 @@ impl Messages {
             headers,
             widths,
             is_focused,
+            narrow_layout: use_narrow_layout,
         }
     }
 
@@ -213,6 +197,8 @@ impl Messages {
         messages: Option<&Vec<MessageModel>>,
         pagination_info: Option<&PaginationInfo>,
         selected_messages: &[MessageIdentifier],
+        widths: &[u16],
+        narrow_layout: bool,
     ) -> Vec<Vec<TextSpan>> {
         if let Some(messages) = messages {
             let mut builder = TableBuilder::default();
@@ -230,14 +216,17 @@ impl Messages {
                     builder.add_col(TextSpan::from(checkbox_text));
                 }
 
+                let delivery_width = widths[if bulk_mode { 5 } else { 4 }];
+
                 builder
                     .add_col(TextSpan::from(msg.sequence.to_string()))
                     .add_col(TextSpan::from(msg.id.to_string()))
                     .add_col(TextSpan::from(msg.enqueued_at.to_string()))
                     .add_col(TextSpan::from(Self::get_state_display(&msg.state)))
-                    .add_col(TextSpan::from(Self::format_delivery_count_right_aligned(
+                    .add_col(TextSpan::from(Self::format_delivery_count_responsive(
                         msg.delivery_count,
-                        16,
+                        delivery_width as usize,
+                        narrow_layout,
                     )))
                     .add_row();
             }
@@ -275,11 +264,108 @@ impl Messages {
         }
     }
 
-    /// Right-align delivery count with padding
-    fn format_delivery_count_right_aligned(count: usize, width: usize) -> String {
+    /// Calculate responsive column widths based on available screen width
+    fn calculate_responsive_layout(
+        available_width: u16,
+        bulk_mode: bool,
+    ) -> (Vec<String>, Vec<u16>, bool) {
+        let headers = if bulk_mode {
+            vec![
+                "".to_string(), // Checkbox column
+                "Sequence".to_string(),
+                "Message ID".to_string(),
+                "Enqueued At".to_string(),
+                "State".to_string(),
+                "Delivery Count".to_string(),
+            ]
+        } else {
+            vec![
+                "Sequence".to_string(),
+                "Message ID".to_string(),
+                "Enqueued At".to_string(),
+                "State".to_string(),
+                "Delivery Count".to_string(),
+            ]
+        };
+
+        // Account for borders (4 chars), column spacing, and some padding
+        let usable_width = available_width.saturating_sub(10);
+        let num_cols = if bulk_mode { 6 } else { 5 };
+        let spacing = (num_cols - 1) * 2; // 2 chars between columns
+        let content_width = usable_width.saturating_sub(spacing);
+
+        // Define proportional widths that scale with screen size
+        let widths = if bulk_mode {
+            let checkbox = 3;
+            let remaining = content_width.saturating_sub(checkbox);
+
+            // Proportional distribution: seq(8%), msg_id(35%), enqueued(40%), state(10%), delivery(7%)
+            let seq_width = (remaining * 8 / 100).max(6);
+            let msg_id_width = (remaining * 35 / 100).max(15);
+            let enqueued_width = (remaining * 40 / 100).max(20);
+            let state_width = (remaining * 10 / 100).max(8);
+            let delivery_width = remaining
+                .saturating_sub(seq_width + msg_id_width + enqueued_width + state_width)
+                .max(6);
+
+            vec![
+                checkbox,
+                seq_width,
+                msg_id_width,
+                enqueued_width,
+                state_width,
+                delivery_width,
+            ]
+        } else {
+            // Proportional distribution: seq(10%), msg_id(35%), enqueued(40%), state(10%), delivery(5%)
+            let seq_width = (content_width * 10 / 100).max(8);
+            let msg_id_width = (content_width * 35 / 100).max(15);
+            let enqueued_width = (content_width * 40 / 100).max(20);
+            let state_width = (content_width * 10 / 100).max(8);
+            let delivery_width = content_width
+                .saturating_sub(seq_width + msg_id_width + enqueued_width + state_width)
+                .max(6);
+
+            vec![
+                seq_width,
+                msg_id_width,
+                enqueued_width,
+                state_width,
+                delivery_width,
+            ]
+        };
+
+        // Always use wide layout behavior (right-aligned delivery count)
+        let use_narrow_layout = false;
+
+        log::debug!(
+            "Layout calc: available={}, content={}, widths={:?}",
+            available_width,
+            content_width,
+            widths
+        );
+
+        (headers, widths, use_narrow_layout)
+    }
+
+    /// Format delivery count with right alignment (always)
+    fn format_delivery_count_responsive(
+        count: usize,
+        width: usize,
+        _narrow_layout: bool,
+    ) -> String {
         let count_str = count.to_string();
+        // Always use right alignment for better visual hierarchy
         let padding = width.saturating_sub(count_str.len());
-        format!("{}{}", " ".repeat(padding), count_str)
+        let result = format!("{}{}", " ".repeat(padding), count_str);
+        log::trace!(
+            "Right-aligned delivery count {} -> '{}' (width={}, padding={})",
+            count,
+            result,
+            width,
+            padding
+        );
+        result
     }
 
     /// Get the current selection index
@@ -640,6 +726,20 @@ where
 
 impl MockComponent for Messages {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
+        // Recalculate responsive layout based on actual available width
+        let bulk_mode = self
+            .pagination_info
+            .as_ref()
+            .is_some_and(|info| info.bulk_mode);
+
+        let (headers, widths, narrow_layout) =
+            Self::calculate_responsive_layout(area.width, bulk_mode);
+
+        // Update stored layout info
+        self.headers = headers;
+        self.widths = widths.clone();
+        self.narrow_layout = narrow_layout;
+
         // Get the current selection from the internal component
         let table_state = self.component.state();
         let selected_index = match table_state {
@@ -650,11 +750,6 @@ impl MockComponent for Messages {
         // Build the table rows for ratatui
         let mut rows = Vec::new();
         if let Some(ref messages) = self.messages {
-            let bulk_mode = self
-                .pagination_info
-                .as_ref()
-                .is_some_and(|info| info.bulk_mode);
-
             for (i, msg) in messages.iter().enumerate() {
                 let mut cells = Vec::new();
 
@@ -694,10 +789,14 @@ impl MockComponent for Messages {
                                 .fg(Self::get_state_color(&msg.state)),
                         ),
                 );
+
+                let delivery_width = widths[if bulk_mode { 5 } else { 4 }];
                 cells.push(
-                    tuirealm::ratatui::widgets::Cell::from(
-                        Self::format_delivery_count_right_aligned(msg.delivery_count, 16),
-                    )
+                    tuirealm::ratatui::widgets::Cell::from(Self::format_delivery_count_responsive(
+                        msg.delivery_count,
+                        delivery_width as usize,
+                        narrow_layout,
+                    ))
                     .style(
                         tuirealm::ratatui::style::Style::default()
                             .fg(ThemeManager::message_delivery_count()),
