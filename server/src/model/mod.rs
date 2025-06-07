@@ -12,7 +12,19 @@ pub struct MessageModel {
     #[serde(with = "azure_core::date::iso8601")]
     pub enqueued_at: OffsetDateTime,
     pub delivery_count: usize,
+    pub state: MessageState,
     pub body: BodyData,
+}
+
+#[derive(Serialize, Clone, PartialEq, Debug, Default)]
+pub enum MessageState {
+    #[default]
+    Active,
+    Deferred,
+    Scheduled,
+    DeadLettered,
+    Completed,
+    Abandoned,
 }
 
 impl MessageModel {
@@ -21,6 +33,7 @@ impl MessageModel {
         id: String,
         enqueued_at: OffsetDateTime,
         delivery_count: usize,
+        state: MessageState,
         body: BodyData,
     ) -> Self {
         Self {
@@ -28,6 +41,7 @@ impl MessageModel {
             id,
             enqueued_at,
             delivery_count,
+            state,
             body,
         }
     }
@@ -54,7 +68,9 @@ impl MessageModel {
 
         match serde_json::from_slice::<Value>(bytes) {
             Ok(val) => Ok(BodyData::ValidJson(val)),
-            Err(_) => Ok(BodyData::RawString(String::from_utf8_lossy(bytes).into_owned())),
+            Err(_) => Ok(BodyData::RawString(
+                String::from_utf8_lossy(bytes).into_owned(),
+            )),
         }
     }
 }
@@ -95,7 +111,7 @@ impl TryFrom<ServiceBusPeekedMessage> for MessageModel {
             .to_string();
 
         let body = MessageModel::parse_message_body(&msg)?;
-        
+
         let delivery_count = msg
             .delivery_count()
             .ok_or(MessageModelError::MissingDeliveryCount)? as usize;
@@ -105,6 +121,7 @@ impl TryFrom<ServiceBusPeekedMessage> for MessageModel {
             id,
             enqueued_at: msg.enqueued_time(),
             delivery_count,
+            state: MessageState::Active,
             body,
         })
     }

@@ -31,6 +31,10 @@ message_sequence = "#9a6700"       # Dark yellow - sequence numbers
 message_id = "#cf222e"             # Red - message identifiers
 message_timestamp = "#0969da"      # Blue - timestamps
 message_delivery_count = "#8250df" # Purple - delivery counts
+message_state_ready = "#1a7f37"    # Forest green - Ready for delivery (Active, Scheduled)
+message_state_deferred = "#9a6700" # Dark yellow - Deferred handling (Deferred)
+message_state_outcome = "#8250df"  # Purple - Processing outcome (Completed, Abandoned)
+message_state_failed = "#cf222e"   # Red - Failed delivery (Dead-lettered)
 queue_count = "#1a7f37"            # Forest green - for queue counts (legacy field)
 
 # === List Item Colors ===
