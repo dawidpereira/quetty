@@ -68,7 +68,6 @@ async fn main() -> Result<(), Box<dyn StdError>> {
             }
             Ok(messages) if !messages.is_empty() => {
                 // NOTE: redraw if at least one msg has been processed
-                debug!("Processing {} messages", messages.len());
                 model.redraw = true;
                 for msg in messages.into_iter() {
                     let mut msg = Some(msg);
@@ -94,8 +93,11 @@ async fn main() -> Result<(), Box<dyn StdError>> {
         }
     }
 
-    // Terminate terminal
+    // Ensure proper shutdown (in case quit was set outside of AppClose message)
     info!("Application shutdown initiated");
+    model.shutdown();
+
+    // Terminate terminal
     debug!("Leaving alternate screen");
     let _ = model.terminal.leave_alternate_screen();
     let _ = model.terminal.disable_raw_mode();
