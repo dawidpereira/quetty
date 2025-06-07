@@ -510,6 +510,50 @@ impl MockComponent for HelpScreen {
             ]),
             Line::from(vec![
                 Span::styled(
+                    format!("  {:width$}", "[e] [i]", width = padding_width),
+                    Style::default()
+                        .fg(ThemeManager::shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Enter edit mode to modify message content",
+                    Style::default().fg(ThemeManager::shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[Ctrl+{}]", keys.send_edited_message()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(ThemeManager::shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Send edited content as new message (keep original)",
+                    Style::default().fg(ThemeManager::shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {:width$}",
+                        format!("[Ctrl+{}]", keys.replace_edited_message()),
+                        width = padding_width
+                    ),
+                    Style::default()
+                        .fg(ThemeManager::shortcut_key())
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Replace original message with edited content",
+                    Style::default().fg(ThemeManager::shortcut_description()),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
                     format!("  {:width$}", "[Esc]", width = padding_width),
                     Style::default()
                         .fg(ThemeManager::shortcut_key())

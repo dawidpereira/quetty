@@ -92,8 +92,8 @@ impl HelpBar {
             ComponentId::MessageDetails => {
                 let keys = config::CONFIG.keys();
                 vec![
-                    ("[←/→]".to_string(), true),
-                    (" Move ".to_string(), false),
+                    ("[e/i]".to_string(), true),
+                    (" Edit ".to_string(), false),
                     ("[↑/↓]".to_string(), true),
                     (" Scroll ".to_string(), false),
                     (
@@ -101,6 +101,10 @@ impl HelpBar {
                         true,
                     ),
                     (" Copy ".to_string(), false),
+                    (format!("[Ctrl+{}]", keys.send_edited_message()), true),
+                    (" Send ".to_string(), false),
+                    (format!("[Ctrl+{}]", keys.replace_edited_message()), true),
+                    (" Replace ".to_string(), false),
                     ("[Esc]".to_string(), true),
                     (" Back ".to_string(), false),
                 ]

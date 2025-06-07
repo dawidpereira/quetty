@@ -37,7 +37,6 @@ pub struct AppConfig {
     batch: BatchConfig,
     #[serde(flatten)]
     ui: UIConfig,
-    #[serde(flatten)]
     keys: KeyBindingsConfig,
     servicebus: ServicebusConfig,
     azure_ad: AzureAdConfig,
@@ -104,6 +103,8 @@ pub struct KeyBindingsConfig {
     // Message details actions
     key_copy_message: Option<char>,
     key_yank_message: Option<char>,
+    key_send_edited_message: Option<char>,
+    key_replace_edited_message: Option<char>,
 
     // Bulk selection keys
     key_toggle_selection: Option<char>,
@@ -257,6 +258,12 @@ impl KeyBindingsConfig {
     }
     pub fn yank_message(&self) -> char {
         self.key_yank_message.unwrap_or('y')
+    }
+    pub fn send_edited_message(&self) -> char {
+        self.key_send_edited_message.unwrap_or('s') // 's' key
+    }
+    pub fn replace_edited_message(&self) -> char {
+        self.key_replace_edited_message.unwrap_or('s')
     }
 
     // Bulk selection keys

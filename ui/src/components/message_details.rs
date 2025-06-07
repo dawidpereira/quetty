@@ -2,6 +2,7 @@ use crate::components::common::{MessageActivityMsg, Msg, PopupActivityMsg};
 use crate::config;
 use crate::theme::ThemeManager;
 use copypasta::{ClipboardContext, ClipboardProvider};
+use server::bulk_operations::MessageIdentifier;
 use server::model::{BodyData, MessageModel};
 use tuirealm::{
     AttrValue, Attribute, Component, Frame, MockComponent, NoUserEvent, State, StateValue,
@@ -17,11 +18,15 @@ use tuirealm::{
 
 pub struct MessageDetails {
     message_content: Vec<String>,
+    original_content: Vec<String>, // Store original content for restore on escape
+    current_message: Option<MessageModel>, // Store current message for operations
     scroll_offset: usize,
     cursor_line: usize,
     cursor_col: usize,
     is_focused: bool,
     visible_lines: usize,
+    is_editing: bool, // Track if we're in edit mode
+    is_dirty: bool,   // Track if content has been modified
 }
 
 impl MessageDetails {
@@ -30,20 +35,25 @@ impl MessageDetails {
     }
 
     pub fn new_with_focus(message: Option<MessageModel>, is_focused: bool) -> Self {
-        let message_content = Self::format_message_content(message);
+        let message_content = Self::format_message_content(&message);
+        let original_content = message_content.clone();
 
         Self {
             message_content,
+            original_content,
+            current_message: message,
             scroll_offset: 0,
             cursor_line: 0,
             cursor_col: 0,
             is_focused,
             visible_lines: 0,
+            is_editing: false,
+            is_dirty: false,
         }
     }
 
     /// Format message content based on the message data type
-    fn format_message_content(message: Option<MessageModel>) -> Vec<String> {
+    fn format_message_content(message: &Option<MessageModel>) -> Vec<String> {
         match message {
             Some(data) => {
                 match &data.body {
@@ -149,20 +159,38 @@ impl MessageDetails {
     /// Create the block widget with proper styling
     fn create_block(&self) -> Block {
         let border_color = if self.is_focused {
-            ThemeManager::primary_accent() // Teal when focused
+            if self.is_editing {
+                Color::Red // Red border when editing
+            } else {
+                ThemeManager::primary_accent() // Teal when focused
+            }
         } else {
             Color::White // White when not focused
+        };
+
+        let title = if self.is_editing {
+            if self.is_dirty {
+                " ✏️ Message Details - EDITING (modified) "
+            } else {
+                " ✏️ Message Details - EDITING "
+            }
+        } else {
+            " 📄 Message Details "
         };
 
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(border_color))
-            .title(" 📄 Message Details ")
+            .title(title)
             .title_alignment(Alignment::Center)
             .title_style(
                 Style::default()
-                    .fg(ThemeManager::title_accent()) // Use same pink as table headers
+                    .fg(if self.is_editing {
+                        Color::Red
+                    } else {
+                        ThemeManager::title_accent()
+                    })
                     .add_modifier(Modifier::BOLD),
             )
     }
@@ -264,16 +292,31 @@ impl MessageDetails {
 
     /// Create the status bar widget
     fn create_status_bar(&self) -> Paragraph {
-        let status_text = format!(
-            "Ln {}, Col {} | Press <ESC> to quit",
-            self.cursor_line + self.scroll_offset + 1,
-            self.cursor_col + 1
-        );
+        let status_text = if self.is_editing {
+            let keys = config::CONFIG.keys();
+            format!(
+                "Ln {}, Col {} | EDIT MODE | Ctrl+{}: Send | Ctrl+{}: Replace | ESC: Cancel",
+                self.cursor_line + self.scroll_offset + 1,
+                self.cursor_col + 1,
+                keys.send_edited_message(),
+                keys.replace_edited_message()
+            )
+        } else {
+            format!(
+                "Ln {}, Col {} | Press 'e' or 'i' to edit | ESC: Back to messages",
+                self.cursor_line + self.scroll_offset + 1,
+                self.cursor_col + 1
+            )
+        };
 
         Paragraph::new(status_text)
             .style(
                 Style::default().fg(if self.is_focused {
-                    ThemeManager::primary_accent() // Teal text when focused
+                    if self.is_editing {
+                        Color::Red // Red text when editing
+                    } else {
+                        ThemeManager::primary_accent() // Teal text when focused
+                    }
                 } else {
                     Color::White // White text when not focused
                 }), // No background - clean and transparent
@@ -316,6 +359,95 @@ impl MessageDetails {
             .map_err(|e| format!("Failed to set clipboard contents: {}", e))?;
 
         Ok(())
+    }
+
+    // === Editing Methods ===
+
+    /// Toggle edit mode
+    fn toggle_edit_mode(&mut self) {
+        self.is_editing = !self.is_editing;
+        if !self.is_editing {
+            // Exiting edit mode, check if content changed
+            self.is_dirty = self.message_content != self.original_content;
+        }
+    }
+
+    /// Restore original content (for escape key)
+    fn restore_original_content(&mut self) {
+        self.message_content = self.original_content.clone();
+        self.is_dirty = false;
+        self.is_editing = false;
+    }
+
+    /// Insert character at cursor position
+    fn insert_char(&mut self, ch: char) {
+        if !self.is_editing {
+            return;
+        }
+
+        // Ensure we have a line at cursor position
+        while self.cursor_line + self.scroll_offset >= self.message_content.len() {
+            self.message_content.push(String::new());
+        }
+
+        let line_idx = self.cursor_line + self.scroll_offset;
+        if let Some(line) = self.message_content.get_mut(line_idx) {
+            line.insert(self.cursor_col, ch);
+            self.cursor_col += 1;
+            self.is_dirty = true;
+        }
+    }
+
+    /// Delete character at cursor position (backspace)
+    fn delete_char_backward(&mut self) {
+        if !self.is_editing || self.cursor_col == 0 {
+            return;
+        }
+
+        let line_idx = self.cursor_line + self.scroll_offset;
+        if let Some(line) = self.message_content.get_mut(line_idx) {
+            if self.cursor_col > 0 && self.cursor_col <= line.len() {
+                line.remove(self.cursor_col - 1);
+                self.cursor_col -= 1;
+                self.is_dirty = true;
+            }
+        }
+    }
+
+    /// Delete character at cursor position (delete key)
+    fn delete_char_forward(&mut self) {
+        if !self.is_editing {
+            return;
+        }
+
+        let line_idx = self.cursor_line + self.scroll_offset;
+        if let Some(line) = self.message_content.get_mut(line_idx) {
+            if self.cursor_col < line.len() {
+                line.remove(self.cursor_col);
+                self.is_dirty = true;
+            }
+        }
+    }
+
+    /// Insert new line at cursor position
+    fn insert_newline(&mut self) {
+        if !self.is_editing {
+            return;
+        }
+
+        let line_idx = self.cursor_line + self.scroll_offset;
+        if let Some(line) = self.message_content.get_mut(line_idx) {
+            let new_line = line.split_off(self.cursor_col);
+            self.message_content.insert(line_idx + 1, new_line);
+            self.cursor_line += 1;
+            self.cursor_col = 0;
+            self.is_dirty = true;
+        }
+    }
+
+    /// Get current edited content as string
+    fn get_edited_content(&self) -> String {
+        self.message_content.join("\n")
     }
 }
 
@@ -367,7 +499,106 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
                 code: Key::Esc,
                 modifiers: KeyModifiers::NONE,
             }) => {
-                return Some(Msg::MessageActivity(MessageActivityMsg::CancelEditMessage));
+                if self.is_editing {
+                    // In edit mode: restore original content and exit edit mode
+                    self.restore_original_content();
+                    return Some(Msg::ForceRedraw);
+                } else {
+                    // Not in edit mode: exit to message list
+                    return Some(Msg::MessageActivity(MessageActivityMsg::CancelEditMessage));
+                }
+            }
+
+            // Edit operations - Ctrl+s and Shift+Ctrl+s
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(c),
+                modifiers: KeyModifiers::CONTROL,
+            }) if c == config::CONFIG.keys().send_edited_message() => {
+                if self.is_editing && self.is_dirty {
+                    // Send edited content as new message (keep original)
+                    let edited_content = self.get_edited_content();
+                    return Some(Msg::MessageActivity(MessageActivityMsg::SendEditedMessage(
+                        edited_content,
+                    )));
+                } else if self.is_editing && !self.is_dirty {
+                    return Some(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
+                        "ℹ️ No changes to send - content is unchanged".to_string(),
+                    )));
+                }
+            }
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(c),
+                modifiers: KeyModifiers::CONTROL,
+            }) if c == config::CONFIG.keys().replace_edited_message() => {
+                if self.is_editing && self.is_dirty {
+                    if let Some(message) = &self.current_message {
+                        // Replace original message with edited content
+                        let edited_content = self.get_edited_content();
+                        let message_id = MessageIdentifier::from_message(message);
+                        return Some(Msg::MessageActivity(
+                            MessageActivityMsg::ReplaceEditedMessage(edited_content, message_id),
+                        ));
+                    } else {
+                        return Some(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
+                            "❌ No message available for replacement".to_string(),
+                        )));
+                    }
+                } else if self.is_editing && !self.is_dirty {
+                    return Some(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
+                        "ℹ️ No changes to replace - content is unchanged".to_string(),
+                    )));
+                }
+            }
+
+            // Toggle edit mode with 'e' or 'i' key (similar to vim)
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('e') | Key::Char('i'),
+                modifiers: KeyModifiers::NONE,
+            }) if !self.is_editing => {
+                self.toggle_edit_mode();
+                return Some(Msg::ForceRedraw);
+            }
+
+            // Editing keys (only when in edit mode)
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(ch),
+                modifiers: KeyModifiers::NONE,
+            }) if self.is_editing => {
+                self.insert_char(ch);
+                return Some(Msg::ForceRedraw);
+            }
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(ch),
+                modifiers: KeyModifiers::SHIFT,
+            }) if self.is_editing => {
+                self.insert_char(ch);
+                return Some(Msg::ForceRedraw);
+            }
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Backspace,
+                modifiers: KeyModifiers::NONE,
+            }) if self.is_editing => {
+                self.delete_char_backward();
+                return Some(Msg::ForceRedraw);
+            }
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Delete,
+                modifiers: KeyModifiers::NONE,
+            }) if self.is_editing => {
+                self.delete_char_forward();
+                return Some(Msg::ForceRedraw);
+            }
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Enter,
+                modifiers: KeyModifiers::NONE,
+            }) if self.is_editing => {
+                self.insert_newline();
+                return Some(Msg::ForceRedraw);
             }
 
             Event::Keyboard(KeyEvent {

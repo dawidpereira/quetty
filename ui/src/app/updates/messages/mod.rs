@@ -1,22 +1,25 @@
+use crate::app::model::{AppState, Model};
+use crate::components::common::{
+    ComponentId, LoadingActivityMsg, MessageActivityMsg, Msg, PopupActivityMsg,
+};
+use crate::config::CONFIG;
+use crate::error::AppError;
+use azservicebus::{ServiceBusClient, core::BasicRetryPolicy};
+use server::bulk_operations::MessageIdentifier;
+use server::consumer::Consumer;
+use server::model::MessageModel;
+use server::producer::ServiceBusClientProducerExt;
+use std::sync::Arc;
+use std::sync::mpsc::Sender;
+use tokio::sync::Mutex;
+use tuirealm::terminal::TerminalAdapter;
+
 pub mod bulk;
 pub mod bulk_execution;
 pub mod loading;
 pub mod pagination;
 pub mod utils;
-
-// Re-export commonly used types
 pub use pagination::MessagePaginationState;
-use server::bulk_operations::MessageIdentifier;
-
-use crate::app::model::{AppState, Model};
-use crate::components::common::{ComponentId, MessageActivityMsg, Msg};
-use crate::config::CONFIG;
-use crate::error::AppError;
-use server::consumer::Consumer;
-use server::model::MessageModel;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tuirealm::terminal::TerminalAdapter;
 
 impl<T> Model<T>
 where
@@ -87,6 +90,14 @@ where
             }
             MessageActivityMsg::BulkRemoveMessagesFromState(message_ids) => {
                 self.handle_bulk_remove_messages_from_state(message_ids)
+            }
+
+            // Message editing operations
+            MessageActivityMsg::SendEditedMessage(content) => {
+                self.handle_send_edited_message(content)
+            }
+            MessageActivityMsg::ReplaceEditedMessage(content, message_id) => {
+                self.handle_replace_edited_message(content, message_id)
             }
         }
     }
@@ -550,5 +561,204 @@ where
             self.queue_state.message_pagination.current_page,
             max_valid_page
         );
+    }
+
+    // === Message Editing Handlers ===
+
+    /// Helper function to send a message to a queue
+    async fn send_message_to_queue(
+        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+        queue_name: String,
+        content: String,
+    ) -> Result<(), AppError> {
+        let mut client = service_bus_client.lock().await;
+        let mut producer = client
+            .create_producer_for_queue(
+                &queue_name,
+                azservicebus::ServiceBusSenderOptions::default(),
+            )
+            .await
+            .map_err(|e| AppError::ServiceBus(format!("Failed to create producer: {}", e)))?;
+
+        let message = azservicebus::ServiceBusMessage::new(content.as_bytes().to_vec());
+
+        producer
+            .send_message(message)
+            .await
+            .map_err(|e| AppError::ServiceBus(format!("Failed to send message: {}", e)))?;
+
+        producer
+            .dispose()
+            .await
+            .map_err(|e| AppError::ServiceBus(format!("Failed to dispose producer: {}", e)))?;
+
+        log::info!("Successfully sent message to queue: {}", queue_name);
+        Ok(())
+    }
+
+    /// Helper function to handle task completion messages
+    fn send_completion_messages(
+        tx_to_main: &Sender<Msg>,
+        result: Result<(), AppError>,
+        success_msg: &str,
+    ) {
+        // Stop loading screen
+        let _ = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop));
+
+        match result {
+            Ok(()) => {
+                let _ = tx_to_main.send(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
+                    success_msg.to_string(),
+                )));
+                let _ =
+                    tx_to_main.send(Msg::MessageActivity(MessageActivityMsg::CancelEditMessage));
+            }
+            Err(e) => {
+                log::error!("Task failed: {}", e);
+                let _ = tx_to_main.send(Msg::Error(e));
+            }
+        }
+    }
+
+    /// Helper function to validate queue selection
+    fn get_current_queue(&self) -> Result<String, AppError> {
+        self.queue_state
+            .current_queue_name
+            .clone()
+            .ok_or_else(|| AppError::State("No queue selected".to_string()))
+    }
+
+    /// Handle sending edited message content as a new message
+    fn handle_send_edited_message(&mut self, content: String) -> Option<Msg> {
+        let queue_name = match self.get_current_queue() {
+            Ok(name) => name,
+            Err(e) => return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(e))),
+        };
+
+        log::info!("Sending edited message content to queue: {}", queue_name);
+
+        // Start loading screen
+        let feedback_msg = Some(Msg::LoadingActivity(LoadingActivityMsg::Start(
+            "Sending edited message...".to_string(),
+        )));
+
+        // Start async task to send the message
+        let service_bus_client = self.service_bus_client.clone();
+        let tx_to_main = self.tx_to_main.clone();
+        let taskpool = &self.taskpool;
+
+        let task = async move {
+            let result = Self::send_message_to_queue(service_bus_client, queue_name, content).await;
+
+            Self::send_completion_messages(
+                &tx_to_main,
+                result,
+                "✅ Edited message sent successfully!",
+            )
+        };
+
+        taskpool.execute(task);
+
+        // Return immediate feedback, then stay in current state until task completes
+        feedback_msg
+    }
+
+    /// Handle replacing original message with edited content (send new + delete original)
+    fn handle_replace_edited_message(
+        &mut self,
+        content: String,
+        message_id: MessageIdentifier,
+    ) -> Option<Msg> {
+        let queue_name = match self.get_current_queue() {
+            Ok(name) => name,
+            Err(e) => return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(e))),
+        };
+
+        log::info!(
+            "Replacing message {} with edited content in queue: {}",
+            message_id.id,
+            queue_name
+        );
+
+        // Start loading screen
+        let feedback_msg = Some(Msg::LoadingActivity(LoadingActivityMsg::Start(
+            "Replacing message...".to_string(),
+        )));
+
+        // Start async task to send new message and delete original
+        let consumer = self.queue_state.consumer.clone();
+        let service_bus_client = self.service_bus_client.clone();
+        let tx_to_main = self.tx_to_main.clone();
+        let taskpool = &self.taskpool;
+
+        let task = async move {
+            let result = async {
+                // Step 1: Send new message with edited content
+                Self::send_message_to_queue(service_bus_client, queue_name.clone(), content)
+                    .await?;
+
+                // Step 2: Delete original message
+                match consumer {
+                    Some(consumer) => Self::delete_message(consumer, &message_id).await?,
+                    None => {
+                        return Err(AppError::ServiceBus(
+                            "No consumer available for message deletion".to_string(),
+                        ));
+                    }
+                }
+
+                log::info!(
+                    "Successfully replaced message {} in queue: {}",
+                    message_id.id,
+                    queue_name
+                );
+                Ok::<(), AppError>(())
+            }
+            .await;
+
+            // Remove the replaced message from local state if successful
+            if result.is_ok() {
+                let _ = tx_to_main.send(Msg::MessageActivity(
+                    MessageActivityMsg::BulkRemoveMessagesFromState(vec![message_id]),
+                ));
+            }
+
+            Self::send_completion_messages(&tx_to_main, result, "✅ Message replaced successfully!")
+        };
+
+        taskpool.execute(task);
+
+        // Return immediate feedback, then stay in current state until task completes
+        feedback_msg
+    }
+
+    /// Helper function to delete a message by completing it
+    async fn delete_message(
+        consumer: Arc<Mutex<Consumer>>,
+        message_id: &MessageIdentifier,
+    ) -> Result<(), AppError> {
+        use crate::app::updates::messages::utils::find_target_message;
+
+        let mut consumer_guard = consumer.lock().await;
+        match find_target_message(&mut consumer_guard, &message_id.id, message_id.sequence).await {
+            Ok(target_msg) => {
+                consumer_guard
+                    .complete_message(&target_msg)
+                    .await
+                    .map_err(|e| {
+                        AppError::ServiceBus(format!("Failed to delete message: {}", e))
+                    })?;
+                log::info!("Successfully deleted message: {}", message_id.id);
+                Ok(())
+            }
+            Err(e) => {
+                log::warn!(
+                    "Message {} not found (may have been already processed): {}",
+                    message_id.id,
+                    e
+                );
+                Ok(()) // Not an error - message may have been processed elsewhere
+            }
+        }
     }
 }
