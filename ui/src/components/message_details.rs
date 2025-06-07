@@ -1,5 +1,7 @@
-use crate::components::common::{MessageActivityMsg, Msg};
+use crate::components::common::{MessageActivityMsg, Msg, PopupActivityMsg};
+use crate::config;
 use crate::theme::ThemeManager;
+use copypasta::{ClipboardContext, ClipboardProvider};
 use server::model::{BodyData, MessageModel};
 use tuirealm::{
     AttrValue, Attribute, Component, Frame, MockComponent, NoUserEvent, State, StateValue,
@@ -303,6 +305,18 @@ impl MessageDetails {
             }
         }
     }
+
+    /// Copy the entire message content to clipboard
+    fn copy_to_clipboard(&self) -> Result<(), String> {
+        let content = self.message_content.join("\n");
+
+        let mut ctx = ClipboardContext::new()
+            .map_err(|e| format!("Failed to create clipboard context: {}", e))?;
+        ctx.set_contents(content)
+            .map_err(|e| format!("Failed to set clipboard contents: {}", e))?;
+
+        Ok(())
+    }
 }
 
 impl MockComponent for MessageDetails {
@@ -396,6 +410,46 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
                 modifiers: KeyModifiers::NONE,
             }) => {
                 self.handle_page_navigation(false);
+            }
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(c),
+                modifiers: KeyModifiers::CONTROL,
+            }) if c == config::CONFIG.keys().copy_message() => {
+                // Copy message content to clipboard with Ctrl+configured_key
+                match self.copy_to_clipboard() {
+                    Ok(()) => {
+                        return Some(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
+                            "📋 Message content copied to clipboard!".to_string(),
+                        )));
+                    }
+                    Err(e) => {
+                        log::error!("Failed to copy to clipboard: {}", e);
+                        return Some(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
+                            "❌ Failed to copy to clipboard".to_string(),
+                        )));
+                    }
+                }
+            }
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Char(c),
+                modifiers: KeyModifiers::NONE,
+            }) if c == config::CONFIG.keys().yank_message() => {
+                // Copy message content to clipboard with configured yank key
+                match self.copy_to_clipboard() {
+                    Ok(()) => {
+                        return Some(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
+                            "📋 Message content yanked to clipboard!".to_string(),
+                        )));
+                    }
+                    Err(e) => {
+                        log::error!("Failed to copy to clipboard: {}", e);
+                        return Some(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
+                            "❌ Failed to yank to clipboard".to_string(),
+                        )));
+                    }
+                }
             }
 
             _ => {}
