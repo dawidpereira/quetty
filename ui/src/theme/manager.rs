@@ -158,6 +158,39 @@ impl ThemeManager {
             .hex_to_color(&manager.current_theme.colors.message_delivery_count)
     }
 
+    // === Message State Group Colors ===
+    pub fn message_state_ready() -> Color {
+        let manager = Self::global().lock().unwrap();
+        manager
+            .current_theme
+            .colors
+            .hex_to_color(&manager.current_theme.colors.message_state_ready)
+    }
+
+    pub fn message_state_deferred() -> Color {
+        let manager = Self::global().lock().unwrap();
+        manager
+            .current_theme
+            .colors
+            .hex_to_color(&manager.current_theme.colors.message_state_deferred)
+    }
+
+    pub fn message_state_outcome() -> Color {
+        let manager = Self::global().lock().unwrap();
+        manager
+            .current_theme
+            .colors
+            .hex_to_color(&manager.current_theme.colors.message_state_outcome)
+    }
+
+    pub fn message_state_failed() -> Color {
+        let manager = Self::global().lock().unwrap();
+        manager
+            .current_theme
+            .colors
+            .hex_to_color(&manager.current_theme.colors.message_state_failed)
+    }
+
     // === List Item Colors ===
     pub fn namespace_list_item() -> Color {
         let manager = Self::global().lock().unwrap();

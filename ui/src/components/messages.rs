@@ -6,7 +6,7 @@ use crate::config;
 use crate::error::{AppError, AppResult};
 use crate::theme::ThemeManager;
 use server::bulk_operations::MessageIdentifier;
-use server::model::MessageModel;
+use server::model::{MessageModel, MessageState};
 use tui_realm_stdlib::Table;
 use tuirealm::Frame;
 use tuirealm::command::{Cmd, CmdResult, Direction};
@@ -91,16 +91,16 @@ impl Messages {
         };
 
         let (headers, widths) = if pagination_info.as_ref().is_some_and(|info| info.bulk_mode) {
-            // In bulk mode, add checkbox column with circular checkboxes
             (
                 vec![
-                    "●○".to_string(),
+                    "".to_string(), // Checkbox column
                     "Sequence".to_string(),
                     "Message ID".to_string(),
                     "Enqueued At".to_string(),
+                    "State".to_string(),
                     "Delivery Count".to_string(),
                 ],
-                vec![5, 9, 28, 24, 15],
+                vec![3, 9, 25, 28, 12, 15],
             )
         } else {
             (
@@ -108,9 +108,10 @@ impl Messages {
                     "Sequence".to_string(),
                     "Message ID".to_string(),
                     "Enqueued At".to_string(),
+                    "State".to_string(),
                     "Delivery Count".to_string(),
                 ],
-                vec![10, 30, 25, 16],
+                vec![10, 25, 30, 12, 16],
             )
         };
 
@@ -233,7 +234,11 @@ impl Messages {
                     .add_col(TextSpan::from(msg.sequence.to_string()))
                     .add_col(TextSpan::from(msg.id.to_string()))
                     .add_col(TextSpan::from(msg.enqueued_at.to_string()))
-                    .add_col(TextSpan::from(msg.delivery_count.to_string()))
+                    .add_col(TextSpan::from(Self::get_state_display(&msg.state)))
+                    .add_col(TextSpan::from(Self::format_delivery_count_right_aligned(
+                        msg.delivery_count,
+                        16,
+                    )))
                     .add_row();
             }
             return builder.build();
@@ -244,6 +249,37 @@ impl Messages {
     /// Create a message identifier from index - this will send a message to get the actual message data
     fn create_toggle_message_selection(index: usize) -> Msg {
         Msg::MessageActivity(MessageActivityMsg::ToggleMessageSelectionByIndex(index))
+    }
+
+    /// Get the appropriate color for a message state based on its group
+    fn get_state_color(state: &MessageState) -> tuirealm::ratatui::style::Color {
+        match state {
+            MessageState::Active | MessageState::Scheduled => ThemeManager::message_state_ready(),
+            MessageState::Deferred => ThemeManager::message_state_deferred(),
+            MessageState::Completed | MessageState::Abandoned => {
+                ThemeManager::message_state_outcome()
+            }
+            MessageState::DeadLettered => ThemeManager::message_state_failed(),
+        }
+    }
+
+    /// Get display text for a message state
+    fn get_state_display(state: &MessageState) -> &'static str {
+        match state {
+            MessageState::Active => "Active",
+            MessageState::Deferred => "Deferred",
+            MessageState::Scheduled => "Scheduled",
+            MessageState::DeadLettered => "Dead-lettered",
+            MessageState::Completed => "Completed",
+            MessageState::Abandoned => "Abandoned",
+        }
+    }
+
+    /// Right-align delivery count with padding
+    fn format_delivery_count_right_aligned(count: usize, width: usize) -> String {
+        let count_str = count.to_string();
+        let padding = width.saturating_sub(count_str.len());
+        format!("{}{}", " ".repeat(padding), count_str)
     }
 }
 
@@ -585,7 +621,17 @@ impl MockComponent for Messages {
                     ),
                 );
                 cells.push(
-                    tuirealm::ratatui::widgets::Cell::from(msg.delivery_count.to_string()).style(
+                    tuirealm::ratatui::widgets::Cell::from(Self::get_state_display(&msg.state))
+                        .style(
+                            tuirealm::ratatui::style::Style::default()
+                                .fg(Self::get_state_color(&msg.state)),
+                        ),
+                );
+                cells.push(
+                    tuirealm::ratatui::widgets::Cell::from(
+                        Self::format_delivery_count_right_aligned(msg.delivery_count, 16),
+                    )
+                    .style(
                         tuirealm::ratatui::style::Style::default()
                             .fg(ThemeManager::message_delivery_count()),
                     ),

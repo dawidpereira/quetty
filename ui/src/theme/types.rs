@@ -36,6 +36,10 @@ pub struct ThemeColors {
     pub message_id: String,
     pub message_timestamp: String,
     pub message_delivery_count: String,
+    pub message_state_ready: String,
+    pub message_state_deferred: String,
+    pub message_state_outcome: String,
+    pub message_state_failed: String,
     pub queue_count: String,
 
     // === List Item Colors ===
