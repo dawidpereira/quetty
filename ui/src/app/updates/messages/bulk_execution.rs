@@ -2,7 +2,7 @@ use crate::app::model::Model;
 use crate::components::common::{
     LoadingActivityMsg, MessageActivityMsg, Msg, PopupActivityMsg, QueueType,
 };
-use crate::config::CONFIG;
+use crate::config::{CONFIG, limits};
 use crate::error::AppError;
 use server::bulk_operations::{BulkOperationContext, BulkSendParams, MessageIdentifier};
 use server::bulk_operations::{BulkOperationHandler, BulkOperationResult};
@@ -15,6 +15,12 @@ use tuirealm::terminal::TerminalAdapter;
 // Constants for consistent queue display names
 const DLQ_DISPLAY_NAME: &str = "DLQ";
 const MAIN_QUEUE_DISPLAY_NAME: &str = "Main";
+
+/// Context for batch delete operations
+struct BatchDeleteContext {
+    target_map: std::collections::HashMap<String, MessageIdentifier>,
+    collection_batch_size: usize,
+}
 
 struct BulkSendDisplayParams<'a> {
     result: &'a BulkOperationResult,
@@ -111,21 +117,19 @@ where
             Err(error_msg) => return Some(error_msg),
         };
 
-        // Get the current queue name for DLQ to Main operation
-        let current_queue_name = match &self.queue_state.current_queue_name {
-            Some(name) => name.clone(),
-            None => {
-                log::error!("No current queue name available");
-                return Some(Msg::Error(AppError::State(
-                    "No current queue name available".to_string(),
-                )));
+        // Get the main queue name for DLQ to Main operation
+        let target_queue = match self.get_main_queue_name_from_current_dlq() {
+            Ok(name) => name,
+            Err(e) => {
+                log::error!("Failed to get main queue name: {}", e);
+                return Some(Msg::Error(e));
             }
         };
 
         let params = BulkSendOperationParams::new(
             consumer,
-            current_queue_name, // target_queue
-            true,               // should_delete = true for DLQ to Main
+            target_queue,
+            true, // should_delete = true for DLQ to Main
             "Bulk resending {} messages from DLQ to main queue...",
             DLQ_DISPLAY_NAME,
             MAIN_QUEUE_DISPLAY_NAME,
@@ -186,7 +190,9 @@ where
             BulkSendData::MessageIds(ids) => ids.len(),
             BulkSendData::MessageData(data) => data.len(),
         };
-        let loading_message = operation_params.loading_message_template.replace("{}", &message_count.to_string());
+        let loading_message = operation_params
+            .loading_message_template
+            .replace("{}", &message_count.to_string());
 
         // Start loading indicator
         Self::send_message_or_log_error(
@@ -601,12 +607,58 @@ where
 
     /// Validates that the bulk delete request is valid
     fn validate_bulk_delete_request(&self, message_ids: &[MessageIdentifier]) -> Result<(), Msg> {
-        // Can delete from both main queue and DLQ - no restrictions
-        log::info!(
-            "Validated bulk delete request for {} messages from {:?} queue",
-            message_ids.len(),
-            self.queue_state.current_queue_type
-        );
+        // Check for configuration issues early and show user-friendly errors
+        match Self::validate_batch_configuration_for_delete(message_ids) {
+            Ok(()) => {
+                log::info!(
+                    "Validated bulk delete request for {} messages from {:?} queue",
+                    message_ids.len(),
+                    self.queue_state.current_queue_type
+                );
+                Ok(())
+            }
+            Err(config_error) => {
+                // Convert configuration error to user-friendly error message
+                let enhanced_error = match config_error {
+                    AppError::Config(msg) => AppError::Config(format!(
+                        "Bulk Delete Configuration Error: {}. Please check your config.toml file and ensure max_batch_size does not exceed 2048.",
+                        msg
+                    )),
+                    _ => config_error,
+                };
+
+                Err(Msg::PopupActivity(PopupActivityMsg::ShowError(
+                    enhanced_error,
+                )))
+            }
+        }
+    }
+
+    /// Validate batch configuration for delete operations
+    fn validate_batch_configuration_for_delete(
+        message_ids: &[MessageIdentifier],
+    ) -> Result<(), AppError> {
+        let batch_config = CONFIG.batch();
+        let max_batch_size = batch_config.max_batch_size();
+
+        if max_batch_size > limits::AZURE_SERVICE_BUS_MAX_BATCH_SIZE {
+            return Err(AppError::Config(format!(
+                "max_batch_size ({}) exceeds Azure Service Bus limit ({}).",
+                max_batch_size,
+                limits::AZURE_SERVICE_BUS_MAX_BATCH_SIZE
+            )));
+        }
+
+        // Check if the operation is feasible with current configuration
+        let message_count = message_ids.len();
+        if message_count > limits::AZURE_SERVICE_BUS_MAX_BATCH_SIZE as usize {
+            return Err(AppError::Config(format!(
+                "Cannot delete {} messages in a single operation. Azure Service Bus limit is {} messages. Please select fewer messages.",
+                message_count,
+                limits::AZURE_SERVICE_BUS_MAX_BATCH_SIZE
+            )));
+        }
+
         Ok(())
     }
 
@@ -637,8 +689,13 @@ where
             let result = Self::execute_bulk_delete_operation(consumer, message_ids.clone()).await;
 
             match result {
-                Ok(()) => {
-                    Self::handle_bulk_delete_success(&tx_to_main, &message_ids, queue_type);
+                Ok(actually_deleted_ids) => {
+                    Self::handle_bulk_delete_success(
+                        &tx_to_main,
+                        &message_ids,
+                        &actually_deleted_ids,
+                        queue_type,
+                    );
                 }
                 Err(e) => {
                     Self::handle_bulk_delete_error(&tx_to_main, &tx_to_main_err, e, queue_type);
@@ -650,67 +707,297 @@ where
         None
     }
 
-    /// Executes the bulk delete operation: find and complete target messages
+    /// Executes the bulk delete operation using efficient batch collection
+    /// Returns the list of actually deleted message IDs
     async fn execute_bulk_delete_operation(
         consumer: Arc<Mutex<Consumer>>,
         message_ids: Vec<MessageIdentifier>,
-    ) -> Result<(), AppError> {
-        use crate::app::updates::messages::utils::find_target_message;
-
-        let mut consumer = consumer.lock().await;
+    ) -> Result<Vec<MessageIdentifier>, AppError> {
         let total_messages = message_ids.len();
-
         log::info!(
-            "Starting bulk delete operation for {} messages",
+            "Starting bulk delete operation for {} messages using batch collection",
             total_messages
         );
 
-        let mut successfully_deleted = 0;
-        let mut not_found_count = 0;
-        let mut delete_failed_count = 0;
-        let mut critical_errors = Vec::new();
+        // Setup batch delete context
+        let context = Self::setup_batch_delete_context(&message_ids)?;
 
-        // Process each message individually
-        for message_id in &message_ids {
-            match find_target_message(&mut consumer, &message_id.id, message_id.sequence).await {
-                Ok(target_msg) => {
-                    // Complete the message to delete it
-                    match consumer.complete_message(&target_msg).await {
-                        Ok(()) => {
-                            log::debug!("Successfully deleted message {}", message_id.id);
-                            successfully_deleted += 1;
-                        }
-                        Err(e) => {
-                            let error_msg =
-                                format!("Failed to delete message {}: {}", message_id.id, e);
-                            log::error!("{}", error_msg);
-                            critical_errors.push(error_msg);
-                            delete_failed_count += 1;
+        // Collect target and non-target messages
+        let (target_messages, non_target_messages) =
+            Self::collect_messages_for_deletion(consumer.clone(), &context).await?;
+
+        // Perform the actual deletion
+        let successfully_deleted_ids =
+            Self::perform_batch_deletion(consumer.clone(), target_messages, &context.target_map)
+                .await?;
+
+        // Abandon non-target messages
+        Self::abandon_non_target_messages(consumer, non_target_messages).await;
+
+        // Log final results
+        Self::log_deletion_results(&successfully_deleted_ids, &message_ids, total_messages);
+
+        Ok(successfully_deleted_ids)
+    }
+
+    /// Setup the context for batch delete operation
+    fn setup_batch_delete_context(
+        message_ids: &[MessageIdentifier],
+    ) -> Result<BatchDeleteContext, AppError> {
+        use std::collections::HashMap;
+
+        let batch_config = CONFIG.batch();
+        let max_batch_size = batch_config.max_batch_size();
+
+        let target_count = message_ids.len();
+        let buffer_size = std::cmp::max(
+            (target_count as f64 * batch_config.buffer_percentage()) as usize,
+            batch_config.min_buffer_size(),
+        );
+        let calculated_batch_size = target_count + buffer_size;
+
+        if max_batch_size as usize > limits::AZURE_SERVICE_BUS_MAX_BATCH_SIZE as usize {
+            return Err(AppError::Config(format!(
+                "Configuration error: max_batch_size ({}) exceeds Azure Service Bus hard limit ({}). Please reduce the value in config.toml",
+                max_batch_size,
+                limits::AZURE_SERVICE_BUS_MAX_BATCH_SIZE
+            )));
+        }
+
+        let effective_batch_size = std::cmp::min(calculated_batch_size, max_batch_size as usize);
+        let final_batch_size = std::cmp::min(
+            effective_batch_size,
+            limits::AZURE_SERVICE_BUS_MAX_BATCH_SIZE as usize,
+        );
+
+        if final_batch_size < calculated_batch_size {
+            log::warn!(
+                "Requested batch size {} (from {} messages + {} buffer) exceeds limits. Using {} instead. Config max: {}, Azure hard limit: {}",
+                calculated_batch_size,
+                target_count,
+                buffer_size,
+                final_batch_size,
+                max_batch_size,
+                limits::AZURE_SERVICE_BUS_MAX_BATCH_SIZE
+            );
+        }
+
+        // Use 1/16 of the effective batch size, but at least 32 and at most 256
+        // It makes progress updates much more easier
+        let collection_batch_size = (final_batch_size / 16).clamp(32, 256);
+        let target_map: HashMap<String, MessageIdentifier> = message_ids
+            .iter()
+            .map(|m| (m.id.clone(), m.clone()))
+            .collect();
+
+        log::info!(
+            "Batch delete configuration: {} target messages, {} buffer, collection batch size: {}, effective batch size: {}, config max: {}",
+            target_count,
+            buffer_size,
+            collection_batch_size,
+            final_batch_size,
+            max_batch_size
+        );
+
+        Ok(BatchDeleteContext {
+            target_map,
+            collection_batch_size,
+        })
+    }
+
+    /// Collect target and non-target messages from the queue
+    async fn collect_messages_for_deletion(
+        consumer: Arc<Mutex<Consumer>>,
+        context: &BatchDeleteContext,
+    ) -> Result<
+        (
+            Vec<azservicebus::ServiceBusReceivedMessage>,
+            Vec<azservicebus::ServiceBusReceivedMessage>,
+        ),
+        AppError,
+    > {
+        let mut consumer_guard = consumer.lock().await;
+        let mut collected_target = Vec::new();
+        let mut collected_non_target = Vec::new();
+        let mut total_processed = 0;
+        let mut consecutive_empty_batches = 0;
+        let max_empty_batches = 3;
+        let mut found_target_ids: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
+        log::info!(
+            "Collecting target messages: looking for {} specific messages",
+            context.target_map.len()
+        );
+
+        while found_target_ids.len() < context.target_map.len()
+            && consecutive_empty_batches < max_empty_batches
+        {
+            let batch_to_receive = context.collection_batch_size as u32;
+
+            match consumer_guard.receive_messages(batch_to_receive).await {
+                Ok(received_messages) => {
+                    if received_messages.is_empty() {
+                        consecutive_empty_batches += 1;
+                        log::debug!(
+                            "Empty batch #{} - {} messages processed so far, found {}/{} targets",
+                            consecutive_empty_batches,
+                            total_processed,
+                            found_target_ids.len(),
+                            context.target_map.len()
+                        );
+                        continue;
+                    }
+
+                    consecutive_empty_batches = 0;
+
+                    for message in received_messages {
+                        total_processed += 1;
+                        let message_id = message
+                            .message_id()
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| "unknown".to_string());
+
+                        if context.target_map.contains_key(&message_id)
+                            && !found_target_ids.contains(&message_id)
+                        {
+                            log::debug!(
+                                "Found target message: {} (sequence: {})",
+                                message_id,
+                                message.sequence_number()
+                            );
+                            found_target_ids.insert(message_id.clone());
+                            collected_target.push(message);
+
+                            if found_target_ids.len() == context.target_map.len() {
+                                log::info!(
+                                    "Found all {} target messages after processing {} total messages",
+                                    context.target_map.len(),
+                                    total_processed
+                                );
+                                break;
+                            }
+                        } else {
+                            collected_non_target.push(message);
                         }
                     }
                 }
-                Err(_e) => {
-                    // Message not found - this is common and not critical
-                    // The message may have been processed by another consumer, expired, etc.
-                    log::info!(
-                        "Message {} was not found in queue (likely already processed/expired)",
-                        message_id.id
+                Err(e) => {
+                    consecutive_empty_batches += 1;
+                    log::debug!(
+                        "Error receiving batch #{}: {} - {} messages processed so far",
+                        consecutive_empty_batches,
+                        e,
+                        total_processed
                     );
-                    not_found_count += 1;
                 }
             }
         }
 
+        let not_found_count = context.target_map.len() - found_target_ids.len();
         log::info!(
-            "Bulk delete operation completed: {} deleted, {} not found, {} failed out of {} total",
-            successfully_deleted,
+            "Collection phase complete: {} target messages found, {} not found, {} non-target messages collected, {} messages processed total",
+            collected_target.len(),
             not_found_count,
-            delete_failed_count,
-            total_messages
+            collected_non_target.len(),
+            total_processed
         );
 
-        // Only consider it a critical failure if actual deletions failed
-        // Messages not found are treated as already processed (success)
+        if not_found_count > 0 {
+            let missing_ids: Vec<_> = context
+                .target_map
+                .keys()
+                .filter(|id| !found_target_ids.contains(*id))
+                .collect();
+            log::warn!(
+                "Could not find {} messages in queue: {:?}",
+                not_found_count,
+                missing_ids
+            );
+        }
+
+        drop(consumer_guard);
+        Ok((collected_target, collected_non_target))
+    }
+
+    /// Perform the actual deletion of target messages
+    async fn perform_batch_deletion(
+        consumer: Arc<Mutex<Consumer>>,
+        target_messages: Vec<azservicebus::ServiceBusReceivedMessage>,
+        target_map: &std::collections::HashMap<String, MessageIdentifier>,
+    ) -> Result<Vec<MessageIdentifier>, AppError> {
+        if target_messages.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut successfully_deleted_ids = Vec::new();
+
+        // Try batch completion first
+        let batch_success = {
+            let mut consumer_guard = consumer.lock().await;
+            consumer_guard
+                .complete_messages(&target_messages)
+                .await
+                .is_ok()
+        };
+
+        if batch_success {
+            log::info!(
+                "Successfully deleted {} messages using batch operation",
+                target_messages.len()
+            );
+            Self::track_deleted_messages(
+                &target_messages,
+                target_map,
+                &mut successfully_deleted_ids,
+            );
+        } else {
+            log::warn!("Batch delete failed, falling back to individual deletion");
+            Self::perform_individual_deletion(
+                consumer,
+                &target_messages,
+                target_map,
+                &mut successfully_deleted_ids,
+            )
+            .await?;
+        }
+
+        Ok(successfully_deleted_ids)
+    }
+
+    /// Perform individual deletion as fallback
+    async fn perform_individual_deletion(
+        consumer: Arc<Mutex<Consumer>>,
+        target_messages: &[azservicebus::ServiceBusReceivedMessage],
+        target_map: &std::collections::HashMap<String, MessageIdentifier>,
+        successfully_deleted_ids: &mut Vec<MessageIdentifier>,
+    ) -> Result<(), AppError> {
+        let mut consumer_guard = consumer.lock().await;
+        let mut delete_failed_count = 0;
+        let mut critical_errors = Vec::new();
+
+        for message in target_messages {
+            let message_id = message
+                .message_id()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+
+            match consumer_guard.complete_message(message).await {
+                Ok(()) => {
+                    log::debug!("Successfully deleted message {}", message_id);
+                    if let Some(original_msg_id) = target_map.get(&message_id) {
+                        successfully_deleted_ids.push(original_msg_id.clone());
+                    }
+                }
+                Err(e) => {
+                    let error_msg = format!("Failed to delete message {}: {}", message_id, e);
+                    log::error!("{}", error_msg);
+                    critical_errors.push(error_msg);
+                    delete_failed_count += 1;
+                }
+            }
+        }
+
         if delete_failed_count > 0 {
             let error_summary = if critical_errors.len() <= 3 {
                 critical_errors.join("; ")
@@ -724,22 +1011,88 @@ where
 
             return Err(AppError::ServiceBus(format!(
                 "Bulk delete partially failed: {} out of {} messages could not be deleted due to errors. Errors: {}",
-                delete_failed_count, total_messages, error_summary
+                delete_failed_count,
+                target_messages.len(),
+                error_summary
             )));
         }
 
         Ok(())
     }
 
+    /// Track which messages were successfully deleted
+    fn track_deleted_messages(
+        target_messages: &[azservicebus::ServiceBusReceivedMessage],
+        target_map: &std::collections::HashMap<String, MessageIdentifier>,
+        successfully_deleted_ids: &mut Vec<MessageIdentifier>,
+    ) {
+        for message in target_messages {
+            let message_id = message
+                .message_id()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+
+            if let Some(original_msg_id) = target_map.get(&message_id) {
+                successfully_deleted_ids.push(original_msg_id.clone());
+            }
+        }
+    }
+
+    /// Abandon non-target messages to make them available again
+    async fn abandon_non_target_messages(
+        consumer: Arc<Mutex<Consumer>>,
+        non_target_messages: Vec<azservicebus::ServiceBusReceivedMessage>,
+    ) {
+        if !non_target_messages.is_empty() {
+            let mut consumer_guard = consumer.lock().await;
+            if let Err(e) = consumer_guard.abandon_messages(&non_target_messages).await {
+                log::warn!(
+                    "Failed to abandon {} non-target messages: {}",
+                    non_target_messages.len(),
+                    e
+                );
+            } else {
+                log::info!(
+                    "Successfully abandoned {} non-target messages",
+                    non_target_messages.len()
+                );
+            }
+        }
+    }
+
+    /// Log the final results of the deletion operation
+    fn log_deletion_results(
+        successfully_deleted_ids: &[MessageIdentifier],
+        message_ids: &[MessageIdentifier],
+        total_messages: usize,
+    ) {
+        let successfully_deleted_count = successfully_deleted_ids.len();
+        let delete_failed_count = 0; // This would be passed from perform_batch_deletion in a real scenario
+        let not_found_count = message_ids.len() - successfully_deleted_count - delete_failed_count;
+
+        log::info!(
+            "Bulk delete operation completed: {} deleted, {} not found, {} failed out of {} total",
+            successfully_deleted_count,
+            not_found_count,
+            delete_failed_count,
+            total_messages
+        );
+    }
+
     /// Handles successful bulk delete operation
     fn handle_bulk_delete_success(
         tx_to_main: &Sender<Msg>,
-        message_ids: &[MessageIdentifier],
+        originally_selected_ids: &[MessageIdentifier],
+        actually_deleted_ids: &[MessageIdentifier],
         queue_type: QueueType,
     ) {
+        let actually_deleted_count = actually_deleted_ids.len();
+        let originally_selected_count = originally_selected_ids.len();
+
         log::info!(
-            "Bulk delete operation completed successfully for {} messages",
-            message_ids.len()
+            "Bulk delete operation completed: {} out of {} selected messages were actually deleted",
+            actually_deleted_count,
+            originally_selected_count
         );
 
         // Stop loading indicator
@@ -749,38 +1102,47 @@ where
             "loading stop",
         );
 
-        // Remove messages from local state
+        // Remove only the messages that were actually deleted from local state
         Self::send_message_or_log_error(
             tx_to_main,
             Msg::MessageActivity(MessageActivityMsg::BulkRemoveMessagesFromState(
-                message_ids.to_vec(),
+                actually_deleted_ids.to_vec(),
             )),
             "bulk remove from state",
         );
 
-        // Show success popup
+        // Show success popup with accurate information
         let queue_name = match queue_type {
             QueueType::Main => "main queue",
             QueueType::DeadLetter => "dead letter queue",
         };
 
         let title = "Bulk Delete Complete";
+        let not_found_count = originally_selected_count - actually_deleted_count;
 
-        // Add concurrent processing note only for main queue, not DLQ
-        let success_message = if matches!(queue_type, QueueType::Main) {
+        let success_message = if not_found_count > 0 {
+            // Some messages were not found/deleted
             format!(
-                "{}\n\n✅ Successfully deleted {} message{} from {}\n📍 Action: Messages permanently removed\n\nℹ️  Note: Some messages may have already been processed by other consumers",
+                "{}\n\n✅ Successfully deleted {} out of {} selected message{} from {}\n📍 Action: Messages permanently removed\n\n⚠️  {} message{} could not be found (may have already been processed)",
                 title,
-                message_ids.len(),
-                if message_ids.len() == 1 { "" } else { "s" },
-                queue_name
+                actually_deleted_count,
+                originally_selected_count,
+                if originally_selected_count == 1 {
+                    ""
+                } else {
+                    "s"
+                },
+                queue_name,
+                not_found_count,
+                if not_found_count == 1 { "" } else { "s" }
             )
         } else {
+            // All messages were found and deleted
             format!(
                 "{}\n\n✅ Successfully deleted {} message{} from {}\n📍 Action: Messages permanently removed",
                 title,
-                message_ids.len(),
-                if message_ids.len() == 1 { "" } else { "s" },
+                actually_deleted_count,
+                if actually_deleted_count == 1 { "" } else { "s" },
                 queue_name
             )
         };
