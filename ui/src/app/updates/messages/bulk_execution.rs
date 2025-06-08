@@ -4,9 +4,12 @@ use crate::components::common::{
 };
 use crate::config::{CONFIG, limits};
 use crate::error::AppError;
+use azservicebus::ServiceBusClient;
+use azservicebus::core::BasicRetryPolicy;
 use server::bulk_operations::{BulkOperationContext, BulkSendParams, MessageIdentifier};
 use server::bulk_operations::{BulkOperationHandler, BulkOperationResult};
 use server::consumer::Consumer;
+use std::error::Error;
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
 use tokio::sync::Mutex;
@@ -26,7 +29,6 @@ struct BulkSendDisplayParams<'a> {
     result: &'a BulkOperationResult,
     from_queue_display: &'a str,
     to_queue_display: &'a str,
-    target_queue: &'a str,
     should_delete: bool,
 }
 
@@ -35,14 +37,12 @@ impl<'a> BulkSendDisplayParams<'a> {
         result: &'a BulkOperationResult,
         from_queue_display: &'a str,
         to_queue_display: &'a str,
-        target_queue: &'a str,
         should_delete: bool,
     ) -> Self {
         Self {
             result,
             from_queue_display,
             to_queue_display,
-            target_queue,
             should_delete,
         }
     }
@@ -82,20 +82,361 @@ enum BulkSendData {
     MessageData(Vec<(MessageIdentifier, Vec<u8>)>),
 }
 
+/// State management for message collection during bulk delete operations
+struct MessageCollector {
+    target_map: std::collections::HashMap<String, MessageIdentifier>,
+    found_target_ids: std::collections::HashSet<String>,
+    collected_target: Vec<azservicebus::ServiceBusReceivedMessage>,
+    collected_non_target: Vec<azservicebus::ServiceBusReceivedMessage>,
+    total_processed: usize,
+    consecutive_empty_batches: usize,
+    max_empty_batches: usize,
+    batch_size: u32,
+}
+
+impl MessageCollector {
+    fn new(context: &BatchDeleteContext) -> Self {
+        Self {
+            target_map: context.target_map.clone(),
+            found_target_ids: std::collections::HashSet::new(),
+            collected_target: Vec::new(),
+            collected_non_target: Vec::new(),
+            total_processed: 0,
+            consecutive_empty_batches: 0,
+            max_empty_batches: 3,
+            batch_size: context.collection_batch_size as u32,
+        }
+    }
+
+    fn is_complete(&self) -> bool {
+        self.found_target_ids.len() >= self.target_map.len()
+    }
+
+    fn should_stop(&self) -> bool {
+        self.consecutive_empty_batches >= self.max_empty_batches
+    }
+
+    fn target_count(&self) -> usize {
+        self.target_map.len()
+    }
+
+    fn process_received_messages(
+        &mut self,
+        messages: Vec<azservicebus::ServiceBusReceivedMessage>,
+    ) -> bool {
+        if messages.is_empty() {
+            self.consecutive_empty_batches += 1;
+            log::debug!(
+                "Empty batch #{} - {} messages processed so far, found {}/{} targets",
+                self.consecutive_empty_batches,
+                self.total_processed,
+                self.found_target_ids.len(),
+                self.target_map.len()
+            );
+            return false;
+        }
+
+        self.consecutive_empty_batches = 0;
+
+        for message in messages {
+            self.total_processed += 1;
+            let message_id = message
+                .message_id()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+
+            if self.target_map.contains_key(&message_id)
+                && !self.found_target_ids.contains(&message_id)
+            {
+                log::debug!(
+                    "Found target message: {} (sequence: {})",
+                    message_id,
+                    message.sequence_number()
+                );
+                self.found_target_ids.insert(message_id.clone());
+                self.collected_target.push(message);
+
+                if self.is_complete() {
+                    log::info!(
+                        "Found all {} target messages after processing {} total messages",
+                        self.target_map.len(),
+                        self.total_processed
+                    );
+                    return true; // Signal completion
+                }
+            } else {
+                self.collected_non_target.push(message);
+            }
+        }
+
+        false
+    }
+
+    fn handle_receive_error(&mut self, error: &dyn Error) {
+        self.consecutive_empty_batches += 1;
+        log::debug!(
+            "Error receiving batch #{}: {} - {} messages processed so far",
+            self.consecutive_empty_batches,
+            error,
+            self.total_processed
+        );
+    }
+
+    fn finalize(
+        self,
+    ) -> (
+        Vec<azservicebus::ServiceBusReceivedMessage>,
+        Vec<azservicebus::ServiceBusReceivedMessage>,
+    ) {
+        let not_found_count = self.target_map.len() - self.found_target_ids.len();
+        log::info!(
+            "Collection phase complete: {} target messages found, {} not found, {} non-target messages collected, {} messages processed total",
+            self.collected_target.len(),
+            not_found_count,
+            self.collected_non_target.len(),
+            self.total_processed
+        );
+
+        if not_found_count > 0 {
+            let missing_ids: Vec<_> = self
+                .target_map
+                .keys()
+                .filter(|id| !self.found_target_ids.contains(*id))
+                .collect();
+            log::warn!(
+                "Could not find {} messages in queue: {:?}",
+                not_found_count,
+                missing_ids
+            );
+        }
+
+        (self.collected_target, self.collected_non_target)
+    }
+}
+
+/// Parameters for bulk send task execution
+struct BulkSendTaskParams {
+    bulk_data: BulkSendData,
+    operation_params: BulkSendOperationParams,
+    service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+    tx_to_main: Sender<Msg>,
+    tx_to_main_err: Sender<Msg>,
+}
+
+impl BulkSendTaskParams {
+    fn new(
+        bulk_data: BulkSendData,
+        operation_params: BulkSendOperationParams,
+        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+        tx_to_main: Sender<Msg>,
+    ) -> Self {
+        Self {
+            bulk_data,
+            operation_params,
+            service_bus_client,
+            tx_to_main_err: tx_to_main.clone(),
+            tx_to_main,
+        }
+    }
+
+    fn message_count(&self) -> usize {
+        match &self.bulk_data {
+            BulkSendData::MessageIds(ids) => ids.len(),
+            BulkSendData::MessageData(data) => data.len(),
+        }
+    }
+
+    fn format_loading_message(&self) -> String {
+        self.operation_params
+            .loading_message_template
+            .replace("{}", &self.message_count().to_string())
+    }
+}
+
+/// Execute the bulk send operation in an async task
+async fn execute_bulk_send_task(params: BulkSendTaskParams) {
+    log::debug!("Executing bulk send operation in background task");
+
+    // Create batch operation configuration using server's config directly
+    let batch_config = CONFIG.batch();
+    let bulk_handler = BulkOperationHandler::new(batch_config.clone());
+
+    // Clone the Arc references before creating operation context
+    let consumer = params.operation_params.consumer.clone();
+    let service_bus_client = params.service_bus_client.clone();
+    let target_queue = params.operation_params.target_queue.clone();
+
+    // Create operation context and parameters
+    let operation_context = BulkOperationContext::new(consumer, service_bus_client, target_queue);
+
+    // Create BulkSendParams based on the data type
+    let bulk_send_params = create_bulk_send_params(&params.bulk_data, &params.operation_params);
+
+    let result = bulk_handler
+        .bulk_send(operation_context, bulk_send_params)
+        .await;
+
+    handle_bulk_send_task_result(result, params);
+}
+
+/// Create BulkSendParams based on the data type
+fn create_bulk_send_params(
+    bulk_data: &BulkSendData,
+    operation_params: &BulkSendOperationParams,
+) -> BulkSendParams {
+    match bulk_data {
+        BulkSendData::MessageIds(message_ids) => {
+            log::info!(
+                "Starting bulk send operation for {} messages to queue {} (delete: {})",
+                message_ids.len(),
+                operation_params.target_queue,
+                operation_params.should_delete
+            );
+            BulkSendParams::with_retrieval(
+                operation_params.target_queue.clone(),
+                operation_params.should_delete,
+                message_ids.clone(),
+            )
+        }
+        BulkSendData::MessageData(messages_data) => {
+            log::info!(
+                "Starting bulk send with data operation for {} messages to queue {} (delete: {})",
+                messages_data.len(),
+                operation_params.target_queue,
+                operation_params.should_delete
+            );
+            BulkSendParams::with_message_data(
+                operation_params.target_queue.clone(),
+                operation_params.should_delete,
+                messages_data.clone(),
+            )
+        }
+    }
+}
+
+/// Handle the result of the bulk send task
+fn handle_bulk_send_task_result(
+    result: Result<BulkOperationResult, Box<dyn Error>>,
+    params: BulkSendTaskParams,
+) {
+    match result {
+        Ok(operation_result) => {
+            log::info!(
+                "Bulk send operation completed: {} successful, {} failed, {} not found",
+                operation_result.successful,
+                operation_result.failed,
+                operation_result.not_found
+            );
+            let display_params = BulkSendDisplayParams::new(
+                &operation_result,
+                &params.operation_params.from_queue_display,
+                &params.operation_params.to_queue_display,
+                params.operation_params.should_delete,
+            );
+            handle_bulk_send_success(&params.tx_to_main, display_params);
+        }
+        Err(e) => {
+            log::error!("Failed to execute bulk send operation: {}", e);
+            handle_bulk_send_error(
+                &params.tx_to_main,
+                &params.tx_to_main_err,
+                AppError::ServiceBus(e.to_string()),
+                &params.operation_params.from_queue_display,
+                &params.operation_params.to_queue_display,
+            );
+        }
+    }
+}
+
+/// Handle successful bulk send operation (extracted from Model)
+fn handle_bulk_send_success(tx_to_main: &Sender<Msg>, display_params: BulkSendDisplayParams) {
+    // Send stop loading message
+    if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
+        log::error!("Failed to send loading stop message: {}", e);
+    }
+
+    // Show success status in the popup
+    show_bulk_send_status(tx_to_main, display_params);
+}
+
+/// Handle bulk send error (extracted from Model)
+fn handle_bulk_send_error(
+    tx_to_main: &Sender<Msg>,
+    tx_to_main_err: &Sender<Msg>,
+    error: AppError,
+    from_queue: &str,
+    to_queue: &str,
+) {
+    log::error!("Bulk send operation failed: {}", error);
+
+    // Send stop loading message using main sender
+    if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
+        log::error!("Failed to send loading stop message: {}", e);
+    }
+
+    // Prepare error message with context
+    let context_message = format!(
+        "Failed to send messages from {} to {}: {}",
+        from_queue, to_queue, error
+    );
+
+    // Send error message using error sender
+    if let Err(e) = tx_to_main_err.send(Msg::Error(AppError::ServiceBus(context_message))) {
+        log::error!("Failed to send error message: {}", e);
+    }
+}
+
+/// Show bulk send status in a popup (extracted from Model)
+fn show_bulk_send_status(tx_to_main: &Sender<Msg>, params: BulkSendDisplayParams) {
+    let success_message = if params.result.failed > 0 || params.result.not_found > 0 {
+        // Partial success case
+        format!(
+            "Bulk {} operation completed with mixed results:\n\n\
+            ✅ Successfully processed: {} messages\n\
+            ❌ Failed: {} messages\n\
+            ⚠️  Not found: {} messages\n\n\
+            Direction: {} → {}",
+            if params.should_delete { "move" } else { "copy" },
+            params.result.successful,
+            params.result.failed,
+            params.result.not_found,
+            params.from_queue_display,
+            params.to_queue_display
+        )
+    } else {
+        // Full success case
+        format!(
+            "✅ Bulk {} operation completed successfully!\n\n\
+            📦 {} messages processed from {} to {}\n\n\
+            All messages were {} successfully.",
+            if params.should_delete { "move" } else { "copy" },
+            params.result.successful,
+            params.from_queue_display,
+            params.to_queue_display,
+            if params.should_delete {
+                "moved"
+            } else {
+                "copied"
+            }
+        )
+    };
+
+    if let Err(e) = tx_to_main.send(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
+        success_message,
+    ))) {
+        log::error!("Failed to send success popup message: {}", e);
+    }
+}
+
 impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
-    /// Helper function to send messages to main thread with error logging
-    fn send_message_or_log_error(tx: &Sender<Msg>, msg: Msg, operation: &str) {
+    /// Helper method to send a message to the main thread or log an error if it fails
+    fn send_message_or_log_error(tx: &Sender<Msg>, msg: Msg, context: &str) {
         if let Err(e) = tx.send(msg) {
-            log::error!("Failed to send {} message: {}", operation, e);
+            log::error!("Failed to send {} message: {}", context, e);
         }
-    }
-
-    /// Helper function to format queue direction display
-    fn format_queue_direction(from_queue: &str, to_queue: &str) -> String {
-        format!("{} → {}", from_queue, to_queue)
     }
 
     /// Execute bulk resend from DLQ operation
@@ -185,16 +526,16 @@ where
         let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
 
-        // Extract and format loading message with the actual count before moving operation_params
-        let message_count = match &bulk_data {
-            BulkSendData::MessageIds(ids) => ids.len(),
-            BulkSendData::MessageData(data) => data.len(),
-        };
-        let loading_message = operation_params
-            .loading_message_template
-            .replace("{}", &message_count.to_string());
+        // Create task parameters
+        let task_params = BulkSendTaskParams::new(
+            bulk_data,
+            operation_params,
+            self.service_bus_client.clone(),
+            tx_to_main.clone(),
+        );
 
         // Start loading indicator
+        let loading_message = task_params.format_loading_message();
         Self::send_message_or_log_error(
             &tx_to_main,
             Msg::LoadingActivity(LoadingActivityMsg::Start(loading_message)),
@@ -202,85 +543,7 @@ where
         );
 
         // Spawn bulk send task
-        let tx_to_main_err = tx_to_main.clone();
-        let service_bus_client = self.service_bus_client.clone();
-
-        let task = async move {
-            log::debug!("Executing bulk send operation in background task");
-
-            // Create batch operation configuration using server's config directly
-            let batch_config = CONFIG.batch();
-            let bulk_handler = BulkOperationHandler::new(batch_config.clone());
-
-            // Create operation context and parameters
-            let operation_context = BulkOperationContext::new(
-                operation_params.consumer,
-                service_bus_client,
-                operation_params.target_queue.clone(),
-            );
-
-            // Create BulkSendParams based on the data type
-            let params = match bulk_data {
-                BulkSendData::MessageIds(message_ids) => {
-                    log::info!(
-                        "Starting bulk send operation for {} messages to queue {} (delete: {})",
-                        message_ids.len(),
-                        operation_params.target_queue,
-                        operation_params.should_delete
-                    );
-                    BulkSendParams::with_retrieval(
-                        operation_context.target_queue.clone(),
-                        operation_params.should_delete,
-                        message_ids,
-                    )
-                }
-                BulkSendData::MessageData(messages_data) => {
-                    log::info!(
-                        "Starting bulk send with data operation for {} messages to queue {} (delete: {})",
-                        messages_data.len(),
-                        operation_params.target_queue,
-                        operation_params.should_delete
-                    );
-                    BulkSendParams::with_message_data(
-                        operation_context.target_queue.clone(),
-                        operation_params.should_delete,
-                        messages_data,
-                    )
-                }
-            };
-
-            let result = bulk_handler.bulk_send(operation_context, params).await;
-
-            match result {
-                Ok(operation_result) => {
-                    log::info!(
-                        "Bulk send operation completed: {} successful, {} failed, {} not found",
-                        operation_result.successful,
-                        operation_result.failed,
-                        operation_result.not_found
-                    );
-                    let display_params = BulkSendDisplayParams::new(
-                        &operation_result,
-                        &operation_params.from_queue_display,
-                        &operation_params.to_queue_display,
-                        &operation_params.target_queue,
-                        operation_params.should_delete,
-                    );
-                    Self::handle_bulk_send_success(&tx_to_main, display_params);
-                }
-                Err(e) => {
-                    log::error!("Failed to execute bulk send operation: {}", e);
-                    Self::handle_bulk_send_error(
-                        &tx_to_main,
-                        &tx_to_main_err,
-                        AppError::ServiceBus(e.to_string()),
-                        &operation_params.from_queue_display,
-                        &operation_params.to_queue_display,
-                    );
-                }
-            }
-        };
-
+        let task = execute_bulk_send_task(task_params);
         taskpool.execute(task);
         None
     }
@@ -385,126 +648,6 @@ where
         }
 
         Ok(messages_data)
-    }
-
-    /// Success handler for all bulk send operations
-    fn handle_bulk_send_success(tx_to_main: &Sender<Msg>, display_params: BulkSendDisplayParams) {
-        log::info!(
-            "Bulk send operation completed successfully: {} successful, {} failed, {} not found",
-            display_params.result.successful,
-            display_params.result.failed,
-            display_params.result.not_found
-        );
-
-        // Stop loading indicator
-        Self::send_message_or_log_error(
-            tx_to_main,
-            Msg::LoadingActivity(LoadingActivityMsg::Stop),
-            "loading stop",
-        );
-
-        // Handle state updates based on operation type
-        if display_params.should_delete && !display_params.result.successful_message_ids.is_empty()
-        {
-            // Remove successfully processed messages from local state
-            Self::send_message_or_log_error(
-                tx_to_main,
-                Msg::MessageActivity(MessageActivityMsg::BulkRemoveMessagesFromState(
-                    display_params.result.successful_message_ids.clone(),
-                )),
-                "bulk remove from state",
-            );
-        } else if !display_params.should_delete {
-            // For operations that don't delete, just reload the page to refresh the view
-            Self::send_message_or_log_error(
-                tx_to_main,
-                Msg::MessageActivity(MessageActivityMsg::PageChanged),
-                "page changed",
-            );
-        }
-
-        // Always show operation status to the user
-        Self::show_bulk_send_status(tx_to_main, display_params);
-    }
-
-    /// Status display for all bulk send operations
-    fn show_bulk_send_status(tx_to_main: &Sender<Msg>, params: BulkSendDisplayParams) {
-        let direction =
-            Self::format_queue_direction(params.from_queue_display, params.to_queue_display);
-        let operation_type = if params.should_delete {
-            "moved"
-        } else {
-            "copied"
-        };
-
-        let title = format!(
-            "Bulk Send Complete ({})",
-            if params.should_delete {
-                "Moved"
-            } else {
-                "Copied"
-            }
-        );
-
-        // Use target queue to determine destination description (same logic as QueueOperationType)
-        let destination_desc = if params.target_queue.ends_with("/$deadletterqueue") {
-            "to dead letter queue"
-        } else {
-            "to main queue"
-        };
-
-        let status_message = if params.result.is_complete_success() {
-            format!(
-                "{}\n\n✅ Successfully {} {} message{} {}\n📍 Direction: {}",
-                title,
-                operation_type,
-                params.result.successful,
-                if params.result.successful == 1 {
-                    ""
-                } else {
-                    "s"
-                },
-                destination_desc,
-                direction
-            )
-        } else {
-            format!(
-                "{}\n\n⚠️  Bulk send completed with mixed results\n📍 Direction: {}\n✅ Successful: {}\n❌ Failed: {}\n❓ Not found: {}",
-                title,
-                direction,
-                params.result.successful,
-                params.result.failed,
-                params.result.not_found
-            )
-        };
-
-        Self::send_message_or_log_error(
-            tx_to_main,
-            Msg::PopupActivity(PopupActivityMsg::ShowSuccess(status_message)),
-            "bulk send status",
-        );
-    }
-
-    /// Error handler for all bulk send operations
-    fn handle_bulk_send_error(
-        tx_to_main: &Sender<Msg>,
-        tx_to_main_err: &Sender<Msg>,
-        error: AppError,
-        from_queue: &str,
-        to_queue: &str,
-    ) {
-        let direction = Self::format_queue_direction(from_queue, to_queue);
-        log::error!("Error in bulk send operation ({}): {}", direction, error);
-
-        // Stop loading indicator
-        Self::send_message_or_log_error(
-            tx_to_main,
-            Msg::LoadingActivity(LoadingActivityMsg::Stop),
-            "loading stop",
-        );
-
-        // Send error message
-        let _ = tx_to_main_err.send(Msg::Error(error));
     }
 
     /// Execute bulk send to DLQ operation
@@ -817,107 +960,28 @@ where
         AppError,
     > {
         let mut consumer_guard = consumer.lock().await;
-        let mut collected_target = Vec::new();
-        let mut collected_non_target = Vec::new();
-        let mut total_processed = 0;
-        let mut consecutive_empty_batches = 0;
-        let max_empty_batches = 3;
-        let mut found_target_ids: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
+        let mut collector = MessageCollector::new(context);
 
         log::info!(
             "Collecting target messages: looking for {} specific messages",
-            context.target_map.len()
+            collector.target_count()
         );
 
-        while found_target_ids.len() < context.target_map.len()
-            && consecutive_empty_batches < max_empty_batches
-        {
-            let batch_to_receive = context.collection_batch_size as u32;
-
-            match consumer_guard.receive_messages(batch_to_receive).await {
+        while !collector.is_complete() && !collector.should_stop() {
+            match consumer_guard.receive_messages(collector.batch_size).await {
                 Ok(received_messages) => {
-                    if received_messages.is_empty() {
-                        consecutive_empty_batches += 1;
-                        log::debug!(
-                            "Empty batch #{} - {} messages processed so far, found {}/{} targets",
-                            consecutive_empty_batches,
-                            total_processed,
-                            found_target_ids.len(),
-                            context.target_map.len()
-                        );
-                        continue;
-                    }
-
-                    consecutive_empty_batches = 0;
-
-                    for message in received_messages {
-                        total_processed += 1;
-                        let message_id = message
-                            .message_id()
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| "unknown".to_string());
-
-                        if context.target_map.contains_key(&message_id)
-                            && !found_target_ids.contains(&message_id)
-                        {
-                            log::debug!(
-                                "Found target message: {} (sequence: {})",
-                                message_id,
-                                message.sequence_number()
-                            );
-                            found_target_ids.insert(message_id.clone());
-                            collected_target.push(message);
-
-                            if found_target_ids.len() == context.target_map.len() {
-                                log::info!(
-                                    "Found all {} target messages after processing {} total messages",
-                                    context.target_map.len(),
-                                    total_processed
-                                );
-                                break;
-                            }
-                        } else {
-                            collected_non_target.push(message);
-                        }
+                    if collector.process_received_messages(received_messages) {
+                        break; // All targets found
                     }
                 }
                 Err(e) => {
-                    consecutive_empty_batches += 1;
-                    log::debug!(
-                        "Error receiving batch #{}: {} - {} messages processed so far",
-                        consecutive_empty_batches,
-                        e,
-                        total_processed
-                    );
+                    collector.handle_receive_error(e.as_ref());
                 }
             }
         }
 
-        let not_found_count = context.target_map.len() - found_target_ids.len();
-        log::info!(
-            "Collection phase complete: {} target messages found, {} not found, {} non-target messages collected, {} messages processed total",
-            collected_target.len(),
-            not_found_count,
-            collected_non_target.len(),
-            total_processed
-        );
-
-        if not_found_count > 0 {
-            let missing_ids: Vec<_> = context
-                .target_map
-                .keys()
-                .filter(|id| !found_target_ids.contains(*id))
-                .collect();
-            log::warn!(
-                "Could not find {} messages in queue: {:?}",
-                not_found_count,
-                missing_ids
-            );
-        }
-
         drop(consumer_guard);
-        Ok((collected_target, collected_non_target))
+        Ok(collector.finalize())
     }
 
     /// Perform the actual deletion of target messages

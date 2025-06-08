@@ -1,7 +1,7 @@
 use crate::theme::types::ThemeConfig;
 use config::{Config, Environment, File};
 use lazy_static::lazy_static;
-use log;
+
 use serde::Deserialize;
 use server::bulk_operations::BatchConfig;
 use server::service_bus_manager::AzureAdConfig;
