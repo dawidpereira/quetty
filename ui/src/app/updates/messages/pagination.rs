@@ -97,56 +97,6 @@ impl MessagePaginationState {
             Vec::new()
         }
     }
-
-    /// Remove a message by ID and sequence from the loaded messages and adjust pagination
-    pub fn remove_message_by_id_and_sequence(
-        &mut self,
-        message_id: &str,
-        message_sequence: i64,
-        page_size: u32,
-    ) -> bool {
-        // Find the message index in all loaded messages by both ID and sequence
-        if let Some(global_index) = self
-            .all_loaded_messages
-            .iter()
-            .position(|msg| msg.id == message_id && msg.sequence == message_sequence)
-        {
-            // Remove the message
-            self.all_loaded_messages.remove(global_index);
-
-            // Adjust pagination based on the removal
-            self.adjust_pagination_after_removal(global_index, page_size);
-
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Adjust pagination state after a message is removed
-    fn adjust_pagination_after_removal(&mut self, removed_global_index: usize, page_size: u32) {
-        let page_size = page_size as usize;
-        let current_page_start = self.current_page * page_size;
-
-        // If the removed message was before the current page, no adjustment needed
-        if removed_global_index < current_page_start {
-            return;
-        }
-
-        // If the removed message was on the current page or after
-        if removed_global_index >= current_page_start {
-            // Check if current page now has fewer messages than expected
-            let messages_on_current_page = self.get_current_page_messages(page_size as u32).len();
-
-            // If current page is empty and we're not on page 0, go back one page
-            if messages_on_current_page == 0 && self.current_page > 0 {
-                self.current_page -= 1;
-            }
-        }
-
-        // Update pagination flags
-        self.update(page_size as u32);
-    }
 }
 
 impl<T> Model<T>
