@@ -60,10 +60,6 @@ where
         Ok(())
     }
 
-    pub fn remount_messages(&mut self) -> AppResult<()> {
-        self.remount_messages_with_cursor_control(true)
-    }
-
     pub fn remount_messages_with_cursor_control(&mut self, preserve_cursor: bool) -> AppResult<()> {
         log::debug!(
             "Remounting messages component, preserve_cursor: {}",

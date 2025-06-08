@@ -18,14 +18,39 @@ impl<T> BulkOperationValidator for Model<T>
 where
     T: TerminalAdapter,
 {
-    /// Validates that message IDs are not empty
+    /// Validates that message IDs are not empty and within limits
     fn validate_message_ids(&self, message_ids: &[MessageIdentifier]) -> Result<(), Msg> {
-        if message_ids.is_empty() {
-            log::warn!("No messages provided for bulk operation");
+        use crate::config::CONFIG;
+
+        let count = message_ids.len();
+        let min_count = CONFIG.bulk_operations().min_count();
+        let max_count = CONFIG.bulk_operations().max_count();
+
+        if count < min_count {
+            log::warn!("Insufficient messages for bulk operation: {}", count);
             return Err(Msg::Error(AppError::State(
                 "No messages selected for bulk operation".to_string(),
             )));
         }
+
+        if count > max_count {
+            log::warn!(
+                "Too many messages for bulk operation: {} (max: {})",
+                count,
+                max_count
+            );
+            return Err(Msg::Error(AppError::State(format!(
+                "Too many messages selected ({}). Maximum allowed: {} (configured limit)",
+                count, max_count
+            ))));
+        }
+
+        log::debug!(
+            "Validated {} messages for bulk operation (limits: {}-{})",
+            count,
+            min_count,
+            max_count
+        );
         Ok(())
     }
 
@@ -152,4 +177,3 @@ pub fn validate_bulk_delete_request<T: TerminalAdapter>(
 
     Ok(())
 }
-

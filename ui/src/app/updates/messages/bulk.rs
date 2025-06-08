@@ -1,7 +1,5 @@
 use crate::app::model::Model;
-use crate::components::common::{
-    ComponentId, MessageActivityMsg, Msg, PopupActivityMsg, QueueActivityMsg,
-};
+use crate::components::common::{ComponentId, MessageActivityMsg, Msg, PopupActivityMsg};
 use server::bulk_operations::MessageIdentifier;
 use server::model::MessageModel;
 use tuirealm::terminal::TerminalAdapter;
@@ -16,7 +14,6 @@ where
         if let Ok(tuirealm::State::One(tuirealm::StateValue::Usize(selected_index))) =
             self.app.state(&ComponentId::Messages)
         {
-            // Get the current page messages
             if let Some(current_messages) = &self.queue_state.messages {
                 if selected_index < current_messages.len() {
                     return Some(current_messages[selected_index].clone());
@@ -24,97 +21,6 @@ where
             }
         }
         None
-    }
-
-    /// Handle toggling message selection by message identifier
-    pub fn handle_toggle_message_selection(
-        &mut self,
-        message_id: MessageIdentifier,
-    ) -> Option<Msg> {
-        log::debug!("Toggling selection for message: {:?}", message_id);
-
-        let is_in_bulk_mode = self.queue_state.bulk_selection.selection_mode;
-        self.queue_state.bulk_selection.toggle_selection(message_id);
-
-        // Enter bulk mode if this is the first selection
-        if !is_in_bulk_mode && self.queue_state.bulk_selection.has_selections() {
-            self.queue_state.bulk_selection.enter_selection_mode();
-            log::debug!("Entered bulk selection mode");
-        }
-        // Exit bulk mode if no selections remain
-        else if is_in_bulk_mode && !self.queue_state.bulk_selection.has_selections() {
-            self.queue_state.bulk_selection.exit_selection_mode();
-            log::debug!("Exited bulk selection mode - no selections remaining");
-        }
-
-        // Always remount to refresh the display
-        if let Err(e) = self.remount_messages() {
-            return Some(Msg::Error(e));
-        }
-
-        log::debug!(
-            "Selection count: {}",
-            self.queue_state.bulk_selection.selection_count()
-        );
-        None
-    }
-
-    /// Handle toggling message selection by index
-    pub fn handle_toggle_message_selection_by_index(&mut self, index: usize) -> Option<Msg> {
-        if let Some(messages) = &self.queue_state.messages {
-            if let Some(message) = messages.get(index) {
-                let message_id = MessageIdentifier::from_message(message);
-                return self.handle_toggle_message_selection(message_id);
-            }
-        }
-
-        log::warn!("Attempted to toggle selection for invalid index: {}", index);
-        None
-    }
-
-    /// Handle selecting all messages on current page
-    pub fn handle_select_all_current_page(&mut self) -> Option<Msg> {
-        if let Some(messages) = &self.queue_state.messages {
-            self.queue_state.bulk_selection.select_all(messages);
-
-            // Always remount to show updated selections
-            if let Err(e) = self.remount_messages() {
-                return Some(Msg::Error(e));
-            }
-        }
-
-        None
-    }
-
-    /// Handle selecting all loaded messages across all pages
-    pub fn handle_select_all_loaded_messages(&mut self) -> Option<Msg> {
-        let all_messages = &self.queue_state.message_pagination.all_loaded_messages;
-        self.queue_state.bulk_selection.select_all(all_messages);
-
-        // Remount messages to update visual state
-        if let Err(e) = self.remount_messages() {
-            return Some(Msg::Error(e));
-        }
-
-        None
-    }
-
-    /// Handle clearing all selections
-    pub fn handle_clear_all_selections(&mut self) -> Option<Msg> {
-        if self.queue_state.bulk_selection.selection_mode {
-            // In bulk mode, clear selections
-            self.queue_state.bulk_selection.clear_all();
-
-            // Remount messages to update visual state
-            if let Err(e) = self.remount_messages() {
-                return Some(Msg::Error(e));
-            }
-
-            None
-        } else {
-            // Not in bulk mode, handle as normal ESC (go back)
-            Some(Msg::QueueActivity(QueueActivityMsg::QueueUnselected))
-        }
     }
 
     /// Handle bulk delete operation

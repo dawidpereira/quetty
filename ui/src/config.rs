@@ -23,6 +23,10 @@ pub mod limits {
 
     /// Maximum reasonable minimum buffer size
     pub const MAX_MIN_BUFFER_SIZE: usize = 500;
+
+    /// Hard limits for bulk operations
+    pub const BULK_OPERATION_MIN_COUNT: usize = 1;
+    pub const BULK_OPERATION_MAX_COUNT: usize = 1000;
 }
 
 /// Configuration validation errors
@@ -33,6 +37,7 @@ pub enum ConfigValidationError {
     DlqBatchSize { configured: u32, limit: u32 },
     BufferPercentage { configured: f64, limit: f64 },
     MinBufferSize { configured: usize, limit: usize },
+    BulkOperationMaxCount { configured: usize, limit: usize },
 }
 
 impl ConfigValidationError {
@@ -84,6 +89,15 @@ impl ConfigValidationError {
                     configured, limit
                 )
             }
+            ConfigValidationError::BulkOperationMaxCount { configured, limit } => {
+                format!(
+                    "Bulk operation limit too high!\n\n\
+                    Your configured value: {}\n\
+                    Hard limit: {}\n\n\
+                    Please update bulk_operation_max_count in config.toml to {} or less.",
+                    configured, limit, limit
+                )
+            }
         }
     }
 }
@@ -119,6 +133,8 @@ pub struct AppConfig {
     batch: BatchConfig,
     #[serde(flatten)]
     ui: UIConfig,
+    #[serde(flatten)]
+    bulk_operations: BulkOperationsConfig,
     keys: KeyBindingsConfig,
     servicebus: ServicebusConfig,
     azure_ad: AzureAdConfig,
@@ -152,6 +168,13 @@ pub struct DLQConfig {
     dlq_retry_delay_ms: Option<u64>,
     /// Batch size for receiving messages in DLQ operations (default: 10)
     dlq_batch_size: Option<u32>,
+}
+
+/// Configuration for bulk operations
+#[derive(Debug, Clone, Deserialize)]
+pub struct BulkOperationsConfig {
+    /// Maximum number of messages that can be processed in a single bulk operation (default: 100)
+    bulk_operation_max_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -283,6 +306,19 @@ impl AppConfig {
             });
         }
 
+        // Validate bulk operations configuration
+        log::debug!(
+            "  bulk_operation_max_count: {} (limit: {})",
+            self.bulk_operations().max_count(),
+            limits::BULK_OPERATION_MAX_COUNT
+        );
+        if self.bulk_operations().max_count() > limits::BULK_OPERATION_MAX_COUNT {
+            errors.push(ConfigValidationError::BulkOperationMaxCount {
+                configured: self.bulk_operations().max_count(),
+                limit: limits::BULK_OPERATION_MAX_COUNT,
+            });
+        }
+
         if errors.is_empty() {
             Ok(())
         } else {
@@ -314,6 +350,9 @@ impl AppConfig {
     }
     pub fn ui(&self) -> &UIConfig {
         &self.ui
+    }
+    pub fn bulk_operations(&self) -> &BulkOperationsConfig {
+        &self.bulk_operations
     }
     pub fn keys(&self) -> &KeyBindingsConfig {
         &self.keys
@@ -370,6 +409,18 @@ impl UIConfig {
     /// Get the duration between animation frames for loading indicators
     pub fn loading_frame_duration_ms(&self) -> u64 {
         self.ui_loading_frame_duration_ms.unwrap_or(100)
+    }
+}
+
+impl BulkOperationsConfig {
+    /// Get the maximum number of messages for bulk operations (default: 100)
+    pub fn max_count(&self) -> usize {
+        self.bulk_operation_max_count.unwrap_or(100)
+    }
+
+    /// Get the minimum number of messages for bulk operations (always 1)
+    pub fn min_count(&self) -> usize {
+        limits::BULK_OPERATION_MIN_COUNT
     }
 }
 
