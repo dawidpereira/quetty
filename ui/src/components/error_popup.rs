@@ -18,6 +18,9 @@ impl ErrorPopup {
         // Format error message
         let error_msg = format!("{}", error);
 
+        // Split the error message by newlines and create TextSpan for each line
+        let text_spans: Vec<TextSpan> = error_msg.lines().map(TextSpan::from).collect();
+
         Self {
             component: Paragraph::default()
                 .borders(
@@ -29,7 +32,7 @@ impl ErrorPopup {
                 .foreground(ThemeManager::status_error())
                 .modifiers(TextModifiers::BOLD)
                 .alignment(Alignment::Center)
-                .text(&[TextSpan::from(error_msg)]),
+                .text(&text_spans),
         }
     }
 }

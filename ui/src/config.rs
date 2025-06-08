@@ -1,10 +1,92 @@
 use crate::theme::types::ThemeConfig;
 use config::{Config, Environment, File};
 use lazy_static::lazy_static;
+use log;
 use serde::Deserialize;
 use server::bulk_operations::BatchConfig;
 use server::service_bus_manager::AzureAdConfig;
 use std::time::Duration;
+
+/// Global hard limits for Azure Service Bus operations
+pub mod limits {
+    /// Azure Service Bus hard limit for batch operations
+    pub const AZURE_SERVICE_BUS_MAX_BATCH_SIZE: u32 = 2048;
+
+    /// Maximum reasonable timeout for operations (10 minutes)
+    pub const MAX_OPERATION_TIMEOUT_SECS: u64 = 600;
+
+    /// Maximum reasonable DLQ batch size
+    pub const MAX_DLQ_BATCH_SIZE: u32 = 100;
+
+    /// Maximum reasonable buffer percentage (50% = 0.5)
+    pub const MAX_BUFFER_PERCENTAGE: f64 = 0.5;
+
+    /// Maximum reasonable minimum buffer size
+    pub const MAX_MIN_BUFFER_SIZE: usize = 500;
+}
+
+/// Configuration validation errors
+#[derive(Debug)]
+pub enum ConfigValidationError {
+    BatchSize { configured: u32, limit: u32 },
+    OperationTimeout { configured: u64, limit: u64 },
+    DlqBatchSize { configured: u32, limit: u32 },
+    BufferPercentage { configured: f64, limit: f64 },
+    MinBufferSize { configured: usize, limit: usize },
+}
+
+impl ConfigValidationError {
+    pub fn user_message(&self) -> String {
+        match self {
+            ConfigValidationError::BatchSize { configured, limit } => {
+                format!(
+                    "Bulk batch size configuration error!\n\n\
+                    Your configured value: {}\n\
+                    Azure Service Bus limit: {}\n\n\
+                    Please update max_batch_size in config.toml to {} or less.",
+                    configured, limit, limit
+                )
+            }
+            ConfigValidationError::OperationTimeout { configured, limit } => {
+                format!(
+                    "Operation timeout too high!\n\n\
+                    Your configured value: {} seconds\n\
+                    Recommended maximum: {} seconds\n\n\
+                    Please update operation_timeout_secs in config.toml.",
+                    configured, limit
+                )
+            }
+            ConfigValidationError::DlqBatchSize { configured, limit } => {
+                format!(
+                    "DLQ batch size too high!\n\n\
+                    Your configured value: {}\n\
+                    Recommended maximum: {}\n\n\
+                    Please update dlq_batch_size in config.toml.",
+                    configured, limit
+                )
+            }
+            ConfigValidationError::BufferPercentage { configured, limit } => {
+                format!(
+                    "Buffer percentage too high!\n\n\
+                    Your configured value: {:.1}%\n\
+                    Recommended maximum: {:.1}%\n\n\
+                    Please update buffer_percentage in config.toml.",
+                    configured * 100.0,
+                    limit * 100.0
+                )
+            }
+            ConfigValidationError::MinBufferSize { configured, limit } => {
+                format!(
+                    "Minimum buffer size too high!\n\n\
+                    Your configured value: {}\n\
+                    Recommended maximum: {}\n\n\
+                    Please update min_buffer_size in config.toml.",
+                    configured, limit
+                )
+            }
+        }
+    }
+}
 
 lazy_static! {
     pub static ref CONFIG: AppConfig = {
@@ -125,6 +207,89 @@ pub struct KeyBindingsConfig {
 }
 
 impl AppConfig {
+    /// Validate all configuration values against global limits
+    pub fn validate(&self) -> Result<(), Vec<ConfigValidationError>> {
+        let mut errors = Vec::new();
+
+        // Validate batch configuration
+        let batch_config = self.batch();
+
+        // Debug logging to see what values we're actually getting
+        log::debug!("Validating configuration:");
+        log::debug!(
+            "  max_batch_size: {} (limit: {})",
+            batch_config.max_batch_size(),
+            limits::AZURE_SERVICE_BUS_MAX_BATCH_SIZE
+        );
+        log::debug!(
+            "  operation_timeout_secs: {} (limit: {})",
+            batch_config.operation_timeout_secs(),
+            limits::MAX_OPERATION_TIMEOUT_SECS
+        );
+        log::debug!(
+            "  buffer_percentage: {} (limit: {})",
+            batch_config.buffer_percentage(),
+            limits::MAX_BUFFER_PERCENTAGE
+        );
+        log::debug!(
+            "  min_buffer_size: {} (limit: {})",
+            batch_config.min_buffer_size(),
+            limits::MAX_MIN_BUFFER_SIZE
+        );
+
+        if batch_config.max_batch_size() > limits::AZURE_SERVICE_BUS_MAX_BATCH_SIZE {
+            log::error!(
+                "VALIDATION FAILED: max_batch_size {} > limit {}",
+                batch_config.max_batch_size(),
+                limits::AZURE_SERVICE_BUS_MAX_BATCH_SIZE
+            );
+            errors.push(ConfigValidationError::BatchSize {
+                configured: batch_config.max_batch_size(),
+                limit: limits::AZURE_SERVICE_BUS_MAX_BATCH_SIZE,
+            });
+        }
+
+        if batch_config.operation_timeout_secs() > limits::MAX_OPERATION_TIMEOUT_SECS {
+            errors.push(ConfigValidationError::OperationTimeout {
+                configured: batch_config.operation_timeout_secs(),
+                limit: limits::MAX_OPERATION_TIMEOUT_SECS,
+            });
+        }
+
+        if batch_config.buffer_percentage() > limits::MAX_BUFFER_PERCENTAGE {
+            errors.push(ConfigValidationError::BufferPercentage {
+                configured: batch_config.buffer_percentage(),
+                limit: limits::MAX_BUFFER_PERCENTAGE,
+            });
+        }
+
+        if batch_config.min_buffer_size() > limits::MAX_MIN_BUFFER_SIZE {
+            errors.push(ConfigValidationError::MinBufferSize {
+                configured: batch_config.min_buffer_size(),
+                limit: limits::MAX_MIN_BUFFER_SIZE,
+            });
+        }
+
+        // Validate DLQ configuration
+        log::debug!(
+            "  dlq_batch_size: {} (limit: {})",
+            self.dlq().batch_size(),
+            limits::MAX_DLQ_BATCH_SIZE
+        );
+        if self.dlq().batch_size() > limits::MAX_DLQ_BATCH_SIZE {
+            errors.push(ConfigValidationError::DlqBatchSize {
+                configured: self.dlq().batch_size(),
+                limit: limits::MAX_DLQ_BATCH_SIZE,
+            });
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+
     pub fn max_messages(&self) -> u32 {
         self.max_messages.unwrap_or(10)
     }

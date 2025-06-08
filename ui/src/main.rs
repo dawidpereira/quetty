@@ -1,6 +1,7 @@
 mod error;
 use app::model::Model;
 use components::common::ComponentId;
+use config::CONFIG;
 use error::AppError;
 use log::{debug, error, info};
 use std::error::Error as StdError;
@@ -13,24 +14,132 @@ mod config;
 mod logger;
 mod theme;
 
+async fn show_config_error_and_exit(
+    validation_errors: Vec<config::ConfigValidationError>,
+) -> Result<(), Box<dyn StdError>> {
+    // Initialize a minimal model for error display
+    let mut model = Model::new()
+        .await
+        .expect("Failed to initialize model for error display");
+
+    // Show the first error in a popup (most critical one)
+    if let Some(first_error) = validation_errors.first() {
+        let error_message = first_error.user_message();
+        error!("Configuration error: {}", error_message);
+
+        if let Err(e) = model.mount_error_popup(&AppError::Config(error_message)) {
+            error!("Failed to mount configuration error popup: {}", e);
+            // Fallback to logging all errors
+            for validation_error in &validation_errors {
+                error!(
+                    "Config validation error: {}",
+                    validation_error.user_message()
+                );
+            }
+        }
+    }
+
+    // Also log all validation errors for debugging
+    for (i, validation_error) in validation_errors.iter().enumerate() {
+        error!("Config validation error {}: {:?}", i + 1, validation_error);
+    }
+
+    info!(
+        "Configuration validation failed. Application will exit after user acknowledges the error."
+    );
+
+    // Draw the error popup
+    if let Err(e) = model.view() {
+        error!("Error during error popup rendering: {}", e);
+    }
+
+    // Main loop to handle the error popup until user closes it
+    while !model.quit {
+        model.update_outside_msg();
+
+        match model.app.tick(PollStrategy::Once) {
+            Err(err) => {
+                error!("Application tick error during error display: {}", err);
+                break;
+            }
+            Ok(messages) if !messages.is_empty() => {
+                for msg in messages.into_iter() {
+                    let mut msg = Some(msg);
+                    while msg.is_some() {
+                        // Handle the message
+                        msg = model.update(msg);
+                    }
+                }
+
+                // Check if error popup was closed - if so, quit the app
+                if !model.app.mounted(&ComponentId::ErrorPopup) {
+                    info!("Configuration error popup closed by user, terminating application");
+                    model.quit = true;
+                    break;
+                }
+
+                // Check if popup was closed (which should set quit to true)
+                if let Err(e) = model.view() {
+                    error!("Error during view rendering: {}", e);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Terminate after config error
+    info!("Terminating application due to configuration errors");
+    model.shutdown();
+    let _ = model.terminal.leave_alternate_screen();
+    let _ = model.terminal.disable_raw_mode();
+    let _ = model.terminal.clear_screen();
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn StdError>> {
-    // Initialize logger
+    // Initialize logger first
     if let Err(e) = logger::setup_logger() {
         eprintln!("Failed to initialize logger: {}", e);
     }
 
     info!("Starting Quetty application");
 
-    // Initialize global theme manager
+    // Load configuration early, but don't validate yet
+    let config_loading_result = std::panic::catch_unwind(|| &*CONFIG);
+
+    let config = match config_loading_result {
+        Ok(config) => config,
+        Err(_) => {
+            let error_msg = "Failed to load configuration. Please check your config.toml file for syntax errors.";
+            error!("{}", error_msg);
+            eprintln!("Critical configuration error: {}", error_msg);
+            eprintln!("Please fix your configuration and try again.");
+            return Ok(());
+        }
+    };
+
+    // Initialize global theme manager with loaded config
     use crate::theme::ThemeManager;
-    let theme_config = config::CONFIG.theme();
+    let theme_config = config.theme();
     if let Err(e) = ThemeManager::init_global(&theme_config) {
         log::error!("Failed to initialize theme manager: {}", e);
         return Err(Box::new(e) as Box<dyn StdError>);
     }
 
-    // Setup model
+    // Now validate configuration after ThemeManager is initialized
+    if let Err(validation_errors) = config.validate() {
+        error!(
+            "Configuration validation failed with {} errors",
+            validation_errors.len()
+        );
+        return show_config_error_and_exit(validation_errors).await;
+    }
+
+    info!("Configuration loaded and validated successfully");
+
+    // Setup model - now we know config is valid and ThemeManager is initialized
     let mut model = Model::new().await.expect("Failed to initialize model");
     info!("Model initialized successfully");
 

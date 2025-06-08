@@ -81,26 +81,27 @@ pub struct BatchConfig {
     max_batch_size: Option<u32>,
     /// Timeout for bulk operations (default: 300 seconds)
     operation_timeout_secs: Option<u64>,
-    /// Batch size multiplier for target estimation (default: 2)
-    batch_size_multiplier: Option<usize>,
+    /// Buffer percentage for batch size calculation (default: 0.15 = 15%)
+    buffer_percentage: Option<f64>,
+    /// Minimum buffer size (default: 30)
+    min_buffer_size: Option<usize>,
 }
 
 impl BatchConfig {
     /// Create a new BatchConfig
-    pub fn new(
-        max_batch_size: u32,
-        operation_timeout_secs: u64,
-        batch_size_multiplier: usize,
-    ) -> Self {
+    pub fn new(max_batch_size: u32, operation_timeout_secs: u64) -> Self {
         Self {
             max_batch_size: Some(max_batch_size),
             operation_timeout_secs: Some(operation_timeout_secs),
-            batch_size_multiplier: Some(batch_size_multiplier),
+            buffer_percentage: None,
+            min_buffer_size: None,
         }
     }
 
     /// Get the maximum batch size for bulk operations
     pub fn max_batch_size(&self) -> u32 {
+        // Note: We use 2048 as default here since server doesn't depend on ui
+        // The ui module validates this against limits::AZURE_SERVICE_BUS_MAX_BATCH_SIZE
         self.max_batch_size.unwrap_or(2048)
     }
 
@@ -109,9 +110,14 @@ impl BatchConfig {
         self.operation_timeout_secs.unwrap_or(300)
     }
 
-    /// Get the batch size multiplier for target estimation
-    pub fn batch_size_multiplier(&self) -> usize {
-        self.batch_size_multiplier.unwrap_or(2)
+    /// Get the buffer percentage for batch size calculation
+    pub fn buffer_percentage(&self) -> f64 {
+        self.buffer_percentage.unwrap_or(0.15)
+    }
+
+    /// Get the minimum buffer size
+    pub fn min_buffer_size(&self) -> usize {
+        self.min_buffer_size.unwrap_or(30)
     }
 }
 
@@ -269,15 +275,24 @@ impl BulkOperationHandler {
         params: &BulkSendParams,
         result: &mut BulkOperationResult,
     ) -> Result<BulkOperationResult, Box<dyn std::error::Error>> {
-        let batch_size = std::cmp::min(
-            params.message_identifiers.len() * self.config.batch_size_multiplier(),
-            self.config.max_batch_size() as usize,
+        let target_count = params.message_identifiers.len();
+
+        // Calculate buffer size (percentage of targets or minimum)
+        let buffer_size = std::cmp::max(
+            (target_count as f64 * self.config.buffer_percentage()) as usize,
+            self.config.min_buffer_size(),
         );
 
+        let buffered_batch = target_count + buffer_size;
+        let final_batch_size = std::cmp::min(buffered_batch, self.config.max_batch_size() as usize);
+
         log::info!(
-            "Processing bulk send for {} selected messages using batch size {}",
-            params.message_identifiers.len(),
-            batch_size
+            "Processing bulk send for {} selected messages using batch size {} ({}+{} buffer, capped at {})",
+            target_count,
+            final_batch_size,
+            target_count,
+            buffer_size,
+            self.config.max_batch_size()
         );
 
         // Create a lookup map for quick message identification
@@ -289,7 +304,7 @@ impl BulkOperationHandler {
 
         // Phase 1: Collect target and non-target messages
         let (target_messages, non_target_messages) = self
-            .collect_target_messages(context.consumer.clone(), &target_map, batch_size)
+            .collect_target_messages(context.consumer.clone(), &target_map, final_batch_size)
             .await?;
 
         // Phase 2: Process target messages based on operation type
@@ -463,17 +478,50 @@ impl BulkOperationHandler {
             .await
             .map_err(|e| format!("Failed to create producer for queue {}: {}", queue_name, e))?;
 
-        log::debug!(
-            "Sending batch of {} messages to queue: {}",
-            messages.len(),
-            queue_name
-        );
+        // For large batches, chunk into smaller groups to prevent Azure Service Bus timeouts
+        const MAX_CHUNK_SIZE: usize = 100; // Conservative limit to prevent timeouts
+        let total_messages = messages.len();
 
-        // Send messages in batch for better performance
-        producer
-            .send_messages(messages)
-            .await
-            .map_err(|e| format!("Failed to send messages to queue {}: {}", queue_name, e))?;
+        if total_messages > MAX_CHUNK_SIZE {
+            log::info!(
+                "Splitting {} messages into chunks of {} for queue: {}",
+                total_messages,
+                MAX_CHUNK_SIZE,
+                queue_name
+            );
+
+            // Send messages in chunks
+            for (chunk_idx, chunk) in messages.chunks(MAX_CHUNK_SIZE).enumerate() {
+                log::debug!(
+                    "Sending chunk {}/{} ({} messages) to queue: {}",
+                    chunk_idx + 1,
+                    total_messages.div_ceil(MAX_CHUNK_SIZE),
+                    chunk.len(),
+                    queue_name
+                );
+
+                producer.send_messages(chunk.to_vec()).await.map_err(|e| {
+                    format!(
+                        "Failed to send chunk {} to queue {}: {}",
+                        chunk_idx + 1,
+                        queue_name,
+                        e
+                    )
+                })?;
+            }
+        } else {
+            log::debug!(
+                "Sending batch of {} messages to queue: {}",
+                messages.len(),
+                queue_name
+            );
+
+            // Send all messages at once for smaller batches
+            producer
+                .send_messages(messages)
+                .await
+                .map_err(|e| format!("Failed to send messages to queue {}: {}", queue_name, e))?;
+        }
 
         log::debug!("Disposing producer for queue: {}", queue_name);
         producer
@@ -481,7 +529,11 @@ impl BulkOperationHandler {
             .await
             .map_err(|e| format!("Failed to dispose producer for queue {}: {}", queue_name, e))?;
 
-        log::info!("Successfully sent messages to queue: {}", queue_name);
+        log::info!(
+            "Successfully sent {} messages to queue: {}",
+            total_messages,
+            queue_name
+        );
         Ok(())
     }
 

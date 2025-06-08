@@ -8,9 +8,9 @@ pub fn view_error_popup(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,
     f: &mut Frame,
 ) -> Result<(), AppError> {
-    // Create a centered box for the error popup
-    let popup_width = 60;
-    let popup_height = 10;
+    // Create a centered box for the error popup with larger size for config errors
+    let popup_width = 80;
+    let popup_height = 15;
     let area = f.area();
 
     let popup_x = (area.width.saturating_sub(popup_width)) / 2;
