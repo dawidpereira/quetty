@@ -6,6 +6,7 @@ use error::AppError;
 use log::{debug, error, info};
 use std::error::Error as StdError;
 use tuirealm::application::PollStrategy;
+use tuirealm::terminal::CrosstermTerminalAdapter;
 use tuirealm::{AttrValue, Attribute, Update};
 
 mod app;
@@ -14,86 +15,111 @@ mod config;
 mod logger;
 mod theme;
 
+/// Manages the display of configuration errors with user interaction
+struct ConfigErrorDisplay {
+    model: Model<CrosstermTerminalAdapter>,
+}
+
+impl ConfigErrorDisplay {
+    /// Initialize the error display with the given validation errors
+    async fn new(
+        validation_errors: Vec<config::ConfigValidationError>,
+    ) -> Result<Self, Box<dyn StdError>> {
+        // Initialize a minimal model for error display
+        let mut model = Model::new()
+            .await
+            .expect("Failed to initialize model for error display");
+
+        // Show the first error in a popup (most critical one)
+        if let Some(first_error) = validation_errors.first() {
+            let error_message = first_error.user_message();
+            error!("Configuration error: {}", error_message);
+
+            if let Err(e) = model.mount_error_popup(&AppError::Config(error_message)) {
+                error!("Failed to mount configuration error popup: {}", e);
+                // Fallback to logging all errors
+                for validation_error in &validation_errors {
+                    error!(
+                        "Config validation error: {}",
+                        validation_error.user_message()
+                    );
+                }
+            }
+        }
+
+        // Also log all validation errors for debugging
+        for (i, validation_error) in validation_errors.iter().enumerate() {
+            error!("Config validation error {}: {:?}", i + 1, validation_error);
+        }
+
+        Ok(Self { model })
+    }
+
+    /// Show the error popup and wait for user acknowledgment
+    async fn show_and_wait_for_acknowledgment(&mut self) -> Result<(), Box<dyn StdError>> {
+        info!(
+            "Configuration validation failed. Application will exit after user acknowledges the error."
+        );
+
+        // Draw the error popup
+        if let Err(e) = self.model.view() {
+            error!("Error during error popup rendering: {}", e);
+        }
+
+        // Main loop to handle the error popup until user closes it
+        while !self.model.quit {
+            self.model.update_outside_msg();
+
+            match self.model.app.tick(PollStrategy::Once) {
+                Err(err) => {
+                    error!("Application tick error during error display: {}", err);
+                    break;
+                }
+                Ok(messages) if !messages.is_empty() => {
+                    for msg in messages.into_iter() {
+                        let mut msg = Some(msg);
+                        while msg.is_some() {
+                            // Handle the message
+                            msg = self.model.update(msg);
+                        }
+                    }
+
+                    // Check if error popup was closed - if so, quit the app
+                    if !self.model.app.mounted(&ComponentId::ErrorPopup) {
+                        info!("Configuration error popup closed by user, terminating application");
+                        self.model.quit = true;
+                        break;
+                    }
+
+                    // Check if popup was closed (which should set quit to true)
+                    if let Err(e) = self.model.view() {
+                        error!("Error during view rendering: {}", e);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Properly shutdown the error display
+    fn shutdown(mut self) {
+        info!("Terminating application due to configuration errors");
+        self.model.shutdown();
+        let _ = self.model.terminal.leave_alternate_screen();
+        let _ = self.model.terminal.disable_raw_mode();
+        let _ = self.model.terminal.clear_screen();
+    }
+}
+
 async fn show_config_error_and_exit(
     validation_errors: Vec<config::ConfigValidationError>,
 ) -> Result<(), Box<dyn StdError>> {
-    // Initialize a minimal model for error display
-    let mut model = Model::new()
-        .await
-        .expect("Failed to initialize model for error display");
-
-    // Show the first error in a popup (most critical one)
-    if let Some(first_error) = validation_errors.first() {
-        let error_message = first_error.user_message();
-        error!("Configuration error: {}", error_message);
-
-        if let Err(e) = model.mount_error_popup(&AppError::Config(error_message)) {
-            error!("Failed to mount configuration error popup: {}", e);
-            // Fallback to logging all errors
-            for validation_error in &validation_errors {
-                error!(
-                    "Config validation error: {}",
-                    validation_error.user_message()
-                );
-            }
-        }
-    }
-
-    // Also log all validation errors for debugging
-    for (i, validation_error) in validation_errors.iter().enumerate() {
-        error!("Config validation error {}: {:?}", i + 1, validation_error);
-    }
-
-    info!(
-        "Configuration validation failed. Application will exit after user acknowledges the error."
-    );
-
-    // Draw the error popup
-    if let Err(e) = model.view() {
-        error!("Error during error popup rendering: {}", e);
-    }
-
-    // Main loop to handle the error popup until user closes it
-    while !model.quit {
-        model.update_outside_msg();
-
-        match model.app.tick(PollStrategy::Once) {
-            Err(err) => {
-                error!("Application tick error during error display: {}", err);
-                break;
-            }
-            Ok(messages) if !messages.is_empty() => {
-                for msg in messages.into_iter() {
-                    let mut msg = Some(msg);
-                    while msg.is_some() {
-                        // Handle the message
-                        msg = model.update(msg);
-                    }
-                }
-
-                // Check if error popup was closed - if so, quit the app
-                if !model.app.mounted(&ComponentId::ErrorPopup) {
-                    info!("Configuration error popup closed by user, terminating application");
-                    model.quit = true;
-                    break;
-                }
-
-                // Check if popup was closed (which should set quit to true)
-                if let Err(e) = model.view() {
-                    error!("Error during view rendering: {}", e);
-                    break;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    // Terminate after config error
-    info!("Terminating application due to configuration errors");
-    model.shutdown();
-    let _ = model.terminal.leave_alternate_screen();
-    let _ = model.terminal.disable_raw_mode();
-    let _ = model.terminal.clear_screen();
+    let mut error_display = ConfigErrorDisplay::new(validation_errors).await?;
+    error_display.show_and_wait_for_acknowledgment().await?;
+    error_display.shutdown();
     Ok(())
 }
 

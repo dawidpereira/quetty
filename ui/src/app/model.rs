@@ -78,71 +78,6 @@ where
     pub is_editing_message: bool,
 }
 
-impl Model<CrosstermTerminalAdapter> {
-    pub async fn new() -> AppResult<Self> {
-        let service_bus_client = ServiceBusClient::new_from_connection_string(
-            config::CONFIG.servicebus().connection_string(),
-            ServiceBusClientOptions::default(),
-        )
-        .await
-        .map_err(|e| AppError::ServiceBus(e.to_string()))?;
-
-        let (tx_to_main, rx_to_main) = mpsc::channel();
-        let taskpool = TaskPool::new(10);
-
-        let queue_state = QueueState::new();
-        let mut app = Self {
-            app: Self::init_app(&queue_state)?,
-            quit: false,
-            redraw: true,
-            terminal: TerminalBridge::init_crossterm()
-                .map_err(|e| AppError::Component(e.to_string()))?,
-            app_state: AppState::NamespacePicker,
-            tx_to_main,
-            rx_to_main,
-            taskpool,
-            service_bus_client: Arc::new(Mutex::new(service_bus_client)),
-            selected_namespace: None,
-            loading_message: None,
-            previous_state: None,
-            active_component: ComponentId::NamespacePicker,
-            queue_state,
-            pending_confirmation_action: None,
-            is_editing_message: false,
-        };
-
-        // Initialize loading indicator
-        app.app
-            .mount(
-                ComponentId::LoadingIndicator,
-                Box::new(LoadingIndicator::new("Loading...", true)),
-                Vec::default(),
-            )
-            .map_err(|e| AppError::Component(e.to_string()))?;
-
-        // Load namespaces and handle any errors through the message system
-        if app
-            .tx_to_main
-            .send(Msg::LoadingActivity(LoadingActivityMsg::Start(
-                "Loading namespaces...".to_string(),
-            )))
-            .is_err()
-        {
-            log::error!("Failed to send loading start message");
-        }
-
-        if let Err(e) = app.load_namespaces() {
-            // Send the error through the channel to be handled in the main event loop
-            if app.tx_to_main.send(Msg::Error(e.clone())).is_err() {
-                // If the channel send fails, handle the error directly
-                log::error!("Failed to send error through channel: {}", e);
-            }
-        }
-
-        Ok(app)
-    }
-}
-
 impl<T> Model<T>
 where
     T: TerminalAdapter,
@@ -798,5 +733,70 @@ where
         } else {
             None
         }
+    }
+}
+
+impl Model<CrosstermTerminalAdapter> {
+    pub async fn new() -> AppResult<Self> {
+        let service_bus_client = ServiceBusClient::new_from_connection_string(
+            config::CONFIG.servicebus().connection_string(),
+            ServiceBusClientOptions::default(),
+        )
+        .await
+        .map_err(|e| AppError::ServiceBus(e.to_string()))?;
+
+        let (tx_to_main, rx_to_main) = mpsc::channel();
+        let taskpool = TaskPool::new(10);
+
+        let queue_state = QueueState::new();
+        let mut app = Self {
+            app: Self::init_app(&queue_state)?,
+            quit: false,
+            redraw: true,
+            terminal: TerminalBridge::init_crossterm()
+                .map_err(|e| AppError::Component(e.to_string()))?,
+            app_state: AppState::NamespacePicker,
+            tx_to_main,
+            rx_to_main,
+            taskpool,
+            service_bus_client: Arc::new(Mutex::new(service_bus_client)),
+            selected_namespace: None,
+            loading_message: None,
+            previous_state: None,
+            active_component: ComponentId::NamespacePicker,
+            queue_state,
+            pending_confirmation_action: None,
+            is_editing_message: false,
+        };
+
+        // Initialize loading indicator
+        app.app
+            .mount(
+                ComponentId::LoadingIndicator,
+                Box::new(LoadingIndicator::new("Loading...", true)),
+                Vec::default(),
+            )
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        // Load namespaces and handle any errors through the message system
+        if app
+            .tx_to_main
+            .send(Msg::LoadingActivity(LoadingActivityMsg::Start(
+                "Loading namespaces...".to_string(),
+            )))
+            .is_err()
+        {
+            log::error!("Failed to send loading start message");
+        }
+
+        if let Err(e) = app.load_namespaces() {
+            // Send the error through the channel to be handled in the main event loop
+            if app.tx_to_main.send(Msg::Error(e.clone())).is_err() {
+                // If the channel send fails, handle the error directly
+                log::error!("Failed to send error through channel: {}", e);
+            }
+        }
+
+        Ok(app)
     }
 }
