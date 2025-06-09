@@ -1,12 +1,11 @@
-use std::sync::Arc;
-
 use crate::app::model::{AppState, Model};
 use crate::components::common::{ComponentId, LoadingActivityMsg, MessageActivityMsg, Msg};
-use crate::config::{self, CONFIG};
+use crate::config::CONFIG;
 use crate::error::{AppError, AppResult};
 use server::bulk_operations::MessageIdentifier;
 use server::consumer::Consumer;
 use server::model::MessageModel;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tuirealm::terminal::TerminalAdapter;
 
