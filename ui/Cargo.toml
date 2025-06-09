@@ -28,3 +28,5 @@ log = "0.4"
 env_logger = "0.11"
 fern = { version = "0.7", features = ["colored"] }
 
+[dev-dependencies]
+claims = "0.8"
