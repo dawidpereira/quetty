@@ -32,7 +32,7 @@ impl ErrorPopup {
                 .foreground(ThemeManager::status_error())
                 .modifiers(TextModifiers::BOLD)
                 .alignment(Alignment::Center)
-                .text(&text_spans),
+                .text(text_spans),
         }
     }
 }

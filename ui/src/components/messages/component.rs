@@ -120,7 +120,7 @@ impl Messages {
                 .rewind(false)
                 .step(4)
                 .row_height(1)
-                .headers(&headers.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+                .headers(headers.iter().map(|s| s.as_str()).collect::<Vec<_>>())
                 .column_spacing(2)
                 .widths(&widths)
                 .table(build_table_from_messages(
@@ -431,4 +431,3 @@ impl MockComponent for Messages {
         self.component_mut().perform(cmd)
     }
 }
-

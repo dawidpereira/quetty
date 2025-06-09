@@ -31,7 +31,7 @@ impl SuccessPopup {
                 .foreground(ThemeManager::status_success())
                 .modifiers(TextModifiers::BOLD)
                 .alignment(Alignment::Center)
-                .text(&[TextSpan::from(message)]),
+                .text([TextSpan::from(message)]),
             message: message.to_string(),
         }
     }

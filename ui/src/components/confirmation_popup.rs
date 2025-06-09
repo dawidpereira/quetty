@@ -33,7 +33,7 @@ impl ConfirmationPopup {
                 .foreground(ThemeManager::popup_text())
                 .modifiers(TextModifiers::BOLD)
                 .alignment(Alignment::Center)
-                .text(&[TextSpan::from(message)]),
+                .text([TextSpan::from(message)]),
             title: title.to_string(),
             message: message.to_string(),
         }
