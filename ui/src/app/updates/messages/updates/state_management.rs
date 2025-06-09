@@ -232,9 +232,37 @@ where
 
     /// Update pagination and view after state changes
     pub fn update_pagination_and_view(&mut self) -> Option<Msg> {
-        if let Err(e) = self.update_current_page_view() {
+        // Update the pagination state and messages data
+        let page_size = crate::config::CONFIG.max_messages();
+        let current_page_messages = self
+            .queue_state
+            .message_pagination
+            .get_current_page_messages(page_size);
+
+        self.queue_state.messages = Some(current_page_messages);
+
+        // Update pagination state
+        self.queue_state.message_pagination.update(page_size);
+
+        // Send pagination state update inline
+        if let Err(e) = self.tx_to_main.send(Msg::MessageActivity(
+            MessageActivityMsg::PaginationStateUpdated {
+                has_next: self.queue_state.message_pagination.has_next_page,
+                has_previous: self.queue_state.message_pagination.has_previous_page,
+                current_page: self.queue_state.message_pagination.current_page,
+                total_pages_loaded: self.queue_state.message_pagination.total_pages_loaded,
+            },
+        )) {
+            log::error!("Failed to send pagination state update: {}", e);
+            return Some(Msg::Error(AppError::Component(e.to_string())));
+        }
+
+        // Force cursor reset to position 0 after bulk removal
+        // This is different from normal page navigation where we preserve cursor
+        if let Err(e) = self.remount_messages_with_cursor_control(false) {
             return Some(Msg::Error(e));
         }
+
         self.remount_message_details_safe()
     }
 
