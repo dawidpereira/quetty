@@ -1,18 +1,14 @@
-use crate::components::common::{MessageActivityMsg, Msg, QueueActivityMsg, QueueType};
+use crate::components::common::{Msg, QueueType};
 use crate::components::messages::rendering::{
     build_table_from_messages, calculate_responsive_layout, format_delivery_count_responsive,
     get_state_color, get_state_display,
 };
-use crate::components::messages::selection::{
-    create_toggle_message_selection, format_pagination_status, format_queue_display,
-};
-use crate::config;
+use crate::components::messages::selection::{format_pagination_status, format_queue_display};
 use crate::theme::ThemeManager;
 use server::bulk_operations::MessageIdentifier;
 use server::model::MessageModel;
 use tui_realm_stdlib::Table;
-use tuirealm::command::{Cmd, CmdResult, Direction};
-use tuirealm::event::{Key, KeyEvent, KeyModifiers};
+use tuirealm::command::{Cmd, CmdResult};
 use tuirealm::props::{Alignment, BorderType, Borders, Color, Style};
 use tuirealm::ratatui::layout::{Alignment as RatatuiAlignment, Constraint, Rect};
 use tuirealm::ratatui::style::{Color as RatatuiColor, Modifier, Style as RatatuiStyle};
@@ -52,9 +48,9 @@ pub struct Messages {
     narrow_layout: bool, // Track if we're using narrow layout for responsive formatting
 }
 
-const CMD_RESULT_MESSAGE_SELECTED: &str = "MessageSelected";
-const CMD_RESULT_MESSAGE_PREVIEW: &str = "MessagePreview";
-const CMD_RESULT_QUEUE_UNSELECTED: &str = "QueueUnSelected";
+pub const CMD_RESULT_MESSAGE_SELECTED: &str = "MessageSelected";
+pub const CMD_RESULT_MESSAGE_PREVIEW: &str = "MessagePreview";
+pub const CMD_RESULT_QUEUE_UNSELECTED: &str = "QueueUnSelected";
 
 /// Get current index from table state
 fn get_current_index_from_state(state: &State) -> usize {
@@ -150,335 +146,80 @@ impl Messages {
     }
 
     /// Get the current selection index
-    pub fn get_current_index(&self) -> usize {
+    pub fn current_index(&self) -> usize {
         get_current_index_from_state(&self.component.state())
     }
 
     /// Get the number of messages currently available
-    pub fn get_message_count(&self) -> usize {
+    pub fn message_count(&self) -> usize {
         self.messages.as_ref().map_or(0, |msgs| msgs.len())
     }
 
-    /// Move selection down with bounds checking
-    pub fn move_down(&mut self) {
-        let current = self.get_current_index();
-        let max_index = self.get_message_count().saturating_sub(1);
-
-        if current < max_index {
-            self.component.perform(Cmd::Move(Direction::Down));
-        }
+    /// Get pagination info for external access
+    pub fn pagination_info(&self) -> &Option<PaginationInfo> {
+        &self.pagination_info
     }
 
-    /// Move selection up with bounds checking
-    pub fn move_up(&mut self) {
-        let current = self.get_current_index();
-        if current > 0 {
-            self.component.perform(Cmd::Move(Direction::Up));
-        }
+    /// Get component for internal operations (used by navigation module)
+    pub(super) fn component_mut(&mut self) -> &mut Table {
+        &mut self.component
     }
 
-    /// Page down with bounds checking
-    pub fn page_down(&mut self) {
-        let current = self.get_current_index();
-        let max_index = self.get_message_count().saturating_sub(1);
-
-        if current < max_index {
-            self.component.perform(Cmd::Scroll(Direction::Down));
-            // Ensure we don't go beyond the last item
-            let new_index = self.get_current_index();
-            if new_index > max_index {
-                // Reset to the last valid position
-                let moves_back = new_index - max_index;
-                for _ in 0..moves_back {
-                    self.component.perform(Cmd::Move(Direction::Up));
-                }
-            }
-        }
+    /// Get component for read-only access
+    pub(super) fn component(&self) -> &Table {
+        &self.component
     }
 
-    /// Page up with bounds checking
-    pub fn page_up(&mut self) {
-        self.component.perform(Cmd::Scroll(Direction::Up));
+    /// Get messages for internal operations
+    pub(super) fn messages(&self) -> &Option<Vec<MessageModel>> {
+        &self.messages
+    }
+
+    /// Get selected messages for internal operations
+    pub(super) fn selected_messages(&self) -> &Vec<MessageIdentifier> {
+        &self.selected_messages
+    }
+
+    /// Get headers for internal operations
+    pub(super) fn headers(&self) -> &Vec<String> {
+        &self.headers
+    }
+
+    /// Set headers for internal operations
+    pub(super) fn set_headers(&mut self, headers: Vec<String>) {
+        self.headers = headers;
+    }
+
+    /// Get widths for internal operations
+    pub(super) fn widths(&self) -> &Vec<u16> {
+        &self.widths
+    }
+
+    /// Set widths for internal operations
+    pub(super) fn set_widths(&mut self, widths: Vec<u16>) {
+        self.widths = widths;
+    }
+
+    /// Get title for internal operations
+    pub(super) fn title(&self) -> &String {
+        &self.title
+    }
+
+    /// Get focus state for internal operations
+    pub(super) fn is_focused(&self) -> bool {
+        self.is_focused
+    }
+
+    /// Set narrow layout flag for internal operations
+    pub(super) fn set_narrow_layout(&mut self, narrow_layout: bool) {
+        self.narrow_layout = narrow_layout;
     }
 }
 
 impl Component<Msg, NoUserEvent> for Messages {
-    #[allow(clippy::too_many_lines)]
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
-        let cmd_result = match ev {
-            // Bulk selection key bindings
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) if c == config::CONFIG.keys().toggle_selection() => {
-                // Toggle selection for current message
-                let index = match self.state() {
-                    State::One(StateValue::Usize(index)) => index,
-                    _ => 0,
-                };
-
-                return Some(create_toggle_message_selection(index));
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::CONTROL,
-            }) if c == config::CONFIG.keys().select_all_page() => {
-                // Select all messages on current page
-                return Some(Msg::MessageActivity(
-                    MessageActivityMsg::SelectAllCurrentPage,
-                ));
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('A'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-            }) => {
-                // Select all loaded messages across all pages
-                return Some(Msg::MessageActivity(
-                    MessageActivityMsg::SelectAllLoadedMessages,
-                ));
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Esc,
-                modifiers: KeyModifiers::NONE,
-            }) => {
-                // In bulk mode, clear selections. Otherwise, go back
-                // We'll let the handler decide based on current state
-                return Some(Msg::MessageActivity(MessageActivityMsg::ClearAllSelections));
-            }
-
-            // Enhanced existing operations for bulk mode - context-aware send/resend
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::CONTROL,
-            }) if c == config::CONFIG.keys().send_to_dlq() => {
-                // Context-aware operation based on current queue type
-                if let Some(pagination_info) = &self.pagination_info {
-                    match pagination_info.queue_type {
-                        QueueType::Main => {
-                            // In main queue: send to DLQ
-                            return Some(Msg::MessageActivity(
-                                MessageActivityMsg::BulkSendSelectedToDLQ,
-                            ));
-                        }
-                        QueueType::DeadLetter => {
-                            // In DLQ: resend to main queue (keep in DLQ)
-                            return Some(Msg::MessageActivity(
-                                MessageActivityMsg::BulkResendSelectedFromDLQ(false),
-                            ));
-                        }
-                    }
-                } else {
-                    // Fallback to send to DLQ if no pagination info available
-                    return Some(Msg::MessageActivity(
-                        MessageActivityMsg::BulkSendSelectedToDLQ,
-                    ));
-                }
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) if c == config::CONFIG.keys().send_to_dlq() => {
-                // Context-aware operation based on current queue type
-                if let Some(pagination_info) = &self.pagination_info {
-                    match pagination_info.queue_type {
-                        QueueType::Main => {
-                            // In main queue: send to DLQ
-                            return Some(Msg::MessageActivity(
-                                MessageActivityMsg::BulkSendSelectedToDLQ,
-                            ));
-                        }
-                        QueueType::DeadLetter => {
-                            // In DLQ: resend to main queue (keep in DLQ)
-                            return Some(Msg::MessageActivity(
-                                MessageActivityMsg::BulkResendSelectedFromDLQ(false),
-                            ));
-                        }
-                    }
-                } else {
-                    // Fallback to send to DLQ if no pagination info available
-                    return Some(Msg::MessageActivity(
-                        MessageActivityMsg::BulkSendSelectedToDLQ,
-                    ));
-                }
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) if c == config::CONFIG.keys().resend_from_dlq() => {
-                // Resend only (without deleting from DLQ)
-                return Some(Msg::MessageActivity(
-                    MessageActivityMsg::BulkResendSelectedFromDLQ(false),
-                ));
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::SHIFT,
-            }) if c == config::CONFIG.keys().resend_and_delete_from_dlq() => {
-                // Resend and delete from DLQ
-                return Some(Msg::MessageActivity(
-                    MessageActivityMsg::BulkResendSelectedFromDLQ(true),
-                ));
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Delete,
-                modifiers: KeyModifiers::NONE,
-            }) => {
-                // Check if we should do bulk operation or single message operation
-                return Some(Msg::MessageActivity(MessageActivityMsg::BulkDeleteSelected));
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::CONTROL,
-            }) if c == config::CONFIG.keys().alt_delete_message() => {
-                // Bulk delete with Ctrl+X
-                return Some(Msg::MessageActivity(MessageActivityMsg::BulkDeleteSelected));
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) if c == config::CONFIG.keys().delete_message() => {
-                // Single delete with X
-                return Some(Msg::MessageActivity(MessageActivityMsg::BulkDeleteSelected));
-            }
-
-            // Navigation keys
-            Event::Keyboard(KeyEvent {
-                code: Key::Down,
-                modifiers: KeyModifiers::NONE,
-            }) => {
-                self.move_down();
-                CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) if c == config::CONFIG.keys().down() => {
-                self.move_down();
-                CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Up,
-                modifiers: KeyModifiers::NONE,
-            }) => {
-                self.move_up();
-                CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) if c == config::CONFIG.keys().up() => {
-                self.move_up();
-                CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::PageDown,
-                modifiers: KeyModifiers::NONE,
-            }) => {
-                self.page_down();
-                CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::PageUp,
-                modifiers: KeyModifiers::NONE,
-            }) => {
-                self.page_up();
-                CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, self.state())
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Enter,
-                modifiers: KeyModifiers::NONE,
-            }) => CmdResult::Custom(CMD_RESULT_MESSAGE_SELECTED, self.state()),
-
-            // Pagination
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) if c == config::CONFIG.keys().next_page() => {
-                return Some(Msg::MessageActivity(MessageActivityMsg::NextPage));
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) if c == config::CONFIG.keys().alt_next_page() => {
-                return Some(Msg::MessageActivity(MessageActivityMsg::NextPage));
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) if c == config::CONFIG.keys().prev_page() => {
-                return Some(Msg::MessageActivity(MessageActivityMsg::PreviousPage));
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) if c == config::CONFIG.keys().alt_prev_page() => {
-                return Some(Msg::MessageActivity(MessageActivityMsg::PreviousPage));
-            }
-
-            // Global navigation
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) if c == config::CONFIG.keys().help() => {
-                return Some(Msg::ToggleHelpScreen);
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) if c == config::CONFIG.keys().quit() => return Some(Msg::AppClose),
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::CONTROL,
-            }) if c == config::CONFIG.keys().quit() => return Some(Msg::AppClose),
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) if c == config::CONFIG.keys().quit() => {
-                return Some(Msg::QueueActivity(QueueActivityMsg::QueueUnselected));
-            }
-
-            // Queue toggle
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) if c == config::CONFIG.keys().toggle_dlq() => {
-                return Some(Msg::QueueActivity(QueueActivityMsg::ToggleDeadLetterQueue));
-            }
-
-            // Message composition
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) if c == config::CONFIG.keys().compose_multiple() => {
-                return Some(Msg::MessageActivity(
-                    MessageActivityMsg::SetMessageRepeatCount,
-                ));
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::CONTROL,
-            }) if c == config::CONFIG.keys().compose_single() => {
-                return Some(Msg::MessageActivity(MessageActivityMsg::ComposeNewMessage));
-            }
-
-            _ => CmdResult::None,
-        };
-
-        match cmd_result {
-            CmdResult::Custom(
-                CMD_RESULT_MESSAGE_SELECTED,
-                State::One(StateValue::Usize(index)),
-            ) => Some(Msg::MessageActivity(MessageActivityMsg::EditMessage(index))),
-            CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, State::One(StateValue::Usize(index))) => {
-                Some(Msg::MessageActivity(
-                    MessageActivityMsg::PreviewMessageDetails(index),
-                ))
-            }
-            CmdResult::Custom(CMD_RESULT_QUEUE_UNSELECTED, _) => {
-                Some(Msg::QueueActivity(QueueActivityMsg::QueueUnselected))
-            }
-            _ => Some(Msg::ForceRedraw),
-        }
+        // Delegate to event handling module
+        super::event_handling::handle_event(self, ev)
     }
 }
 
@@ -486,30 +227,30 @@ impl MockComponent for Messages {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         // Recalculate responsive layout based on actual available width
         let bulk_mode = self
-            .pagination_info
+            .pagination_info()
             .as_ref()
             .is_some_and(|info| info.bulk_mode);
 
         let (headers, widths, narrow_layout) = calculate_responsive_layout(area.width, bulk_mode);
 
         // Update stored layout info
-        self.headers = headers;
-        self.widths = widths.clone();
-        self.narrow_layout = narrow_layout;
+        self.set_headers(headers);
+        self.set_widths(widths.clone());
+        self.set_narrow_layout(narrow_layout);
 
         // Get the current selection from the internal component
-        let table_state = self.component.state();
+        let table_state = self.component().state();
         let selected_index = get_current_index_from_state(&table_state);
 
         let mut rows = Vec::new();
-        if let Some(ref messages) = self.messages {
+        if let Some(messages) = self.messages() {
             for (i, msg) in messages.iter().enumerate() {
                 let mut cells = Vec::new();
 
                 if bulk_mode {
                     // Add checkbox column in bulk mode
                     let message_id = MessageIdentifier::from_message(msg);
-                    let checkbox_text = if self.selected_messages.contains(&message_id) {
+                    let checkbox_text = if self.selected_messages().contains(&message_id) {
                         "●"
                     } else {
                         "○"
@@ -562,7 +303,7 @@ impl MockComponent for Messages {
 
         // Create the table headers with proper theming
         let header_cells: Vec<Cell> = self
-            .headers
+            .headers()
             .iter()
             .map(|h| {
                 Cell::from(h.as_str()).style(
@@ -579,7 +320,7 @@ impl MockComponent for Messages {
         let table = RatatuiTable::new(
             rows,
             &self
-                .widths
+                .widths()
                 .iter()
                 .map(|&w| Constraint::Length(w))
                 .collect::<Vec<_>>(),
@@ -589,12 +330,12 @@ impl MockComponent for Messages {
             Block::default()
                 .borders(RatatuiBorders::ALL)
                 .border_type(RatatuiBorderType::Rounded)
-                .border_style(RatatuiStyle::default().fg(if self.is_focused {
+                .border_style(RatatuiStyle::default().fg(if self.is_focused() {
                     ThemeManager::primary_accent() // Teal when focused
                 } else {
                     RatatuiColor::White // White when not focused
                 }))
-                .title(self.title.as_str())
+                .title(self.title().as_str())
                 .title_alignment(RatatuiAlignment::Center)
                 .title_style(
                     RatatuiStyle::default()
@@ -619,11 +360,11 @@ impl MockComponent for Messages {
         frame.render_stateful_widget(table, area, &mut table_state);
 
         // Create status bar overlay at the bottom with pagination info
-        if let Some(ref info) = self.pagination_info {
+        if let Some(info) = self.pagination_info() {
             let status_text = format_pagination_status(info);
             let status_bar = Paragraph::new(status_text)
                 .style(
-                    Style::default().fg(if self.is_focused {
+                    Style::default().fg(if self.is_focused() {
                         ThemeManager::primary_accent() // Teal text when focused
                     } else {
                         RatatuiColor::White // White text when not focused
@@ -644,7 +385,7 @@ impl MockComponent for Messages {
     }
 
     fn query(&self, attr: Attribute) -> Option<AttrValue> {
-        self.component.query(attr)
+        self.component().query(attr)
     }
 
     fn attr(&mut self, attr: Attribute, value: AttrValue) {
@@ -653,13 +394,13 @@ impl MockComponent for Messages {
                 if let AttrValue::Number(position) = value {
                     log::debug!("Received cursor position attribute: {}", position);
                     let target_position = position as usize;
-                    let max_index = self.get_message_count().saturating_sub(1);
+                    let max_index = self.message_count().saturating_sub(1);
 
                     // Ensure target position is within bounds
                     let bounded_position = target_position.min(max_index);
 
                     // Reset to beginning first
-                    let current = self.get_current_index();
+                    let current = self.current_index();
                     for _ in 0..current {
                         self.move_up();
                     }
@@ -677,16 +418,17 @@ impl MockComponent for Messages {
                 }
             }
             _ => {
-                self.component.attr(attr, value);
+                self.component_mut().attr(attr, value);
             }
         }
     }
 
     fn state(&self) -> State {
-        self.component.state()
+        self.component().state()
     }
 
     fn perform(&mut self, cmd: Cmd) -> CmdResult {
-        self.component.perform(cmd)
+        self.component_mut().perform(cmd)
     }
 }
+

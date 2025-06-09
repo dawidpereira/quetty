@@ -1,5 +1,7 @@
 // Main Messages component module - split from original messages.rs
 pub mod component;
+pub mod event_handling;
+pub mod navigation;
 pub mod rendering;
 pub mod selection;
 
