@@ -369,3 +369,9 @@ impl Component<Msg, NoUserEvent> for ThemePicker {
         }
     }
 }
+
+impl Default for ThemePicker {
+    fn default() -> Self {
+        Self::new()
+    }
+}

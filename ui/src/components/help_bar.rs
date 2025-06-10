@@ -3,7 +3,7 @@ use crate::config;
 use crate::theme::ThemeManager;
 use tuirealm::props::Alignment;
 use tuirealm::ratatui::layout::Rect;
-use tuirealm::ratatui::style::Style;
+use tuirealm::ratatui::style::{Modifier, Style};
 use tuirealm::ratatui::text::{Line, Span, Text};
 use tuirealm::{Component, Event, Frame, MockComponent, NoUserEvent};
 
@@ -17,7 +17,7 @@ impl HelpBar {
         Self {
             style: Style::default()
                 .fg(ThemeManager::text_primary())
-                .bg(ThemeManager::surface()),
+                .add_modifier(Modifier::BOLD),
         }
     }
 
@@ -241,5 +241,11 @@ impl MockComponent for HelpBar {
 impl Component<Msg, NoUserEvent> for HelpBar {
     fn on(&mut self, _ev: Event<NoUserEvent>) -> Option<Msg> {
         None
+    }
+}
+
+impl Default for HelpBar {
+    fn default() -> Self {
+        Self::new()
     }
 }
