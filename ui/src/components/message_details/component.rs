@@ -1,4 +1,5 @@
 use crate::components::common::Msg;
+use crate::components::state::ComponentState;
 use crate::error::AppError;
 use server::model::{BodyData, MessageModel};
 use tuirealm::{
@@ -191,5 +192,39 @@ impl Component<Msg, NoUserEvent> for MessageDetails {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
         // Delegate to event handling module
         super::event_handling::handle_event(self, ev)
+    }
+}
+
+impl ComponentState for MessageDetails {
+    fn mount(&mut self) -> crate::error::AppResult<()> {
+        log::debug!("Mounting MessageDetails component");
+
+        // Initialize component state
+        self.scroll_offset = 0;
+        self.cursor_line = 0;
+        self.cursor_col = 0;
+        self.is_dirty = false;
+
+        // If we have content, ensure cursor is within bounds
+        self.adjust_cursor_column();
+
+        log::debug!("MessageDetails component mounted successfully");
+        Ok(())
+    }
+}
+
+impl Drop for MessageDetails {
+    fn drop(&mut self) {
+        log::debug!("Dropping MessageDetails component");
+
+        // Reset state for clean cleanup
+        self.is_focused = false;
+        self.is_editing = false;
+        self.is_dirty = false;
+        self.scroll_offset = 0;
+        self.cursor_line = 0;
+        self.cursor_col = 0;
+
+        log::debug!("MessageDetails component dropped");
     }
 }

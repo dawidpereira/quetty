@@ -2,8 +2,6 @@ use crate::app::model::Model;
 use crate::components::common::{MessageActivityMsg, Msg};
 use tuirealm::terminal::TerminalAdapter;
 
-
-
 pub mod async_operations;
 pub mod bulk;
 pub mod bulk_execution;

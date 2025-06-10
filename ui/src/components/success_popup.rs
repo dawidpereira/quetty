@@ -1,4 +1,5 @@
 use crate::components::common::{Msg, PopupActivityMsg};
+use crate::components::state::ComponentState;
 use crate::theme::ThemeManager;
 use tui_realm_stdlib::Paragraph;
 use tuirealm::{
@@ -16,6 +17,7 @@ use tuirealm::{
 pub struct SuccessPopup {
     component: Paragraph,
     message: String,
+    is_mounted: bool,
 }
 
 impl SuccessPopup {
@@ -33,6 +35,7 @@ impl SuccessPopup {
                 .alignment(Alignment::Center)
                 .text([TextSpan::from(message)]),
             message: message.to_string(),
+            is_mounted: false,
         }
     }
 }
@@ -102,5 +105,29 @@ impl Component<Msg, NoUserEvent> for SuccessPopup {
             }) => Some(Msg::PopupActivity(PopupActivityMsg::CloseSuccess)),
             _ => None,
         }
+    }
+}
+
+impl ComponentState for SuccessPopup {
+    fn mount(&mut self) -> crate::error::AppResult<()> {
+        log::debug!("Mounting SuccessPopup component");
+
+        if self.is_mounted {
+            log::warn!("SuccessPopup is already mounted");
+            return Ok(());
+        }
+
+        self.is_mounted = true;
+
+        log::debug!("SuccessPopup component mounted successfully");
+        Ok(())
+    }
+}
+
+impl Drop for SuccessPopup {
+    fn drop(&mut self) {
+        log::debug!("Dropping SuccessPopup component");
+        self.is_mounted = false;
+        log::debug!("SuccessPopup component dropped");
     }
 }

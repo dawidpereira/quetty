@@ -34,4 +34,3 @@ pub fn format_bulk_delete_success_message(
         )
     }
 }
-
