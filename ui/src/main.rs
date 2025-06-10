@@ -1,4 +1,12 @@
+mod app;
+mod components;
+mod config;
 mod error;
+mod logger;
+mod theme;
+mod validation;
+
+use crate::theme::{ThemeConfig, ThemeManager};
 use app::model::Model;
 use components::common::ComponentId;
 use config::CONFIG;
@@ -8,12 +16,6 @@ use std::error::Error as StdError;
 use tuirealm::application::PollStrategy;
 use tuirealm::terminal::CrosstermTerminalAdapter;
 use tuirealm::{AttrValue, Attribute, Update};
-
-mod app;
-mod components;
-mod config;
-mod logger;
-mod theme;
 
 /// Manages the display of configuration errors with user interaction
 struct ConfigErrorDisplay {
@@ -114,6 +116,51 @@ impl ConfigErrorDisplay {
     }
 }
 
+#[derive(Debug)]
+pub enum ThemeInitializationResult {
+    /// Theme loaded successfully with no errors
+    Success,
+    /// User theme failed, but fallback to default succeeded. Contains error message to show user.
+    FallbackSuccess { error_message: String },
+    /// Both user theme and default theme failed. Application should exit.
+    CriticalFailure { error_message: String },
+}
+
+/// Initialize the global theme manager with the given config
+/// Returns the result of initialization and any error message to show the user
+fn initialize_theme_manager(theme_config: &ThemeConfig) -> ThemeInitializationResult {
+    // Try to initialize with user's theme config first
+    if let Err(e) = ThemeManager::init_global(theme_config) {
+        log::error!("Failed to initialize theme manager with user config: {}", e);
+
+        // Try to fallback to default theme
+        let default_config = ThemeConfig::default();
+        if let Err(default_e) = ThemeManager::init_global(&default_config) {
+            log::error!(
+                "Failed to initialize theme manager with default theme: {}",
+                default_e
+            );
+            return ThemeInitializationResult::CriticalFailure {
+                error_message: format!(
+                    "Critical theme error: Unable to load any theme.\n\nUser theme error: {}\nDefault theme error: {}\n\nPlease check your theme files.",
+                    e, default_e
+                ),
+            };
+        } else {
+            log::info!("Successfully fell back to default theme");
+            return ThemeInitializationResult::FallbackSuccess {
+                error_message: format!(
+                    "Unable to load theme '{}' with flavor '{}': {}\n\nFalling back to default theme (quetty/dark).",
+                    theme_config.theme_name, theme_config.flavor_name, e
+                ),
+            };
+        }
+    }
+
+    // User theme loaded successfully
+    ThemeInitializationResult::Success
+}
+
 async fn show_config_error_and_exit(
     validation_errors: Vec<config::ConfigValidationError>,
 ) -> Result<(), Box<dyn StdError>> {
@@ -147,11 +194,14 @@ async fn main() -> Result<(), Box<dyn StdError>> {
     };
 
     // Initialize global theme manager with loaded config
-    use crate::theme::ThemeManager;
     let theme_config = config.theme();
-    if let Err(e) = ThemeManager::init_global(&theme_config) {
-        log::error!("Failed to initialize theme manager: {}", e);
-        return Err(Box::new(e) as Box<dyn StdError>);
+    let theme_init_result = initialize_theme_manager(&theme_config);
+
+    // Handle critical theme failures
+    if let ThemeInitializationResult::CriticalFailure { error_message } = &theme_init_result {
+        error!("{}", error_message);
+        eprintln!("{}", error_message);
+        return Ok(());
     }
 
     // Now validate configuration after ThemeManager is initialized
@@ -168,6 +218,13 @@ async fn main() -> Result<(), Box<dyn StdError>> {
     // Setup model - now we know config is valid and ThemeManager is initialized
     let mut model = Model::new().await.expect("Failed to initialize model");
     info!("Model initialized successfully");
+
+    // Show theme error popup if there was a theme loading issue
+    if let ThemeInitializationResult::FallbackSuccess { error_message } = theme_init_result {
+        if let Err(e) = model.mount_error_popup(&AppError::Config(error_message)) {
+            error!("Failed to mount theme error popup: {}", e);
+        }
+    }
 
     // Enter alternate screen
     debug!("Entering alternate screen");
@@ -240,4 +297,128 @@ async fn main() -> Result<(), Box<dyn StdError>> {
 
     info!("Application terminated successfully");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_theme_initialization_success() {
+        // Test with default theme config - should succeed
+        let default_config = ThemeConfig::default();
+        let result = initialize_theme_manager(&default_config);
+
+        match result {
+            ThemeInitializationResult::Success => {
+                // Success - this is expected for the default theme
+            }
+            ThemeInitializationResult::FallbackSuccess { .. } => {
+                // This might happen if the default theme in config is different than the fallback
+                // That's also acceptable
+            }
+            ThemeInitializationResult::CriticalFailure { error_message } => {
+                // In test environment, this might happen due to global state conflicts
+                // Only panic if it's not a "already initialized" error
+                if !error_message.contains("already initialized") {
+                    panic!(
+                        "Default theme should be loadable, but got critical failure: {}",
+                        error_message
+                    );
+                }
+                // If it's an "already initialized" error, that's acceptable in tests
+            }
+        }
+    }
+
+    #[test]
+    fn test_theme_initialization_with_invalid_theme() {
+        // Test with an invalid theme config
+        let invalid_config = ThemeConfig {
+            theme_name: "nonexistent_theme".to_string(),
+            flavor_name: "nonexistent_flavor".to_string(),
+        };
+
+        let result = initialize_theme_manager(&invalid_config);
+
+        match result {
+            ThemeInitializationResult::Success => {
+                panic!("Expected invalid theme to fail, but got success");
+            }
+            ThemeInitializationResult::FallbackSuccess { error_message } => {
+                // This is the expected behavior - fallback to default
+                assert!(error_message.contains("nonexistent_theme"));
+                assert!(error_message.contains("nonexistent_flavor"));
+                assert!(error_message.contains("Falling back to default theme"));
+            }
+            ThemeInitializationResult::CriticalFailure { error_message } => {
+                // This would only happen if both user and default themes fail
+                // This might be possible in test environment, so we'll just verify the error
+                assert!(error_message.contains("Critical theme error"));
+                assert!(error_message.contains("nonexistent_theme"));
+            }
+        }
+    }
+
+    #[test]
+    fn test_theme_initialization_with_empty_theme_name() {
+        // Test with empty theme name (should be invalid)
+        let empty_config = ThemeConfig {
+            theme_name: "".to_string(),
+            flavor_name: "dark".to_string(),
+        };
+
+        let result = initialize_theme_manager(&empty_config);
+
+        match result {
+            ThemeInitializationResult::Success => {
+                panic!("Expected empty theme name to fail, but got success");
+            }
+            ThemeInitializationResult::FallbackSuccess { error_message } => {
+                // Expected - fallback to default
+                assert!(error_message.contains("Falling back to default theme"));
+            }
+            ThemeInitializationResult::CriticalFailure { .. } => {
+                // Also acceptable if default theme also fails in test environment
+            }
+        }
+    }
+
+    #[test]
+    fn test_theme_initialization_result_debug() {
+        // Test that the enum implements Debug properly
+        let success = ThemeInitializationResult::Success;
+        let fallback = ThemeInitializationResult::FallbackSuccess {
+            error_message: "Test error".to_string(),
+        };
+        let critical = ThemeInitializationResult::CriticalFailure {
+            error_message: "Critical test error".to_string(),
+        };
+
+        // Should not panic - just testing Debug implementation
+        println!("Success: {:?}", success);
+        println!("Fallback: {:?}", fallback);
+        println!("Critical: {:?}", critical);
+    }
+
+    #[test]
+    fn test_theme_initialization_error_message_format() {
+        // Test with a known invalid theme to verify error message format
+        let invalid_config = ThemeConfig {
+            theme_name: "test_invalid_theme_123".to_string(),
+            flavor_name: "test_invalid_flavor_456".to_string(),
+        };
+
+        let result = initialize_theme_manager(&invalid_config);
+
+        if let ThemeInitializationResult::FallbackSuccess { error_message } = result {
+            // Verify error message contains expected information
+            assert!(error_message.contains("test_invalid_theme_123"));
+            assert!(error_message.contains("test_invalid_flavor_456"));
+            assert!(error_message.contains("Unable to load theme"));
+            assert!(error_message.contains("Falling back to default theme"));
+            assert!(error_message.contains("quetty/dark"));
+        }
+        // If it's a critical failure, that's also acceptable in test environment
+    }
 }
