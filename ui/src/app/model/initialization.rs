@@ -7,6 +7,7 @@ use crate::components::message_details::MessageDetails;
 use crate::components::messages::Messages;
 use crate::components::namespace_picker::NamespacePicker;
 use crate::components::queue_picker::QueuePicker;
+use crate::components::state::ComponentStateMount;
 use crate::components::text_label::TextLabel;
 use crate::config;
 use crate::error::{AppError, AppResult};
@@ -63,12 +64,12 @@ where
         )
         .map_err(|e| AppError::Component(e.to_string()))?;
 
-        app.mount(
+        // Initialize MessageDetails with ComponentState pattern using extension trait
+        app.mount_with_state(
             ComponentId::MessageDetails,
-            Box::new(MessageDetails::new(None)),
+            MessageDetails::new(None),
             Vec::default(),
-        )
-        .map_err(|e| AppError::Component(e.to_string()))?;
+        )?;
 
         app.mount(
             ComponentId::GlobalKeyWatcher,
@@ -117,14 +118,12 @@ impl Model<CrosstermTerminalAdapter> {
             is_editing_message: false,
         };
 
-        // Initialize loading indicator
-        app.app
-            .mount(
-                ComponentId::LoadingIndicator,
-                Box::new(LoadingIndicator::new("Loading...", true)),
-                Vec::default(),
-            )
-            .map_err(|e| AppError::Component(e.to_string()))?;
+        // Initialize loading indicator with ComponentState pattern using extension trait
+        app.app.mount_with_state(
+            ComponentId::LoadingIndicator,
+            LoadingIndicator::new("Loading...", true),
+            Vec::default(),
+        )?;
 
         // Load namespaces and handle any errors through the message system
         if app

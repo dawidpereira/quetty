@@ -256,4 +256,3 @@ fn start_bulk_send_with_data_operation<T: TerminalAdapter>(
 ) -> Option<Msg> {
     start_bulk_send_generic(model, BulkSendData::MessageData(messages_data), params)
 }
-

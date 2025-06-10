@@ -1,4 +1,5 @@
 use crate::components::common::{Msg, PopupActivityMsg};
+use crate::components::state::ComponentState;
 use crate::error::AppError;
 use crate::theme::ThemeManager;
 use crate::validation::Validator;
@@ -106,6 +107,7 @@ pub struct NumberInputPopup {
     max_value: usize,
     current_input: String,
     validator: NumericRangeValidator,
+    is_mounted: bool,
 }
 
 impl NumberInputPopup {
@@ -117,6 +119,7 @@ impl NumberInputPopup {
             max_value,
             current_input: String::new(),
             validator: NumericRangeValidator::new(min_value, max_value),
+            is_mounted: false,
         }
     }
 
@@ -304,6 +307,34 @@ impl Component<Msg, NoUserEvent> for NumberInputPopup {
 
             _ => None,
         }
+    }
+}
+
+impl ComponentState for NumberInputPopup {
+    fn mount(&mut self) -> crate::error::AppResult<()> {
+        log::debug!("Mounting NumberInputPopup component");
+
+        if self.is_mounted {
+            log::warn!("NumberInputPopup is already mounted");
+            return Ok(());
+        }
+
+        // Initialize component state
+        self.current_input.clear();
+
+        self.is_mounted = true;
+        log::debug!("NumberInputPopup component mounted successfully");
+        Ok(())
+    }
+}
+
+impl Drop for NumberInputPopup {
+    fn drop(&mut self) {
+        log::debug!("Dropping NumberInputPopup component");
+        // Clean up component state
+        self.current_input.clear();
+        self.is_mounted = false;
+        log::debug!("NumberInputPopup component dropped");
     }
 }
 

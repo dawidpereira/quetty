@@ -1,4 +1,5 @@
 use crate::components::common::Msg;
+use crate::components::state::ComponentState;
 use crate::config::CONFIG;
 use crate::theme::ThemeManager;
 use std::time::{Duration, Instant};
@@ -18,6 +19,7 @@ pub struct LoadingIndicator {
     message: String,
     frame_index: usize,
     last_frame_time: Instant,
+    is_mounted: bool,
 }
 
 impl LoadingIndicator {
@@ -49,6 +51,7 @@ impl LoadingIndicator {
             message: message.to_string(),
             frame_index: 0,
             last_frame_time: Instant::now(),
+            is_mounted: false,
         }
     }
 
@@ -79,5 +82,37 @@ impl Component<Msg, NoUserEvent> for LoadingIndicator {
             }
             _ => None,
         }
+    }
+}
+
+impl ComponentState for LoadingIndicator {
+    fn mount(&mut self) -> crate::error::AppResult<()> {
+        log::debug!("Mounting LoadingIndicator component");
+
+        if self.is_mounted {
+            log::warn!("LoadingIndicator is already mounted");
+            return Ok(());
+        }
+
+        // Reset animation state
+        self.frame_index = 0;
+        self.last_frame_time = Instant::now();
+
+        // Update initial display
+        let display_text = format!("{} {}", SPINNER_FRAMES[0], self.message);
+        self.component
+            .attr(Attribute::Text, AttrValue::String(display_text));
+
+        self.is_mounted = true;
+        log::debug!("LoadingIndicator component mounted successfully");
+        Ok(())
+    }
+}
+
+impl Drop for LoadingIndicator {
+    fn drop(&mut self) {
+        log::debug!("Dropping LoadingIndicator component");
+        self.is_mounted = false;
+        log::debug!("LoadingIndicator component dropped");
     }
 }

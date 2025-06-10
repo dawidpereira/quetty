@@ -4,6 +4,7 @@ use crate::components::message_details::MessageDetails;
 use crate::components::messages::{Messages, PaginationInfo};
 use crate::components::namespace_picker::NamespacePicker;
 use crate::components::queue_picker::QueuePicker;
+use crate::components::state::ComponentStateMount;
 use crate::error::{AppError, AppResult};
 use tuirealm::terminal::TerminalAdapter;
 
@@ -24,13 +25,12 @@ where
             None
         };
 
-        self.app
-            .remount(
-                ComponentId::MessageDetails,
-                Box::new(MessageDetails::new_with_focus(message, is_focused)),
-                Vec::default(),
-            )
-            .map_err(|e| AppError::Component(e.to_string()))?;
+        // Use ComponentState extension trait for single-call remounting
+        self.app.remount_with_state(
+            ComponentId::MessageDetails,
+            MessageDetails::new_with_focus(message, is_focused),
+            Vec::default(),
+        )?;
 
         Ok(())
     }
@@ -45,17 +45,16 @@ where
         // Get the current repeat count from queue state
         let repeat_count = self.queue_state.message_repeat_count;
 
-        self.app
-            .remount(
-                ComponentId::MessageDetails,
-                Box::new(MessageDetails::new_for_composition_with_repeat_count(
-                    message,
-                    is_focused,
-                    repeat_count,
-                )),
-                Vec::default(),
-            )
-            .map_err(|e| AppError::Component(e.to_string()))?;
+        // Use ComponentState extension trait for single-call remounting
+        self.app.remount_with_state(
+            ComponentId::MessageDetails,
+            MessageDetails::new_for_composition_with_repeat_count(
+                message,
+                is_focused,
+                repeat_count,
+            ),
+            Vec::default(),
+        )?;
 
         Ok(())
     }

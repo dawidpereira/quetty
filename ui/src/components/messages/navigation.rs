@@ -45,4 +45,3 @@ impl Messages {
         self.component_mut().perform(Cmd::Scroll(Direction::Up));
     }
 }
-

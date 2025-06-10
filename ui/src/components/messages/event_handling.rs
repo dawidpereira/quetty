@@ -283,4 +283,3 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
         _ => Some(Msg::ForceRedraw),
     }
 }
-

@@ -5,6 +5,7 @@ use crate::components::error_popup::ErrorPopup;
 use crate::components::global_key_watcher::GlobalKeyWatcher;
 use crate::components::loading_indicator::LoadingIndicator;
 use crate::components::number_input_popup::NumberInputPopup;
+use crate::components::state::ComponentStateMount;
 use crate::components::success_popup::SuccessPopup;
 use crate::components::theme_picker::ThemePicker;
 use crate::error::{AppError, AppResult};
@@ -25,14 +26,12 @@ where
             }
         }
 
-        // Mount new loading indicator with proper subscriptions for tick events
-        self.app
-            .mount(
-                ComponentId::LoadingIndicator,
-                Box::new(LoadingIndicator::new(message, true)),
-                vec![Sub::new(SubEventClause::Tick, SubClause::Always)],
-            )
-            .map_err(|e| AppError::Component(e.to_string()))?;
+        // Mount with ComponentState pattern using extension trait
+        self.app.mount_with_state(
+            ComponentId::LoadingIndicator,
+            LoadingIndicator::new(message, true),
+            vec![Sub::new(SubEventClause::Tick, SubClause::Always)],
+        )?;
 
         log::debug!("Loading indicator mounted successfully");
         Ok(())
@@ -42,13 +41,11 @@ where
     pub fn mount_error_popup(&mut self, error: &AppError) -> AppResult<()> {
         log::error!("Displaying error popup: {}", error);
 
-        self.app
-            .remount(
-                ComponentId::ErrorPopup,
-                Box::new(ErrorPopup::new(error)),
-                Vec::default(),
-            )
-            .map_err(|e| AppError::Component(e.to_string()))?;
+        self.app.remount_with_state(
+            ComponentId::ErrorPopup,
+            ErrorPopup::new(error),
+            Vec::default(),
+        )?;
 
         self.app
             .active(&ComponentId::ErrorPopup)
@@ -61,6 +58,10 @@ where
 
     /// Unmount error popup and return focus to previous component
     pub fn unmount_error_popup(&mut self) -> AppResult<()> {
+        // Note: We can't access the component directly through TUI realm's API
+        // to call unmount(), but the ComponentState pattern ensures components
+        // are properly initialized when mounted.
+
         self.app
             .umount(&ComponentId::ErrorPopup)
             .map_err(|e| AppError::Component(e.to_string()))?;
@@ -75,13 +76,11 @@ where
     pub fn mount_success_popup(&mut self, message: &str) -> AppResult<()> {
         log::info!("Displaying success popup: {}", message);
 
-        self.app
-            .remount(
-                ComponentId::SuccessPopup,
-                Box::new(SuccessPopup::new(message)),
-                Vec::default(),
-            )
-            .map_err(|e| AppError::Component(e.to_string()))?;
+        self.app.remount_with_state(
+            ComponentId::SuccessPopup,
+            SuccessPopup::new(message),
+            Vec::default(),
+        )?;
 
         self.app
             .active(&ComponentId::SuccessPopup)
@@ -105,13 +104,11 @@ where
     }
 
     pub fn mount_confirmation_popup(&mut self, title: &str, message: &str) -> AppResult<()> {
-        self.app
-            .remount(
-                ComponentId::ConfirmationPopup,
-                Box::new(ConfirmationPopup::new(title, message)),
-                Vec::default(),
-            )
-            .map_err(|e| AppError::Component(e.to_string()))?;
+        self.app.remount_with_state(
+            ComponentId::ConfirmationPopup,
+            ConfirmationPopup::new(title, message),
+            Vec::default(),
+        )?;
 
         self.app
             .active(&ComponentId::ConfirmationPopup)
@@ -127,13 +124,11 @@ where
         min_value: usize,
         max_value: usize,
     ) -> AppResult<()> {
-        self.app
-            .remount(
-                ComponentId::NumberInputPopup,
-                Box::new(NumberInputPopup::new(title, message, min_value, max_value)),
-                Vec::default(),
-            )
-            .map_err(|e| AppError::Component(e.to_string()))?;
+        self.app.remount_with_state(
+            ComponentId::NumberInputPopup,
+            NumberInputPopup::new(title, message, min_value, max_value),
+            Vec::default(),
+        )?;
 
         self.app
             .active(&ComponentId::NumberInputPopup)
@@ -168,17 +163,12 @@ where
         // Store the current state so we can return to it
         self.previous_state = Some(self.app_state.clone());
 
-        // Create theme picker and load themes
-        let mut theme_picker = ThemePicker::new();
-        theme_picker.load_themes();
-
-        self.app
-            .remount(
-                ComponentId::ThemePicker,
-                Box::new(theme_picker),
-                Vec::default(),
-            )
-            .map_err(|e| AppError::Component(e.to_string()))?;
+        // Mount theme picker with ComponentState pattern using extension trait
+        self.app.remount_with_state(
+            ComponentId::ThemePicker,
+            ThemePicker::new(),
+            Vec::default(),
+        )?;
 
         self.app
             .active(&ComponentId::ThemePicker)

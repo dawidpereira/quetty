@@ -1,4 +1,5 @@
 use crate::components::common::{Msg, PopupActivityMsg};
+use crate::components::state::ComponentState;
 use crate::config;
 use crate::theme::ThemeManager;
 use tui_realm_stdlib::Paragraph;
@@ -18,6 +19,7 @@ pub struct ConfirmationPopup {
     component: Paragraph,
     title: String,
     message: String,
+    is_mounted: bool,
 }
 
 impl ConfirmationPopup {
@@ -36,6 +38,7 @@ impl ConfirmationPopup {
                 .text([TextSpan::from(message)]),
             title: title.to_string(),
             message: message.to_string(),
+            is_mounted: false,
         }
     }
 }
@@ -147,5 +150,29 @@ impl Component<Msg, NoUserEvent> for ConfirmationPopup {
             )),
             _ => None,
         }
+    }
+}
+
+impl ComponentState for ConfirmationPopup {
+    fn mount(&mut self) -> crate::error::AppResult<()> {
+        log::debug!("Mounting ConfirmationPopup component");
+
+        if self.is_mounted {
+            log::warn!("ConfirmationPopup is already mounted");
+            return Ok(());
+        }
+
+        self.is_mounted = true;
+
+        log::debug!("ConfirmationPopup component mounted successfully");
+        Ok(())
+    }
+}
+
+impl Drop for ConfirmationPopup {
+    fn drop(&mut self) {
+        log::debug!("Dropping ConfirmationPopup component");
+        self.is_mounted = false;
+        log::debug!("ConfirmationPopup component dropped");
     }
 }

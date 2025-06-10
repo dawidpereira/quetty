@@ -184,4 +184,3 @@ impl MessageCollector {
         (self.collected_target, self.collected_non_target)
     }
 }
-

@@ -358,4 +358,3 @@ fn format_bulk_send_success_message(
         )
     }
 }
-

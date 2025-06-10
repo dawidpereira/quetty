@@ -1,4 +1,6 @@
 use crate::components::common::{Msg, ThemeActivityMsg};
+use crate::components::state::ComponentState;
+use crate::error::AppResult;
 use crate::theme::ThemeManager;
 use crate::theme::types::ThemeCollectionWithMetadata;
 use tuirealm::command::{Cmd, CmdResult};
@@ -367,6 +369,14 @@ impl Component<Msg, NoUserEvent> for ThemePicker {
             }
             _ => Some(Msg::ForceRedraw),
         }
+    }
+}
+
+impl ComponentState for ThemePicker {
+    fn mount(&mut self) -> AppResult<()> {
+        // Load themes during component mounting
+        self.load_themes();
+        Ok(())
     }
 }
 

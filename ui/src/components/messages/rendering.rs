@@ -159,4 +159,3 @@ pub fn build_table_from_messages(
     }
     Vec::new()
 }
-

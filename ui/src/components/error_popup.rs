@@ -1,4 +1,5 @@
 use crate::components::common::{Msg, PopupActivityMsg};
+use crate::components::state::ComponentState;
 use crate::error::AppError;
 use crate::theme::ThemeManager;
 use tui_realm_stdlib::Paragraph;
@@ -11,16 +12,12 @@ use tuirealm::{
 #[derive(MockComponent)]
 pub struct ErrorPopup {
     component: Paragraph,
+    is_mounted: bool,
 }
 
 impl ErrorPopup {
     pub fn new(error: &AppError) -> Self {
-        // Format error message
-        let error_msg = format!("{}", error);
-
-        // Split the error message by newlines and create TextSpan for each line
-        let text_spans: Vec<TextSpan> = error_msg.lines().map(TextSpan::from).collect();
-
+        let error_message = format!("{}", error);
         Self {
             component: Paragraph::default()
                 .borders(
@@ -32,7 +29,8 @@ impl ErrorPopup {
                 .foreground(ThemeManager::status_error())
                 .modifiers(TextModifiers::BOLD)
                 .alignment(Alignment::Center)
-                .text(text_spans),
+                .text([TextSpan::from(&error_message)]),
+            is_mounted: false,
         }
     }
 }
@@ -46,5 +44,29 @@ impl Component<Msg, NoUserEvent> for ErrorPopup {
             }) => Some(Msg::PopupActivity(PopupActivityMsg::CloseError)),
             _ => None,
         }
+    }
+}
+
+impl ComponentState for ErrorPopup {
+    fn mount(&mut self) -> crate::error::AppResult<()> {
+        log::debug!("Mounting ErrorPopup component");
+
+        if self.is_mounted {
+            log::warn!("ErrorPopup is already mounted");
+            return Ok(());
+        }
+
+        self.is_mounted = true;
+
+        log::debug!("ErrorPopup component mounted successfully");
+        Ok(())
+    }
+}
+
+impl Drop for ErrorPopup {
+    fn drop(&mut self) {
+        log::debug!("Dropping ErrorPopup component");
+        self.is_mounted = false;
+        log::debug!("ErrorPopup component dropped");
     }
 }
