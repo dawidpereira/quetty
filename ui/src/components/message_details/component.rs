@@ -1,4 +1,5 @@
 use crate::components::common::Msg;
+use crate::error::AppError;
 use server::model::{BodyData, MessageModel};
 use tuirealm::{
     AttrValue, Attribute, Component, Frame, MockComponent, NoUserEvent, State, StateValue,
@@ -91,15 +92,18 @@ impl MessageDetails {
         }
     }
 
-    /// Get the current line content at cursor position
-    pub fn get_current_line(&self) -> Option<&String> {
-        self.message_content
-            .get(self.cursor_line + self.scroll_offset)
-    }
-
     /// Get current edited content as string
     pub fn get_edited_content(&self) -> String {
         self.message_content.join("\n")
+    }
+
+    /// Validate message content before sending
+    pub fn validate_message_content(&self, content: &str) -> Result<(), AppError> {
+        use super::validation::CompleteMessageValidator;
+        use crate::validation::Validator;
+
+        let validator = CompleteMessageValidator::azure_default();
+        validator.validate(content).map_err(Into::into)
     }
 }
 
