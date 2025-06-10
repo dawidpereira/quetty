@@ -9,6 +9,7 @@ use crate::validation::Validator;
 
 impl Validator<str> for MyValidator {
     type Error = MyError;
+    
     fn validate(&self, input: &str) -> Result<(), Self::Error> {
         // Your validation logic
         Ok(())
@@ -28,10 +29,11 @@ impl Validator<str> for MyValidator {
 ### 1. Input Validation
 ```rust
 // Validate basic input constraints
-let name_validator = StringLengthValidator::new("Theme Name")
-    .min_length(1)
-    .max_length(50);
-name_validator.validate(theme_name)?;
+let content_validator = MessageContentValidator;
+content_validator.validate(message_content)?;
+
+let size_validator = MessageSizeValidator::azure_default();
+size_validator.validate(message_content)?;
 ```
 
 ### 2. Business Logic Validation
@@ -89,36 +91,49 @@ impl MyValidationError {
 - Skip validation for "trusted" inputs
 - Duplicate validation logic
 
-## Examples
+## Current Implementations
 
 ### Theme Validation
 ```rust
-// Good: Specific validator with clear errors
+// Validate theme names and configurations
 let validator = ThemeNameValidator;
 validator.validate(theme_name)
     .map_err(|e| AppError::Config(e.user_message()))?;
 ```
 
-### Message Validation
+### Message Content Validation
 ```rust
-// Good: Multi-layer validation
-validator_chain
-    .add_validator(NonEmptyStringValidator::new("Message"))
-    .add_validator(MessageSizeValidator::new(max_size))
-    .validate(message_content)?;
+// Comprehensive message validation
+let validator = CompleteMessageValidator::azure_default();
+validator.validate(message_content)?;
+
+// Individual validators
+let content_validator = MessageContentValidator;      // Non-empty
+let size_validator = MessageSizeValidator::new(limit); // Size limits
+let json_validator = JsonFormatValidator;             // JSON format
+let encoding_validator = MessageEncodingValidator;    // UTF-8 encoding
 ```
 
-### User Input
+### Number Input Validation
 ```rust
-// Good: Validate before processing
-let count = validate_number_input(input, 1, 100)?;
-process_bulk_operation(count);
+// Numeric range validation with user-friendly errors
+let validator = NumericRangeValidator::new(min, max);
+validator.validate(user_input)?;
+```
+
+### Configuration Validation
+```rust
+// Validate app configuration against limits
+config.validate()
+    .map_err(|errors| show_config_errors(errors))?;
 ```
 
 ## Quick Reference
 
-- **String validation**: Use `StringLengthValidator`, `NonEmptyStringValidator`
+- **String validation**: Use `MessageContentValidator`, `MessageSizeValidator`
 - **Number validation**: Use `NumericRangeValidator<T>`
+- **JSON validation**: Use `JsonFormatValidator`
+- **Theme validation**: Use `ThemeNameValidator`, `FlavorNameValidator`
 - **Custom validation**: Implement `Validator<T>` trait
 - **Error conversion**: Implement `From<ValidationError> for AppError`
-- **Multiple rules**: Use `ValidationChain` or multiple validator calls
+- **Composite validation**: Use multiple validator calls or create composite validators

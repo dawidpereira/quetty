@@ -29,8 +29,15 @@ pub fn handle_event(details: &mut MessageDetails, ev: Event<NoUserEvent>) -> Opt
             modifiers: KeyModifiers::CONTROL,
         }) if c == config::CONFIG.keys().send_edited_message() => {
             if details.is_editing && details.is_dirty {
-                // Send edited content as new message (keep original)
+                // Validate content before sending
                 let edited_content = details.get_edited_content();
+                if let Err(validation_error) = details.validate_message_content(&edited_content) {
+                    return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(
+                        validation_error,
+                    )));
+                }
+
+                // Send edited content as new message (keep original)
                 return Some(Msg::MessageActivity(MessageActivityMsg::SendEditedMessage(
                     edited_content,
                 )));
@@ -47,8 +54,16 @@ pub fn handle_event(details: &mut MessageDetails, ev: Event<NoUserEvent>) -> Opt
         }) if c == config::CONFIG.keys().replace_edited_message() => {
             if details.is_editing && details.is_dirty {
                 if let Some(message) = &details.current_message {
-                    // Replace original message with edited content
+                    // Validate content before replacing
                     let edited_content = details.get_edited_content();
+                    if let Err(validation_error) = details.validate_message_content(&edited_content)
+                    {
+                        return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(
+                            validation_error,
+                        )));
+                    }
+
+                    // Replace original message with edited content
                     let message_id = MessageIdentifier::from_message(message);
                     return Some(Msg::MessageActivity(
                         MessageActivityMsg::ReplaceEditedMessage(edited_content, message_id),
@@ -155,6 +170,28 @@ pub fn handle_event(details: &mut MessageDetails, ev: Event<NoUserEvent>) -> Opt
             modifiers: KeyModifiers::NONE,
         }) => {
             details.handle_page_navigation(false);
+        }
+
+        Event::Keyboard(KeyEvent {
+            code: Key::Home,
+            modifiers: KeyModifiers::NONE,
+        }) => {
+            if details.is_editing {
+                details.move_cursor_to_line_start();
+            } else {
+                details.move_cursor_to_top();
+            }
+        }
+
+        Event::Keyboard(KeyEvent {
+            code: Key::End,
+            modifiers: KeyModifiers::NONE,
+        }) => {
+            if details.is_editing {
+                details.move_cursor_to_line_end();
+            } else {
+                details.move_cursor_to_bottom();
+            }
         }
 
         Event::Keyboard(KeyEvent {
