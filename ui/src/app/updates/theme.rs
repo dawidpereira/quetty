@@ -40,7 +40,9 @@ where
                         );
                     }
 
-                    return Some(Msg::Error(e));
+                    self.error_reporter
+                        .report_simple(e, "ThemeManager", "handle_theme_selected");
+                    return None;
                 }
             }
             Err(e) => {
@@ -54,17 +56,25 @@ where
                     );
                 }
 
-                return Some(Msg::Error(crate::error::AppError::Component(format!(
+                let lock_error = crate::error::AppError::Component(format!(
                     "Failed to acquire theme manager lock: {}",
                     e
-                ))));
+                ));
+                self.error_reporter.report_simple(
+                    lock_error,
+                    "ThemeManager",
+                    "handle_theme_selected",
+                );
+                return None;
             }
         }
 
         // Close the theme picker
         if let Err(e) = self.unmount_theme_picker() {
             log::error!("Failed to unmount theme picker: {}", e);
-            return Some(Msg::Error(e));
+            self.error_reporter
+                .report_simple(e, "ThemeManager", "handle_theme_selected");
+            return None;
         }
 
         // Force a complete redraw to apply the new theme
@@ -83,7 +93,9 @@ where
 
         if let Err(e) = self.unmount_theme_picker() {
             log::error!("Failed to unmount theme picker: {}", e);
-            Some(Msg::Error(e))
+            self.error_reporter
+                .report_simple(e, "ThemeManager", "handle_theme_picker_closed");
+            None
         } else {
             None
         }

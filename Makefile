@@ -28,4 +28,7 @@ check:
 clean:
 	cd ui && cargo clean
 
+fmt:
+	cd ui && cargo fmt
+
 .PHONY: run backtrace test test-lib test-all clippy clippy-all clippy-fix check clean

@@ -107,7 +107,12 @@ where
     pub fn handle_next_page_request(&mut self) -> Option<Msg> {
         if self.queue_state.message_pagination.has_next_page {
             if let Err(e) = self.handle_next_page() {
-                return Some(Msg::Error(e));
+                self.error_reporter.report_simple(
+                    e,
+                    "MessagePagination",
+                    "handle_next_page_request",
+                );
+                return None;
             }
         }
         None
@@ -116,7 +121,12 @@ where
     pub fn handle_previous_page_request(&mut self) -> Option<Msg> {
         if self.queue_state.message_pagination.has_previous_page {
             if let Err(e) = self.handle_previous_page() {
-                return Some(Msg::Error(e));
+                self.error_reporter.report_simple(
+                    e,
+                    "MessagePagination",
+                    "handle_previous_page_request",
+                );
+                return None;
             }
         }
         None
@@ -163,7 +173,9 @@ where
 
     pub fn handle_page_changed(&mut self) -> Option<Msg> {
         if let Err(e) = self.update_current_page_view() {
-            return Some(Msg::Error(e));
+            self.error_reporter
+                .report_simple(e, "MessagePagination", "handle_page_changed");
+            return None;
         }
         None
     }
@@ -373,7 +385,7 @@ where
             AppError::State("No consumer available".to_string())
         })?;
 
-        let tx_to_main_err = tx_to_main.clone();
+        let error_reporter = self.error_reporter.clone();
         let from_sequence = self
             .queue_state
             .message_pagination
@@ -383,7 +395,7 @@ where
         taskpool.execute(async move {
             Self::execute_backfill_loading_task(
                 tx_to_main,
-                tx_to_main_err,
+                error_reporter,
                 consumer,
                 from_sequence,
                 message_count,
@@ -396,7 +408,7 @@ where
 
     async fn execute_backfill_loading_task(
         tx_to_main: Sender<Msg>,
-        tx_to_main_err: Sender<Msg>,
+        error_reporter: crate::error::ErrorReporter,
         consumer: Arc<tokio::sync::Mutex<server::consumer::Consumer>>,
         from_sequence: Option<i64>,
         message_count: u32,
@@ -419,7 +431,7 @@ where
                 log::error!("Failed to send loading stop message: {}", e);
             }
 
-            let _ = tx_to_main_err.send(Msg::Error(e));
+            error_reporter.report_simple(e, "MessagePagination", "load_messages_for_backfill");
         }
     }
 

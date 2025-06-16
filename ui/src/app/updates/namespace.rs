@@ -11,7 +11,9 @@ where
         match msg {
             NamespaceActivityMsg::NamespacesLoaded(namespace) => {
                 if let Err(e) = self.remount_namespace_picker(Some(namespace)) {
-                    return Some(Msg::Error(e));
+                    self.error_reporter
+                        .report_simple(e, "NamespaceHandler", "update_namespace");
+                    return None;
                 }
                 self.app_state = AppState::NamespacePicker;
                 None
@@ -26,7 +28,9 @@ where
                 }
 
                 if let Err(e) = self.load_queues() {
-                    return Some(Msg::Error(e));
+                    self.error_reporter
+                        .report_simple(e, "NamespaceHandler", "update_namespace");
+                    return None;
                 }
                 None
             }
@@ -35,7 +39,9 @@ where
                 self.selected_namespace = None;
 
                 if let Err(e) = self.load_namespaces() {
-                    return Some(Msg::Error(e));
+                    self.error_reporter
+                        .report_simple(e, "NamespaceHandler", "update_namespace");
+                    return None;
                 }
                 None
             }

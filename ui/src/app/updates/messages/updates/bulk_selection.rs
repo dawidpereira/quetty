@@ -51,7 +51,12 @@ where
         }
 
         if let Err(e) = self.remount_messages_with_focus(true) {
-            return Some(Msg::Error(e));
+            self.error_reporter.report_simple(
+                e,
+                "BulkSelection",
+                "handle_toggle_message_selection_by_index",
+            );
+            return None;
         }
 
         log::debug!(
@@ -90,7 +95,9 @@ where
         log::info!("Selected all {} messages on current page", message_count);
 
         if let Err(e) = self.remount_messages_with_focus(true) {
-            return Some(Msg::Error(e));
+            self.error_reporter
+                .report_simple(e, "BulkSelection", "handle_select_all_current_page");
+            return None;
         }
 
         None
@@ -114,7 +121,12 @@ where
         log::info!("Selected all {} loaded messages", all_messages_count);
 
         if let Err(e) = self.remount_messages_with_focus(true) {
-            return Some(Msg::Error(e));
+            self.error_reporter.report_simple(
+                e,
+                "BulkSelection",
+                "handle_select_all_loaded_messages",
+            );
+            return None;
         }
 
         None
@@ -132,7 +144,9 @@ where
         log::info!("Cleared {} message selections", selection_count);
 
         if let Err(e) = self.remount_messages_with_focus(true) {
-            return Some(Msg::Error(e));
+            self.error_reporter
+                .report_simple(e, "BulkSelection", "handle_clear_all_selections");
+            return None;
         }
 
         None

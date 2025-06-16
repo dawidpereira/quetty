@@ -19,7 +19,9 @@ where
     /// Handle opening empty message details in edit mode for composition
     pub fn handle_compose_new_message(&mut self) -> Option<Msg> {
         if let Err(e) = self.remount_messages_with_focus(false) {
-            return Some(Msg::Error(e));
+            self.error_reporter
+                .report_simple(e, "MessageComposer", "handle_compose_new_message");
+            return None;
         }
 
         self.app_state = AppState::MessageDetails;
@@ -29,7 +31,9 @@ where
         }
 
         if let Err(e) = self.remount_message_details_for_composition() {
-            return Some(Msg::Error(e));
+            self.error_reporter
+                .report_simple(e, "MessageComposer", "handle_compose_new_message");
+            return None;
         }
 
         self.is_editing_message = true;
@@ -101,7 +105,7 @@ where
             AppError::State("No consumer available".to_string())
         })?;
 
-        let tx_to_main_err = tx_to_main.clone();
+        let error_reporter = self.error_reporter.clone();
         taskpool.execute(async move {
             let result = Self::execute_fresh_message_load(tx_to_main.clone(), consumer).await;
 
@@ -112,7 +116,7 @@ where
                     log::error!("Failed to send loading stop message: {err}");
                 }
 
-                let _ = tx_to_main_err.send(Msg::Error(e));
+                error_reporter.report_simple(e, "MessageComposer", "load_messages_from_beginning");
             }
         });
 

@@ -6,6 +6,7 @@ use server::bulk_operations::MessageIdentifier;
 use server::consumer::Consumer;
 use server::model::MessageModel;
 use std::sync::Arc;
+use std::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tuirealm::terminal::TerminalAdapter;
 
@@ -28,51 +29,10 @@ where
             AppError::State("No consumer available".to_string())
         })?;
 
-        let tx_to_main_err = tx_to_main.clone();
+        let error_reporter = self.error_reporter.clone();
         taskpool.execute(async move {
-            let result = async {
-                let mut consumer = consumer.lock().await;
-
-                let messages = consumer
-                    .peek_messages(CONFIG.max_messages(), None)
-                    .await
-                    .map_err(|e| {
-                        log::error!("Failed to peek messages: {}", e);
-                        AppError::ServiceBus(e.to_string())
-                    })?;
-
-                log::info!("Loaded {} messages", messages.len());
-
-                // Stop loading indicator
-                if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
-                    log::error!("Failed to send loading stop message: {}", e);
-                }
-
-                // Send initial messages as new messages loaded
-                if !messages.is_empty() {
-                    tx_to_main
-                        .send(Msg::MessageActivity(MessageActivityMsg::NewMessagesLoaded(
-                            messages,
-                        )))
-                        .map_err(|e| {
-                            log::error!("Failed to send new messages loaded message: {}", e);
-                            AppError::Component(e.to_string())
-                        })?;
-                } else {
-                    // No messages, but still need to update the view
-                    tx_to_main
-                        .send(Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(
-                            messages,
-                        )))
-                        .map_err(|e| {
-                            log::error!("Failed to send messages loaded message: {}", e);
-                            AppError::Component(e.to_string())
-                        })?;
-                }
-
-                Ok::<(), AppError>(())
-            }
-            .await;
+            let result =
+                Self::execute_message_loading_task(tx_to_main.clone(), consumer, None).await;
             if let Err(e) = result {
                 log::error!("Error in message loading task: {}", e);
 
@@ -80,9 +40,57 @@ where
                     log::error!("Failed to send loading stop message: {}", err);
                 }
 
-                let _ = tx_to_main_err.send(Msg::Error(e));
+                error_reporter.report_simple(e, "MessageLoader", "load_messages");
             }
         });
+
+        Ok(())
+    }
+
+    /// Execute message loading task asynchronously
+    async fn execute_message_loading_task(
+        tx_to_main: Sender<Msg>,
+        consumer: Arc<Mutex<Consumer>>,
+        from_sequence: Option<i64>,
+    ) -> Result<(), AppError> {
+        let mut consumer = consumer.lock().await;
+
+        let messages = consumer
+            .peek_messages(CONFIG.max_messages(), from_sequence)
+            .await
+            .map_err(|e| {
+                log::error!("Failed to peek messages: {}", e);
+                AppError::ServiceBus(e.to_string())
+            })?;
+
+        log::info!("Loaded {} messages", messages.len());
+
+        // Stop loading indicator
+        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
+            log::error!("Failed to send loading stop message: {}", e);
+        }
+
+        // Send initial messages as new messages loaded
+        if !messages.is_empty() {
+            tx_to_main
+                .send(Msg::MessageActivity(MessageActivityMsg::NewMessagesLoaded(
+                    messages,
+                )))
+                .map_err(|e| {
+                    log::error!("Failed to send new messages loaded message: {}", e);
+                    AppError::Component(e.to_string())
+                })?;
+        } else {
+            // No messages, but still need to update the view
+            tx_to_main
+                .send(Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(
+                    messages,
+                )))
+                .map_err(|e| {
+                    log::error!("Failed to send messages loaded message: {}", e);
+                    AppError::Component(e.to_string())
+                })?;
+        }
 
         Ok(())
     }
@@ -91,7 +99,9 @@ where
     pub fn handle_messages_loaded(&mut self, messages: Vec<MessageModel>) -> Option<Msg> {
         self.queue_state.messages = Some(messages);
         if let Err(e) = self.remount_messages_with_focus(true) {
-            return Some(Msg::Error(e));
+            self.error_reporter
+                .report_simple(e, "MessageStateHandler", "handle_messages_loaded");
+            return None;
         }
 
         self.app_state = AppState::MessagePicker;
@@ -100,7 +110,9 @@ where
         }
 
         if let Err(e) = self.remount_message_details(0) {
-            return Some(Msg::Error(e));
+            self.error_reporter
+                .report_simple(e, "MessageStateHandler", "handle_messages_loaded");
+            return None;
         }
 
         self.redraw = true;
@@ -116,7 +128,9 @@ where
 
         self.reset_pagination_state();
         if let Err(e) = self.load_messages() {
-            return Some(Msg::Error(e));
+            self.error_reporter
+                .report_simple(e, "MessageStateHandler", "handle_consumer_created");
+            return None;
         }
         None
     }
@@ -130,7 +144,12 @@ where
     /// Handle previewing message details
     pub fn handle_preview_message_details(&mut self, index: usize) -> Option<Msg> {
         if let Err(e) = self.remount_message_details(index) {
-            return Some(Msg::Error(e));
+            self.error_reporter.report_simple(
+                e,
+                "MessageStateHandler",
+                "handle_preview_message_details",
+            );
+            return None;
         }
         None
     }
@@ -152,7 +171,12 @@ where
         }
 
         if let Err(e) = self.update_current_page_view() {
-            return Some(Msg::Error(e));
+            self.error_reporter.report_simple(
+                e,
+                "MessageStateHandler",
+                "handle_new_messages_loaded",
+            );
+            return None;
         }
 
         self.app_state = AppState::MessagePicker;
@@ -164,7 +188,12 @@ where
             .is_empty()
         {
             if let Err(e) = self.remount_message_details(0) {
-                return Some(Msg::Error(e));
+                self.error_reporter.report_simple(
+                    e,
+                    "MessageStateHandler",
+                    "handle_new_messages_loaded",
+                );
+                return None;
             }
         }
 
@@ -254,13 +283,23 @@ where
             },
         )) {
             log::error!("Failed to send pagination state update: {}", e);
-            return Some(Msg::Error(AppError::Component(e.to_string())));
+            self.error_reporter.report_simple(
+                AppError::Component(e.to_string()),
+                "MessageStateHandler",
+                "update_pagination_and_view",
+            );
+            return None;
         }
 
         // Force cursor reset to position 0 after bulk removal
         // This is different from normal page navigation where we preserve cursor
         if let Err(e) = self.remount_messages_with_cursor_control(false) {
-            return Some(Msg::Error(e));
+            self.error_reporter.report_simple(
+                e,
+                "MessageStateHandler",
+                "update_pagination_and_view",
+            );
+            return None;
         }
 
         self.remount_message_details_safe()
@@ -283,7 +322,12 @@ where
         };
 
         if let Err(e) = self.remount_message_details(index) {
-            return Some(Msg::Error(e));
+            self.error_reporter.report_simple(
+                e,
+                "MessageStateHandler",
+                "remount_message_details_safe",
+            );
+            return None;
         }
 
         None
