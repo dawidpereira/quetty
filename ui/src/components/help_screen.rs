@@ -3,7 +3,7 @@ use crate::config;
 use crate::theme::ThemeManager;
 use tuirealm::{
     Component, Event, Frame, MockComponent, NoUserEvent,
-    event::{Key, KeyEvent, KeyModifiers},
+    event::{Key, KeyEvent},
     props::BorderType,
     ratatui::{
         layout::{Alignment, Constraint, Layout, Rect},
@@ -671,17 +671,6 @@ impl Component<Msg, NoUserEvent> for HelpScreen {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
         match ev {
             Event::Keyboard(KeyEvent { code: Key::Esc, .. }) => Some(Msg::ToggleHelpScreen),
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) => {
-                let keys = config::CONFIG.keys();
-                if c == keys.help() {
-                    Some(Msg::ToggleHelpScreen)
-                } else {
-                    None
-                }
-            }
             _ => None,
         }
     }
