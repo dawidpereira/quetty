@@ -34,7 +34,12 @@ pub fn handle_bulk_resend_from_dlq_execution<T: TerminalAdapter>(
         Ok(name) => name,
         Err(e) => {
             log::error!("Failed to get main queue name: {}", e);
-            return Some(Msg::Error(e));
+            model.error_reporter.report_simple(
+                e,
+                "BulkSendHandler",
+                "handle_bulk_resend_from_dlq_execution",
+            );
+            return None;
         }
     };
 
@@ -75,7 +80,12 @@ pub fn handle_bulk_resend_from_dlq_only_execution<T: TerminalAdapter>(
         Ok(name) => name,
         Err(e) => {
             log::error!("Failed to get main queue name: {}", e);
-            return Some(Msg::Error(e));
+            model.error_reporter.report_simple(
+                e,
+                "BulkSendHandler",
+                "handle_bulk_resend_from_dlq_only_execution",
+            );
+            return None;
         }
     };
 

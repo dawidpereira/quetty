@@ -1,7 +1,6 @@
 use super::display_helpers::format_bulk_delete_success_message;
 use super::message_collector::{BatchDeleteContext, MessageCollector};
 use super::task_manager::BulkTaskManager;
-use super::validation::validate_bulk_delete_request;
 use crate::app::model::Model;
 use crate::components::common::{
     LoadingActivityMsg, MessageActivityMsg, Msg, PopupActivityMsg, QueueType,
@@ -21,21 +20,20 @@ pub fn handle_bulk_delete_execution<T: TerminalAdapter>(
     message_ids: Vec<MessageIdentifier>,
 ) -> Option<Msg> {
     if message_ids.is_empty() {
-        log::warn!("No messages provided for bulk delete operation");
+        log::warn!("No message IDs provided for bulk delete");
         return None;
-    }
-
-    if let Err(error_msg) = validate_bulk_delete_request(model, &message_ids) {
-        return Some(error_msg);
     }
 
     let consumer = match model.queue_state.consumer.clone() {
         Some(consumer) => consumer,
         None => {
             log::error!("No consumer available for bulk delete operation");
-            return Some(Msg::Error(AppError::State(
-                "No consumer available for bulk delete operation".to_string(),
-            )));
+            model.error_reporter.report_simple(
+                AppError::State("No consumer available for bulk delete operation".to_string()),
+                "BulkDeleteHandler",
+                "handle_bulk_delete_execution",
+            );
+            return None;
         }
     };
 

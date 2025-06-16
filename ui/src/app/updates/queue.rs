@@ -11,13 +11,17 @@ where
             QueueActivityMsg::QueueSelected(queue) => {
                 self.queue_state.set_selected_queue(queue);
                 if let Err(e) = self.new_consumer_for_queue() {
-                    return Some(Msg::Error(e));
+                    self.error_reporter
+                        .report_simple(e, "QueueHandler", "update_queue");
+                    return None;
                 }
                 None
             }
             QueueActivityMsg::QueuesLoaded(queues) => {
                 if let Err(e) = self.remount_queue_picker(Some(queues)) {
-                    return Some(Msg::Error(e));
+                    self.error_reporter
+                        .report_simple(e, "QueueHandler", "update_queue");
+                    return None;
                 }
                 self.app_state = AppState::QueuePicker;
                 None
@@ -29,7 +33,9 @@ where
             QueueActivityMsg::ToggleDeadLetterQueue => {
                 if self.queue_state.toggle_queue_type().is_some() {
                     if let Err(e) = self.new_consumer_for_queue() {
-                        return Some(Msg::Error(e));
+                        self.error_reporter
+                            .report_simple(e, "QueueHandler", "update_queue");
+                        return None;
                     }
                 }
                 None

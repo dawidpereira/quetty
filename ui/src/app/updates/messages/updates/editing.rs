@@ -19,7 +19,9 @@ where
     /// Handle starting message editing
     pub fn handle_edit_message(&mut self, index: usize) -> Option<Msg> {
         if let Err(e) = self.remount_messages_with_focus(false) {
-            return Some(Msg::Error(e));
+            self.error_reporter
+                .report_simple(e, "MessageEditor", "handle_edit_message");
+            return None;
         }
 
         self.app_state = AppState::MessageDetails;
@@ -29,7 +31,9 @@ where
         }
 
         if let Err(e) = self.remount_message_details(index) {
-            return Some(Msg::Error(e));
+            self.error_reporter
+                .report_simple(e, "MessageEditor", "handle_edit_message");
+            return None;
         }
 
         Some(Msg::ForceRedraw)
@@ -43,7 +47,9 @@ where
         }
 
         if let Err(e) = self.remount_messages_with_focus(true) {
-            return Some(Msg::Error(e));
+            self.error_reporter
+                .report_simple(e, "MessageEditor", "handle_cancel_edit_message");
+            return None;
         }
 
         self.app_state = AppState::MessagePicker;
@@ -53,7 +59,9 @@ where
         }
 
         if let Err(e) = self.remount_message_details(0) {
-            return Some(Msg::Error(e));
+            self.error_reporter
+                .report_simple(e, "MessageEditor", "handle_cancel_edit_message");
+            return None;
         }
 
         None

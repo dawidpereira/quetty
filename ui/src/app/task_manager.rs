@@ -157,7 +157,7 @@ impl TaskManager {
 }
 
 /// Task builder pattern for fluent API construction
-/// 
+///
 /// Provides a clean, readable way to configure async operations with custom
 /// loading messages, success/error handlers, and other parameters.
 pub struct TaskBuilder<'a> {

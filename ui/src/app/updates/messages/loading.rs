@@ -26,7 +26,7 @@ where
         self.send_loading_start_message(&tx_to_main);
 
         let consumer = self.get_consumer()?;
-        let tx_to_main_err = tx_to_main.clone();
+        let error_reporter = self.error_reporter.clone();
         let from_sequence = self
             .queue_state
             .message_pagination
@@ -36,7 +36,7 @@ where
         taskpool.execute(async move {
             Self::execute_message_loading_task_with_count(
                 tx_to_main,
-                tx_to_main_err,
+                error_reporter,
                 consumer,
                 from_sequence,
                 message_count,
@@ -64,7 +64,7 @@ where
 
     async fn execute_message_loading_task_with_count(
         tx_to_main: Sender<Msg>,
-        tx_to_main_err: Sender<Msg>,
+        error_reporter: crate::error::ErrorReporter,
         consumer: Arc<Mutex<Consumer>>,
         from_sequence: Option<i64>,
         message_count: u32,
@@ -78,7 +78,7 @@ where
         .await;
 
         if let Err(e) = result {
-            Self::handle_loading_error(tx_to_main, tx_to_main_err, e);
+            Self::handle_loading_error(tx_to_main, error_reporter, e);
         }
     }
 
@@ -144,10 +144,14 @@ where
             })
     }
 
-    fn handle_loading_error(tx_to_main: Sender<Msg>, tx_to_main_err: Sender<Msg>, error: AppError) {
+    fn handle_loading_error(
+        tx_to_main: Sender<Msg>,
+        error_reporter: crate::error::ErrorReporter,
+        error: AppError,
+    ) {
         log::error!("Error in message loading task: {}", error);
 
         Self::send_loading_stop_message(&tx_to_main);
-        let _ = tx_to_main_err.send(Msg::Error(error));
+        error_reporter.report_simple(error, "MessageLoader", "load_messages_from_api_with_count");
     }
 }
