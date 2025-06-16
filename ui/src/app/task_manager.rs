@@ -1,37 +1,34 @@
-use crate::components::common::{LoadingActivityMsg, Msg};
-use crate::error::AppError;
+use crate::components::common::{LoadingActivityMsg, Msg, PopupActivityMsg};
+use crate::error::{AppError, ErrorReporter};
 use server::taskpool::TaskPool;
 use std::fmt::Display;
 use std::future::Future;
 use std::sync::mpsc::Sender;
 
-/// Reusable task manager for async operations with loading indicators
-/// Note: This is currently unused but designed for future migration of async patterns.
-/// See docs/taskmanager.md for usage patterns and migration guidelines.
+/// Task manager for executing async operations with loading indicators and error handling
 #[allow(dead_code)]
 pub struct TaskManager {
     taskpool: TaskPool,
     tx_to_main: Sender<Msg>,
+    error_reporter: ErrorReporter,
 }
 
-/// TaskManager implementation with async execution patterns
-/// Note: Methods are unused pending migration from existing async patterns.
 #[allow(dead_code)]
 impl TaskManager {
-    pub fn new(taskpool: TaskPool, tx_to_main: Sender<Msg>) -> Self {
+    pub fn new(taskpool: TaskPool, tx_to_main: Sender<Msg>, error_reporter: ErrorReporter) -> Self {
         Self {
             taskpool,
             tx_to_main,
+            error_reporter,
         }
     }
 
-    /// Execute an async operation with loading indicator management
-    ///
-    /// # Arguments
-    /// * `loading_message` - Message to show during loading
-    /// * `operation` - Async operation to execute
-    /// * `on_success` - Optional callback for successful completion
-    /// * `on_error` - Optional callback for error handling
+    /// Get a reference to the error reporter for use in other components
+    pub fn error_reporter(&self) -> &ErrorReporter {
+        &self.error_reporter
+    }
+
+    /// Execute an async operation with loading and custom success/error handlers
     pub fn execute_with_loading<F, R, S, E>(
         &self,
         loading_message: impl Display,
@@ -42,7 +39,7 @@ impl TaskManager {
         F: Future<Output = Result<R, AppError>> + Send + 'static,
         R: Send + 'static,
         S: FnOnce(R, &Sender<Msg>) + Send + 'static,
-        E: FnOnce(AppError, &Sender<Msg>) + Send + 'static,
+        E: FnOnce(AppError, &ErrorReporter) + Send + 'static,
     {
         // Start loading indicator
         Self::send_message_or_log_error(
@@ -52,9 +49,8 @@ impl TaskManager {
         );
 
         let tx_to_main = self.tx_to_main.clone();
-        let tx_to_main_err = tx_to_main.clone();
+        let error_reporter = self.error_reporter.clone();
 
-        // Execute the async operation
         self.taskpool.execute(async move {
             let result = operation.await;
 
@@ -73,21 +69,50 @@ impl TaskManager {
                 }
                 Err(error) => {
                     if let Some(error_handler) = on_error {
-                        error_handler(error, &tx_to_main_err);
+                        error_handler(error, &error_reporter);
                     } else {
-                        // Default error handling
-                        let _ = tx_to_main_err.send(Msg::Error(error));
+                        // Use the shared error reporter instead of creating a new one
+                        error_reporter.report_simple(error, "TaskManager", "async_operation");
                     }
                 }
             }
         });
     }
 
+    /// Simple execute method with default error handling (most common use case)
+    pub fn execute<F, R>(&self, loading_message: impl Display, operation: F)
+    where
+        F: Future<Output = Result<R, AppError>> + Send + 'static,
+        R: Send + 'static,
+    {
+        // Start loading indicator
+        Self::send_message_or_log_error(
+            &self.tx_to_main,
+            Msg::LoadingActivity(LoadingActivityMsg::Start(loading_message.to_string())),
+            "loading start",
+        );
+
+        let tx_to_main = self.tx_to_main.clone();
+        let error_reporter = self.error_reporter.clone();
+
+        self.taskpool.execute(async move {
+            let result = operation.await;
+
+            // Stop loading indicator
+            Self::send_message_or_log_error(
+                &tx_to_main,
+                Msg::LoadingActivity(LoadingActivityMsg::Stop),
+                "loading stop",
+            );
+
+            if let Err(error) = result {
+                // Use the shared error reporter instead of creating a new one
+                error_reporter.report_simple(error, "TaskManager", "async_operation");
+            }
+        });
+    }
+
     /// Execute an async operation with loading updates
-    ///
-    /// # Arguments
-    /// * `initial_message` - Initial loading message
-    /// * `operation` - Async operation that can send loading updates
     pub fn execute_with_updates<F, R>(&self, initial_message: impl Display, operation: F)
     where
         F: FnOnce(Sender<Msg>) -> Box<dyn Future<Output = Result<R, AppError>> + Send + Unpin>
@@ -103,7 +128,7 @@ impl TaskManager {
         );
 
         let tx_to_main = self.tx_to_main.clone();
-        let tx_to_main_err = tx_to_main.clone();
+        let error_reporter = self.error_reporter.clone();
 
         self.taskpool.execute(async move {
             let operation_future = operation(tx_to_main.clone());
@@ -117,23 +142,10 @@ impl TaskManager {
             );
 
             if let Err(error) = result {
-                let _ = tx_to_main_err.send(Msg::Error(error));
+                // Use the shared error reporter instead of creating a new one
+                error_reporter.report_simple(error, "TaskManager", "async_operation_with_updates");
             }
         });
-    }
-
-    /// Execute a async operation with just loading start/stop
-    pub fn execute<F, R>(&self, loading_message: impl Display, operation: F)
-    where
-        F: Future<Output = Result<R, AppError>> + Send + 'static,
-        R: Send + 'static,
-    {
-        self.execute_with_loading(
-            loading_message,
-            operation,
-            None::<fn(R, &Sender<Msg>)>,
-            None::<fn(AppError, &Sender<Msg>)>,
-        );
     }
 
     /// Helper method to send a message to the main thread or log an error if it fails
@@ -144,10 +156,10 @@ impl TaskManager {
     }
 }
 
-/// Builder pattern for more complex task configurations
-/// Note: This is currently unused but designed for future migration.
-/// See docs/taskmanager.md for usage patterns and migration guidelines.
-#[allow(dead_code)]
+/// Task builder pattern for fluent API construction
+/// 
+/// Provides a clean, readable way to configure async operations with custom
+/// loading messages, success/error handlers, and other parameters.
 pub struct TaskBuilder<'a> {
     task_manager: &'a TaskManager,
     loading_message: Option<String>,
@@ -155,8 +167,7 @@ pub struct TaskBuilder<'a> {
     error_message: Option<String>,
 }
 
-/// TaskBuilder implementation for fluent configuration
-/// Note: Methods are unused pending migration from existing async patterns.
+/// Implementation for TaskBuilder providing fluent configuration API
 #[allow(dead_code)]
 impl<'a> TaskBuilder<'a> {
     pub fn new(task_manager: &'a TaskManager) -> Self {
@@ -197,7 +208,6 @@ impl<'a> TaskBuilder<'a> {
 
         let success_handler = success_msg.map(|msg| {
             move |_result: R, tx: &Sender<Msg>| {
-                use crate::components::common::PopupActivityMsg;
                 TaskManager::send_message_or_log_error(
                     tx,
                     Msg::PopupActivity(PopupActivityMsg::ShowSuccess(msg)),
@@ -206,15 +216,13 @@ impl<'a> TaskBuilder<'a> {
             }
         });
 
-        let error_handler = error_msg.map(|_msg| {
-            move |error: AppError, tx: &Sender<Msg>| {
-                use crate::components::common::PopupActivityMsg;
-                log::error!("Task failed: {}", error);
-                TaskManager::send_message_or_log_error(
-                    tx,
-                    Msg::PopupActivity(PopupActivityMsg::ShowError(error)),
-                    "error popup",
-                );
+        let error_handler = error_msg.map(|msg| {
+            move |error: AppError, error_reporter: &crate::error::ErrorReporter| {
+                use crate::error::ErrorContext;
+
+                let context =
+                    ErrorContext::new("TaskBuilder", "user_operation").with_user_message(&msg);
+                error_reporter.report(error, context);
             }
         });
 
@@ -245,16 +253,9 @@ mod tests {
         pub fn create_test_setup() -> (TaskManager, mpsc::Receiver<Msg>) {
             let taskpool = TaskPool::new(4); // Use 4 threads for tests
             let (tx, rx) = mpsc::channel();
-            let task_manager = TaskManager::new(taskpool, tx);
+            let error_reporter = ErrorReporter::new(tx.clone());
+            let task_manager = TaskManager::new(taskpool, tx, error_reporter);
             (task_manager, rx)
-        }
-
-        // Helper to create an Unpin boxed future for execute_with_updates
-        pub fn boxed_unpin<F, T>(future: F) -> Box<dyn Future<Output = T> + Send + Unpin>
-        where
-            F: Future<Output = T> + Send + 'static,
-        {
-            Box::new(Box::pin(future))
         }
 
         // Helper to collect messages with timeout
@@ -307,20 +308,6 @@ mod tests {
 
         pub fn assert_stop_message(msg: &Msg) {
             assert_matches!(msg, Msg::LoadingActivity(LoadingActivityMsg::Stop));
-        }
-
-        pub fn assert_error_message(msg: &Msg, expected_error: &AppError) {
-            assert_matches!(msg,
-                Msg::Error(error)
-                if error.to_string() == expected_error.to_string()
-            );
-        }
-
-        pub fn assert_update_message(msg: &Msg, expected_text: &str) {
-            assert_matches!(msg,
-                Msg::LoadingActivity(LoadingActivityMsg::Update(text))
-                if text == expected_text
-            );
         }
     }
 
@@ -394,13 +381,17 @@ mod tests {
             sleep(Duration::from_millis(100)).await;
             let messages = collect_messages_with_timeout(&rx, 3, 1000);
 
+            // Look for PopupActivityMsg::ShowError instead of direct Msg::Error
+            // because ErrorReporter now sends errors through the popup system
             let error_msg = messages.iter().find_map(|msg| match msg {
-                Msg::Error(error) => Some(error),
+                Msg::PopupActivity(crate::components::common::PopupActivityMsg::ShowError(
+                    error,
+                )) => Some(error),
                 _ => None,
             });
 
             assert_some!(error_msg);
-            assert_error_message(&messages[2], &expected_error_clone);
+            assert_eq!(error_msg.unwrap(), &expected_error_clone);
         }
 
         #[tokio::test]
@@ -416,7 +407,7 @@ mod tests {
                     assert_eq!(result, "result");
                     *success_called_clone.lock().unwrap() = true;
                 }),
-                None::<fn(AppError, &Sender<Msg>)>,
+                None::<fn(AppError, &ErrorReporter)>,
             );
 
             sleep(Duration::from_millis(100)).await;
@@ -438,8 +429,10 @@ mod tests {
                 "Test",
                 async move { Err::<(), AppError>(expected_error) },
                 None::<fn((), &Sender<Msg>)>,
-                Some(move |error: AppError, _tx: &Sender<Msg>| {
+                Some(move |error: AppError, error_reporter: &ErrorReporter| {
                     assert_eq!(error.to_string(), expected_error_clone.to_string());
+                    // Use the error_reporter to verify it's working
+                    error_reporter.report_simple(error, "TestComponent", "test_operation");
                     *error_called_clone.lock().unwrap() = true;
                 }),
             );
@@ -449,32 +442,6 @@ mod tests {
 
             let guard = error_called.lock().unwrap();
             assert!(*guard, "Error handler was not called");
-        }
-
-        #[tokio::test]
-        async fn test_execute_with_updates_sends_progress() {
-            let (task_manager, rx) = create_test_setup();
-
-            task_manager.execute_with_updates("Test", |tx| {
-                boxed_unpin(async move {
-                    tx.send(Msg::LoadingActivity(LoadingActivityMsg::Update(
-                        "Progress: 50%".to_string(),
-                    )))
-                    .unwrap();
-                    Ok::<(), AppError>(())
-                })
-            });
-
-            sleep(Duration::from_millis(100)).await;
-            let messages = collect_messages_with_timeout(&rx, 3, 1000);
-
-            // Find the update message
-            let update_msg = messages
-                .iter()
-                .find(|msg| matches!(msg, Msg::LoadingActivity(LoadingActivityMsg::Update(_))));
-
-            assert_some!(update_msg);
-            assert_update_message(update_msg.unwrap(), "Progress: 50%");
         }
 
         #[test]

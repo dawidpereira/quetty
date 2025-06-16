@@ -1,19 +1,17 @@
 use crate::app::model::Model;
 use crate::components::common::{LoadingActivityMsg, Msg, NamespaceActivityMsg};
-use crate::config;
-use crate::config::CONFIG;
+use crate::config::{self, CONFIG};
 use crate::error::{AppError, AppResult};
 use crate::theme::ThemeManager;
 use server::service_bus_manager::ServiceBusManager;
 use tuirealm::command::{Cmd, CmdResult};
-use tuirealm::event::{Key, KeyEvent};
-use tuirealm::props::{Alignment, Style, TextModifiers};
+use tuirealm::event::{Event, Key, KeyEvent, NoUserEvent};
+use tuirealm::props::{Alignment, TextModifiers};
 use tuirealm::ratatui::layout::Rect;
+use tuirealm::ratatui::style::Style;
 use tuirealm::ratatui::widgets::{List, ListItem};
 use tuirealm::terminal::TerminalAdapter;
-use tuirealm::{
-    AttrValue, Attribute, Component, Event, Frame, MockComponent, NoUserEvent, State, StateValue,
-};
+use tuirealm::{AttrValue, Attribute, Component, Frame, MockComponent, State, StateValue};
 
 const CMD_RESULT_NAMESPACE_SELECTED: &str = "NamespaceSelected";
 
@@ -196,7 +194,7 @@ where
             log::error!("Failed to send loading start message: {}", e);
         }
 
-        let tx_to_main_err = tx_to_main.clone();
+        let error_reporter = self.error_reporter.clone();
         taskpool.execute(async move {
             let result = async {
                 log::debug!("Requesting namespaces from Azure AD");
@@ -244,14 +242,8 @@ where
             .await;
             if let Err(e) = result {
                 log::error!("Error in namespace loading task: {}", e);
-
-                // Stop loading indicator even if there was an error
-                if let Err(err) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
-                    log::error!("Failed to send loading stop message: {}", err);
-                }
-
-                // Send error message
-                let _ = tx_to_main_err.send(Msg::Error(e));
+                // Use the shared error reporter instead of creating a temporary one
+                error_reporter.report_simple(e, "NamespacePicker", "load_namespaces");
             }
         });
 

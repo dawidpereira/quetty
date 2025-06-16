@@ -1,6 +1,7 @@
 use claims::*;
 use quetty::app::task_manager::{TaskBuilder, TaskManager};
 use quetty::components::common::{LoadingActivityMsg, PopupActivityMsg};
+use quetty::error::ErrorReporter;
 use quetty::{AppError, Msg};
 use server::taskpool::TaskPool;
 use std::sync::mpsc;
@@ -15,7 +16,8 @@ mod helpers {
     pub fn create_test_setup() -> (TaskManager, mpsc::Receiver<Msg>) {
         let taskpool = TaskPool::new(4); // Use 4 threads for tests
         let (tx, rx) = mpsc::channel();
-        let task_manager = TaskManager::new(taskpool, tx);
+        let error_reporter = ErrorReporter::new(tx.clone());
+        let task_manager = TaskManager::new(taskpool, tx, error_reporter);
         (task_manager, rx)
     }
 
@@ -66,13 +68,6 @@ mod helpers {
 
     pub fn assert_stop_message(msg: &Msg) {
         assert_matches!(msg, Msg::LoadingActivity(LoadingActivityMsg::Stop));
-    }
-
-    pub fn assert_error_message(msg: &Msg, expected_error: &AppError) {
-        assert_matches!(msg,
-            Msg::Error(error)
-            if error.to_string() == expected_error.to_string()
-        );
     }
 
     pub fn assert_success_popup(msg: &Msg, expected_text: &str) {
@@ -131,7 +126,12 @@ async fn test_execute_error_complete_flow() {
     assert_eq!(messages.len(), 3, "Expected complete error workflow");
     assert_start_message(&messages[0], "Testing error handling");
     assert_stop_message(&messages[1]);
-    assert_error_message(&messages[2], &expected_error_clone);
+
+    // Expect PopupActivity::ShowError instead of direct Msg::Error
+    assert_matches!(&messages[2],
+        Msg::PopupActivity(PopupActivityMsg::ShowError(error))
+        if error.to_string() == expected_error_clone.to_string()
+    );
 }
 
 #[tokio::test]
