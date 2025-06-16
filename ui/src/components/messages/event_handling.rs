@@ -219,13 +219,6 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
             return Some(Msg::MessageActivity(MessageActivityMsg::PreviousPage));
         }
 
-        // Global navigation
-        Event::Keyboard(KeyEvent {
-            code: Key::Char(c),
-            modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().help() => {
-            return Some(Msg::ToggleHelpScreen);
-        }
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::NONE,
@@ -234,12 +227,6 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
             code: Key::Char(c),
             modifiers: KeyModifiers::CONTROL,
         }) if c == config::CONFIG.keys().quit() => return Some(Msg::AppClose),
-        Event::Keyboard(KeyEvent {
-            code: Key::Char(c),
-            modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().quit() => {
-            return Some(Msg::QueueActivity(QueueActivityMsg::QueueUnselected));
-        }
 
         // Queue toggle
         Event::Keyboard(KeyEvent {
