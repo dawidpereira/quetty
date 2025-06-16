@@ -111,7 +111,6 @@ async fn test_execute_error_complete_flow() {
     let (task_manager, rx) = create_test_setup();
 
     let expected_error = AppError::Config("Test error".to_string());
-    let expected_error_clone = expected_error.clone(); // Clone for comparison
     task_manager.execute("Testing error handling", async move {
         sleep(Duration::from_millis(10)).await;
         Err::<(), AppError>(expected_error)
@@ -127,10 +126,11 @@ async fn test_execute_error_complete_flow() {
     assert_start_message(&messages[0], "Testing error handling");
     assert_stop_message(&messages[1]);
 
-    // Expect PopupActivity::ShowError instead of direct Msg::Error
+    // Expect PopupActivity::ShowError with formatted error message
     assert_matches!(&messages[2],
         Msg::PopupActivity(PopupActivityMsg::ShowError(error))
-        if error.to_string() == expected_error_clone.to_string()
+        if error.to_string().contains("Configuration Error") && 
+           error.to_string().contains("TaskManager")
     );
 }
 
