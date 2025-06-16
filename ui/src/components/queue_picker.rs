@@ -10,12 +10,13 @@ use azservicebus::ServiceBusReceiverOptions;
 use server::consumer::ServiceBusClientExt;
 use server::service_bus_manager::ServiceBusManager;
 use tuirealm::command::CmdResult;
-use tuirealm::event::{Key, KeyEvent};
-use tuirealm::props::{Alignment, Style, TextModifiers};
+use tuirealm::event::{Event, Key, KeyEvent, NoUserEvent};
+use tuirealm::props::{Alignment, TextModifiers};
 use tuirealm::ratatui::layout::Rect;
+use tuirealm::ratatui::style::Style;
 use tuirealm::ratatui::widgets::{List, ListItem};
 use tuirealm::terminal::TerminalAdapter;
-use tuirealm::{Component, Event, Frame, MockComponent, NoUserEvent};
+use tuirealm::{Component, Frame, MockComponent};
 
 const CMD_RESULT_QUEUE_SELECTED: &str = "QueueSelected";
 const CMD_RESULT_NAMESPACE_UNSELECTED: &str = "NamespaceUnselected";
@@ -235,7 +236,7 @@ where
         let service_bus_client = self.service_bus_client.clone();
         let consumer = self.queue_state.consumer.clone();
 
-        let tx_to_main_err = tx_to_main.clone();
+        let error_reporter = self.error_reporter.clone();
         taskpool.execute(async move {
             let result = async {
                 if let Some(consumer) = consumer {
@@ -282,7 +283,8 @@ where
             .await;
             if let Err(e) = result {
                 log::error!("Error in consumer creation task: {}", e);
-                let _ = tx_to_main_err.send(Msg::Error(e));
+                // Use the shared error reporter instead of creating a temporary one
+                error_reporter.report_simple(e, "QueuePicker", "new_consumer_for_queue");
             }
         });
 
@@ -304,7 +306,7 @@ where
             log::error!("Failed to send loading start message: {}", e);
         }
 
-        let tx_to_main_err = tx_to_main.clone();
+        let error_reporter = self.error_reporter.clone();
         taskpool.execute(async move {
             let result = async {
                 let mut config = CONFIG.azure_ad().clone();
@@ -368,8 +370,8 @@ where
                     log::error!("Failed to send loading stop message: {}", err);
                 }
 
-                // Send error message
-                let _ = tx_to_main_err.send(Msg::Error(e));
+                // Use the shared error reporter instead of creating a temporary one
+                error_reporter.report_simple(e, "QueuePicker", "load_queues");
             }
         });
 

@@ -10,7 +10,7 @@ use crate::components::queue_picker::QueuePicker;
 use crate::components::state::ComponentStateMount;
 use crate::components::text_label::TextLabel;
 use crate::config;
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, ErrorReporter};
 use azservicebus::{ServiceBusClient, ServiceBusClientOptions};
 use server::taskpool::TaskPool;
 use std::sync::Arc;
@@ -97,6 +97,9 @@ impl Model<CrosstermTerminalAdapter> {
         let (tx_to_main, rx_to_main) = mpsc::channel();
         let taskpool = TaskPool::new(10);
 
+        // Create error reporter for enhanced error handling
+        let error_reporter = ErrorReporter::new(tx_to_main.clone());
+
         let queue_state = QueueState::new();
         let mut app = Self {
             app: Self::init_app(&queue_state)?,
@@ -116,6 +119,7 @@ impl Model<CrosstermTerminalAdapter> {
             queue_state,
             pending_confirmation_action: None,
             is_editing_message: false,
+            error_reporter,
         };
 
         // Initialize loading indicator with ComponentState pattern using extension trait
@@ -137,11 +141,8 @@ impl Model<CrosstermTerminalAdapter> {
         }
 
         if let Err(e) = app.load_namespaces() {
-            // Send the error through the channel to be handled in the main event loop
-            if app.tx_to_main.send(Msg::Error(e.clone())).is_err() {
-                // If the channel send fails, handle the error directly
-                log::error!("Failed to send error through channel: {}", e);
-            }
+            app.error_reporter
+                .report_simple(e, "Initialization", "load_namespaces");
         }
 
         Ok(app)

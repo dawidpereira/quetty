@@ -259,7 +259,7 @@ async fn main() -> Result<(), Box<dyn StdError>> {
                 model.redraw = true;
             }
             Ok(messages) if !messages.is_empty() => {
-                // NOTE: redraw if at least one msg has been processed
+                // Process all received messages and trigger redraw if any were handled
                 model.redraw = true;
                 for msg in messages.into_iter() {
                     let mut msg = Some(msg);

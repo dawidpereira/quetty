@@ -1,5 +1,6 @@
 use crate::app::queue_state::QueueState;
 use crate::components::common::{ComponentId, Msg};
+use crate::error::ErrorReporter;
 use azservicebus::ServiceBusClient;
 use azservicebus::core::BasicRetryPolicy;
 use server::taskpool::TaskPool;
@@ -63,6 +64,9 @@ where
 
     // Track if we're currently in message editing mode
     pub is_editing_message: bool,
+
+    // Enhanced error reporting system
+    pub error_reporter: ErrorReporter,
 }
 
 impl<T> Model<T>
