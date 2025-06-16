@@ -47,7 +47,8 @@ where
                 Msg::ToggleThemePicker => {
                     if let Err(e) = self.mount_theme_picker() {
                         log::error!("Failed to mount theme picker: {}", e);
-                        Some(Msg::Error(e))
+                        self.error_reporter.report_simple(e, "UI", "theme_picker");
+                        None
                     } else {
                         None
                     }

@@ -1,6 +1,7 @@
 use super::display_helpers::format_bulk_delete_success_message;
 use super::message_collector::{BatchDeleteContext, MessageCollector};
 use super::task_manager::BulkTaskManager;
+use super::validation::validate_bulk_delete_request;
 use crate::app::model::Model;
 use crate::components::common::{
     LoadingActivityMsg, MessageActivityMsg, Msg, PopupActivityMsg, QueueType,
@@ -24,14 +25,22 @@ pub fn handle_bulk_delete_execution<T: TerminalAdapter>(
         return None;
     }
 
+    // Validate the bulk delete request
+    if validate_bulk_delete_request(model, &message_ids).is_err() {
+        return None;
+    }
+
     let consumer = match model.queue_state.consumer.clone() {
         Some(consumer) => consumer,
         None => {
             log::error!("No consumer available for bulk delete operation");
-            model.error_reporter.report_simple(
+            model.error_reporter.report_detailed(
                 AppError::State("No consumer available for bulk delete operation".to_string()),
                 "BulkDeleteHandler",
                 "handle_bulk_delete_execution",
+                "Cannot delete messages - not connected to queue",
+                "Queue consumer is not initialized. This usually happens when the queue connection is lost.",
+                "Please try reconnecting to the queue or refreshing the application"
             );
             return None;
         }

@@ -11,6 +11,8 @@ where
         match msg {
             PopupActivityMsg::ShowError(error) => self.handle_show_error(error),
             PopupActivityMsg::CloseError => self.handle_close_error(),
+            PopupActivityMsg::ShowWarning(message) => self.handle_show_warning(message),
+            PopupActivityMsg::CloseWarning => self.handle_close_warning(),
             PopupActivityMsg::ShowSuccess(message) => self.handle_show_success(message),
             PopupActivityMsg::CloseSuccess => self.handle_close_success(),
             PopupActivityMsg::ShowConfirmation {
@@ -34,37 +36,64 @@ where
     fn handle_show_error(&mut self, error: AppError) -> Option<Msg> {
         if let Err(e) = self.mount_error_popup(&error) {
             log::error!("Failed to mount error popup: {}", e);
-            Some(Msg::Error(e))
-        } else {
-            None
+            self.error_reporter
+                .report_simple(e, "PopupHandler", "handle_show_error");
+            return None;
         }
+        None
     }
 
     fn handle_close_error(&mut self) -> Option<Msg> {
         if let Err(e) = self.unmount_error_popup() {
             log::error!("Failed to unmount error popup: {}", e);
-            Some(Msg::Error(e))
-        } else {
-            None
+            self.error_reporter
+                .report_simple(e, "PopupHandler", "handle_close_error");
+            return None;
         }
+        None
+    }
+
+    fn handle_show_warning(&mut self, message: String) -> Option<Msg> {
+        // Create a properly formatted warning error using ErrorReporter's formatting
+        let warning_error = self.error_reporter.create_warning_error(message);
+        if let Err(e) = self.mount_error_popup(&warning_error) {
+            log::error!("Failed to mount warning popup: {}", e);
+            self.error_reporter
+                .report_simple(e, "PopupHandler", "handle_show_warning");
+            return None;
+        }
+        None
+    }
+
+    fn handle_close_warning(&mut self) -> Option<Msg> {
+        // Warnings use the same popup component as errors
+        if let Err(e) = self.unmount_error_popup() {
+            log::error!("Failed to unmount warning popup: {}", e);
+            self.error_reporter
+                .report_simple(e, "PopupHandler", "handle_close_warning");
+            return None;
+        }
+        None
     }
 
     fn handle_show_success(&mut self, message: String) -> Option<Msg> {
         if let Err(e) = self.mount_success_popup(&message) {
             log::error!("Failed to mount success popup: {}", e);
-            Some(Msg::Error(e))
-        } else {
-            None
+            self.error_reporter
+                .report_simple(e, "PopupHandler", "handle_show_success");
+            return None;
         }
+        None
     }
 
     fn handle_close_success(&mut self) -> Option<Msg> {
         if let Err(e) = self.unmount_success_popup() {
             log::error!("Failed to unmount success popup: {}", e);
-            Some(Msg::Error(e))
-        } else {
-            None
+            self.error_reporter
+                .report_simple(e, "PopupHandler", "handle_close_success");
+            return None;
         }
+        None
     }
 
     fn handle_show_confirmation(
@@ -79,10 +108,11 @@ where
 
         if let Err(e) = self.mount_confirmation_popup(&title, &message) {
             log::error!("Failed to mount confirmation popup: {}", e);
-            Some(Msg::Error(e))
-        } else {
-            None
+            self.error_reporter
+                .report_simple(e, "PopupHandler", "handle_show_confirmation");
+            return None;
         }
+        None
     }
 
     fn handle_confirmation_result(&mut self, confirmed: bool) -> Option<Msg> {
@@ -120,10 +150,11 @@ where
         // Use the new NumberInputPopup component
         if let Err(e) = self.mount_number_input_popup(title, message, min_value, max_value) {
             log::error!("Failed to mount number input popup: {}", e);
-            Some(Msg::Error(e))
-        } else {
-            None
+            self.error_reporter
+                .report_simple(e, "PopupHandler", "handle_show_number_input");
+            return None;
         }
+        None
     }
 
     fn handle_number_input_result(&mut self, value: usize) -> Option<Msg> {

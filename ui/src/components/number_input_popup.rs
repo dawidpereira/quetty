@@ -161,6 +161,9 @@ impl MockComponent for NumberInputPopup {
         // Create content lines
         let mut lines = Vec::new();
 
+        // Add empty line at the top for better spacing
+        lines.push(Line::from(""));
+
         // Add message lines
         for line in self.message.lines() {
             lines.push(Line::from(line));

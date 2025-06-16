@@ -1,4 +1,4 @@
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 
 /// Trait for managing component lifecycle and state
 pub trait ComponentState {
@@ -59,7 +59,7 @@ impl ComponentStateMount
 
         // Mount to TUI realm
         self.mount(id, Box::new(component), subs)
-            .map_err(|e| crate::error::AppError::Component(e.to_string()))?;
+            .map_err(|e| AppError::Component(e.to_string()))?;
 
         Ok(())
     }
@@ -81,7 +81,7 @@ impl ComponentStateMount
 
         // Remount to TUI realm
         self.remount(id, Box::new(component), subs)
-            .map_err(|e| crate::error::AppError::Component(e.to_string()))?;
+            .map_err(|e| AppError::Component(e.to_string()))?;
 
         Ok(())
     }

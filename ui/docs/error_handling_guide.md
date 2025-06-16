@@ -1,315 +1,342 @@
-# Error Handling Guidelines
+# Quetty Error Handling Guide
 
-This guide outlines the proper patterns and practices for error handling in the Quetty application.
+This guide explains the error handling architecture in Quetty, which uses a unified `ErrorReporter` system for consistent error management across the entire application.
 
-## Overview
+## Architecture Overview
 
-The application uses a centralized `ErrorReporter` system that provides structured error handling with contextual information, appropriate UI responses, and comprehensive logging.
+### Unified ErrorReporter System
 
-## Core Components
+Quetty uses a centralized error reporting architecture where:
 
-### ErrorReporter
-Central system for reporting and handling errors throughout the application. Uses a unified architecture where Model creates a single ErrorReporter instance that is shared with TaskManager and components.
-
-### ErrorContext
-Provides rich context for errors including component and operation information.
-
-### AppError Types
-```rust
-pub enum AppError {
-    Io(String),           // File system errors (future-ready)
-    ServiceBus(String),   // Azure Service Bus errors
-    Component(String),    // UI component errors
-    State(String),        // Application state errors
-    Config(String),       // Configuration errors
-}
-```
-
-### Error Severity Levels
-- **Error**: Show error popup and log (default)
-- **Critical**: Show error popup, log, and potentially exit (future-ready)
-
-## Unified ErrorReporter Architecture
-
-The application uses a **single source of truth** pattern:
-
-1. **Model** creates one ErrorReporter instance
-2. **TaskManager** receives this ErrorReporter via constructor
-3. **Components** use Model's ErrorReporter directly (no duplication)
-
-```rust
-// Model initialization
-let error_reporter = ErrorReporter::new(tx_to_main.clone());
-let task_manager = TaskManager::new(taskpool, tx_to_main, error_reporter.clone());
-
-// In components, use Model's error_reporter directly
-app.error_reporter.report_simple(error, "ComponentName", "operation");
-```
-
-## Error Handling Patterns
-
-### 1. Direct ErrorReporter Usage (Recommended)
-
-For components with access to Model's ErrorReporter:
-
-```rust
-// In component methods that have access to Model
-if let Err(error) = some_operation() {
-    self.error_reporter.report_simple(error, "ComponentName", "operation");
-}
-```
-
-### 2. Integration Helper (Legacy Pattern)
-
-For testing or legacy integration:
-
-```rust
-// Note: Now located in tests/error_integration.rs
-use error_integration::report_error_simple;
-
-if let Err(error) = some_operation() {
-    report_error_simple(&tx_to_main, error, "ComponentName", "operation_name");
-}
-```
-
-### 3. Contextual Error Reporting
-
-For scenarios requiring custom context:
-
-```rust
-use crate::error::{ErrorReporter, ErrorContext};
-
-if let Err(error) = complex_operation() {
-    let context = ErrorContext::new("ServiceBusManager", "message_processing")
-        .with_user_message("Failed to process message. Please try again.");
-
-    self.error_reporter.report(error, context);
-}
-```
-
-### 4. TaskManager Error Handling
-
-TaskManager receives ErrorReporter from Model and provides it to async operations:
-
-```rust
-// TaskManager already has ErrorReporter from Model
-task_manager.execute_with_loading(
-    "Operation",
-    async_operation,
-    None, // success handler
-    Some(|error: AppError, error_reporter: &ErrorReporter| {
-        error_reporter.report_simple(error, "TaskManager", "async_operation");
-    })
-);
-
-// Or use simple execute (default error handling)
-task_manager.execute("Loading data...", async_operation);
-```
-
-## Integration Guidelines
-
-### Model and TaskManager Setup
+1. **Model** creates one `ErrorReporter` instance
+2. **TaskManager** receives the `ErrorReporter` and shares it with async operations
+3. **All components** use the same `ErrorReporter` instance for consistent error handling
 
 ```rust
 // In Model initialization
 let error_reporter = ErrorReporter::new(tx_to_main.clone());
-let task_manager = TaskManager::new(taskpool, tx_to_main, error_reporter.clone());
+let task_manager = TaskManager::new(taskpool, tx_to_main.clone(), error_reporter.clone());
 
-// Store error_reporter in Model for component access
-self.error_reporter = error_reporter;
+// In components
+self.error_reporter.report_simple(error, "ComponentName", "operation_name");
 ```
 
-### Component Error Handling
+## Enhanced Error Reporting Features
+
+### 🎯 Severity Levels
+
+The system supports multiple severity levels with different behaviors:
 
 ```rust
-// In component methods (with access to Model)
-impl<T> Model<T> where T: TerminalAdapter {
-    pub fn component_operation(&mut self) -> Option<Msg> {
-        if let Err(error) = self.some_operation() {
-            self.error_reporter.report_simple(
-                error, 
-                "ComponentName", 
-                "operation_name"
-            );
-            return None;
-        }
-        // ... rest of operation
-    }
+// Error (default) - Shows error popup + logs
+self.error_reporter.report_simple(error, "Component", "operation");
+
+// Warning - Shows warning popup + logs
+self.error_reporter.report_warning(error, "Component", "operation");
+
+// Info - Logs only, no popup
+self.error_reporter.report_info(error, "Component", "operation");
+
+// Critical - Shows error popup + enhanced logging
+self.error_reporter.report_critical(error, "Component", "operation");
+```
+
+### 💬 User-Friendly Messages
+
+Errors automatically generate user-friendly messages based on component context:
+
+```rust
+// Automatic user-friendly messages
+ErrorContext::new("MessageLoader", "load_messages")
+// → "Failed to load messages. Please check your connection and try again."
+
+ErrorContext::new("ThemeManager", "switch_theme")
+// → "Theme change failed. The current theme will be preserved."
+
+ErrorContext::new("BulkDeleteHandler", "delete_messages")
+// → "Bulk delete operation failed. Some messages may not have been deleted."
+```
+
+### 🔧 Enhanced Context & Suggestions
+
+For complex errors, provide detailed context and user suggestions:
+
+```rust
+// With suggestion
+self.error_reporter.report_with_suggestion(
+    error,
+    "MessageStateHandler",
+    "handle_consumer_created",
+    "Failed to load messages after connecting to the queue",
+    "Please check your connection and try refreshing the queue"
+);
+
+// With full context
+self.error_reporter.report_detailed(
+    error,
+    "BulkDeleteHandler",
+    "handle_bulk_delete_execution",
+    "Cannot delete messages - not connected to queue",
+    "Queue consumer is not initialized. This usually happens when the queue connection is lost.",
+    "Please try reconnecting to the queue or refreshing the application"
+);
+```
+
+### 🏗️ Builder Pattern for Context
+
+Create rich error contexts using the builder pattern:
+
+```rust
+let context = ErrorContext::new("ComponentName", "operation_name")
+    .with_user_message("Custom user-friendly message")
+    .with_technical_details("Technical debugging information")
+    .with_suggestion("What the user should try next")
+    .with_severity(ErrorSeverity::Warning);
+
+self.error_reporter.report(error, context);
+```
+
+## Error Types
+
+### AppError Enum
+
+```rust
+pub enum AppError {
+    Io(String),         // File system, network I/O
+    ServiceBus(String), // Azure Service Bus operations
+    Component(String),  // UI component errors
+    State(String),      // Application state issues
+    Config(String),     // Configuration problems
 }
 ```
 
-### Async Operations
+### Severity Classification
+
+- **Info**: Informational messages, logging only
+- **Warning**: Non-critical issues, shows warning popup
+- **Error**: Standard errors, shows error popup
+- **Critical**: Severe issues, enhanced logging and error popup
+
+## Migration from Legacy Patterns
+
+### Before (Legacy)
+```rust
+// Direct error returns
+return Some(Msg::Error(e));
+
+// Direct channel sends
+let _ = tx_to_main_err.send(Msg::Error(e));
+```
+
+### After (Enhanced)
+```rust
+// Simple error reporting
+self.error_reporter.report_simple(e, "ComponentName", "operation_name");
+return None;
+
+// Enhanced error reporting
+self.error_reporter.report_with_suggestion(
+    e,
+    "ComponentName", 
+    "operation_name",
+    "User-friendly message",
+    "Helpful suggestion"
+);
+```
+
+## Implementation Examples
+
+### Message Loading with Context
+```rust
+pub fn handle_consumer_created(&mut self, consumer: Consumer) -> Option<Msg> {
+    self.queue_state.consumer = Some(Arc::new(Mutex::new(consumer)));
+    
+    if let Err(e) = self.load_messages() {
+        self.error_reporter.report_with_suggestion(
+            e,
+            "MessageStateHandler",
+            "handle_consumer_created",
+            "Failed to load messages after connecting to the queue",
+            "Please check your connection and try refreshing the queue"
+        );
+        return None;
+    }
+    None
+}
+```
+
+### Theme Management with Warnings
+```rust
+if let Err(e) = manager.switch_theme_from_config(&theme_config) {
+    // Theme errors are warnings since they don't break core functionality
+    self.error_reporter.report_warning(e, "ThemeManager", "handle_theme_selected");
+    return None;
+}
+```
+
+### Bulk Operations with Detailed Context
+```rust
+let consumer = match model.queue_state.consumer.clone() {
+    Some(consumer) => consumer,
+    None => {
+        model.error_reporter.report_detailed(
+            AppError::State("No consumer available for bulk delete operation".to_string()),
+            "BulkDeleteHandler",
+            "handle_bulk_delete_execution",
+            "Cannot delete messages - not connected to queue",
+            "Queue consumer is not initialized. This usually happens when the queue connection is lost.",
+            "Please try reconnecting to the queue or refreshing the application"
+        );
+        return None;
+    }
+};
+```
+
+## Async Operations
+
+For async operations, clone the ErrorReporter:
 
 ```rust
-// In async blocks, clone the error_reporter
 let error_reporter = self.error_reporter.clone();
 taskpool.execute(async move {
-    if let Err(error) = async_operation().await {
-        error_reporter.report_simple(error, "ComponentName", "async_operation");
+    let result = some_async_operation().await;
+    if let Err(e) = result {
+        error_reporter.report_simple(e, "AsyncComponent", "async_operation");
     }
 });
 ```
 
-## Best Practices
-
-### Architecture Principles
-
-1. **Single Source of Truth**: Model creates one ErrorReporter instance
-2. **No Duplication**: Pass ErrorReporter, don't create multiple instances
-3. **Shared Access**: Components use Model's ErrorReporter directly
-4. **Consistent Patterns**: Use same error reporting across all components
-
-### Error Naming Guidelines
-
-**Component Names**: Use descriptive names that identify the error source:
-- "NamespacePicker" not "Picker"
-- "QueuePicker" not "Component"
-- "TaskManager" not "Manager"
-
-**Operation Names**: Use specific operation descriptions:
-- "load_namespaces" not "load"
-- "send_message" not "send"
-- "validate_configuration" not "validate"
-
-### When to Use Each Pattern
-
-1. **Direct ErrorReporter**: Primary pattern for all component operations
-2. **Integration Helper**: Only for testing or legacy code integration
-3. **Contextual Reporting**: When custom error messages are needed
-
 ## Testing Error Handling
 
-### Unit Tests
-
+### Basic Error Testing
 ```rust
 #[test]
 fn test_error_reporting() {
     let (tx, rx) = mpsc::channel();
-    let error_reporter = ErrorReporter::new(tx);
+    let reporter = ErrorReporter::new(tx);
+    let error = AppError::Config("Test error".to_string());
     
-    let error = AppError::Config("test error".to_string());
-    error_reporter.report_simple(error, "TestComponent", "test_operation");
+    reporter.report_simple(error, "TestComponent", "test_operation");
     
-    // Verify error popup message
     let msg = rx.recv().unwrap();
-    assert_matches!(msg, Msg::PopupActivity(PopupActivityMsg::ShowError(_)));
+    assert!(matches!(msg, Msg::PopupActivity(PopupActivityMsg::ShowError(_))));
 }
 ```
 
-### Integration Tests
-
+### Enhanced Features Testing
 ```rust
-#[tokio::test]
-async fn test_task_manager_error_handling() {
+#[test]
+fn test_warning_severity() {
     let (tx, rx) = mpsc::channel();
-    let error_reporter = ErrorReporter::new(tx.clone());
-    let task_manager = TaskManager::new(taskpool, tx, error_reporter);
+    let reporter = ErrorReporter::new(tx);
     
-    // Test error handling
-    task_manager.execute("Test", async move {
-        Err::<(), AppError>(AppError::Config("test error".to_string()))
-    });
+    reporter.report_warning(
+        AppError::Component("Warning message".to_string()),
+        "TestComponent",
+        "test_operation"
+    );
     
-    // Verify error was reported through popup system
-    let messages = collect_messages(&rx);
-    assert!(messages.iter().any(|msg| 
-        matches!(msg, Msg::PopupActivity(PopupActivityMsg::ShowError(_)))
-    ));
+    let msg = rx.recv().unwrap();
+    assert!(matches!(msg, Msg::PopupActivity(PopupActivityMsg::ShowWarning(_))));
+}
+
+#[test]
+fn test_info_no_popup() {
+    let (tx, rx) = mpsc::channel();
+    let reporter = ErrorReporter::new(tx);
+    
+    reporter.report_info(
+        AppError::Component("Info message".to_string()),
+        "TestComponent",
+        "test_operation"
+    );
+    
+    // Info level should not send popup messages
+    assert!(rx.try_recv().is_err());
 }
 ```
 
-## Migration From Old Patterns
+## Best Practices
 
-### Phase 1: Replace Direct Error Sending ✅ Complete
+### 1. **Use Appropriate Severity Levels**
+- `report_info()`: For debugging and informational messages
+- `report_warning()`: For non-critical issues that don't break functionality
+- `report_simple()`: For standard errors that affect functionality
+- `report_critical()`: For severe errors that might require application restart
+
+### 2. **Provide Context and Suggestions**
 ```rust
-// Old pattern (replaced):
-tx.send(Msg::Error(error))
+// Good: Helpful context and suggestion
+self.error_reporter.report_with_suggestion(
+    error,
+    "MessageLoader",
+    "load_messages",
+    "Failed to load messages from Azure Service Bus",
+    "Check your internet connection and Azure credentials"
+);
 
-// New pattern:
-self.error_reporter.report_simple(error, "Component", "operation")
+// Bad: Generic error without context
+self.error_reporter.report_simple(error, "Component", "operation");
 ```
 
-### Phase 2: Unified ErrorReporter Architecture ✅ Complete
-- Model creates single ErrorReporter instance
-- TaskManager receives ErrorReporter via constructor
-- Components use Model's ErrorReporter directly
+### 3. **Component Naming Convention**
+Use descriptive component names that indicate the functional area:
+- `MessageLoader`, `MessageEditor`, `MessageStateHandler`
+- `ThemeManager`, `NamespaceHandler`, `QueueHandler`
+- `BulkDeleteHandler`, `BulkSendHandler`, `BulkSelection`
 
-### Current Architecture Benefits
+### 4. **Operation Naming Convention**
+Use clear operation names that describe what was being attempted:
+- `load_messages`, `save_configuration`, `connect_to_queue`
+- `handle_user_selection`, `process_bulk_operation`
+- `validate_input`, `update_ui_state`
 
-- **Single Source of Truth**: One ErrorReporter instance across the app
-- **Better Performance**: No unnecessary ErrorReporter creation
-- **Cleaner Ownership**: Clear hierarchy (Model → TaskManager → Components)
-- **Consistent Error Handling**: Same patterns throughout the application
-- **Zero Breaking Changes**: All existing functionality preserved
+### 5. **Return Consistency**
+After reporting an error, always return `None` instead of `Some(Msg::Error(...))`:
 
-## Error Recovery Patterns
-
-### Retry Logic
 ```rust
-let mut attempts = 0;
-const MAX_ATTEMPTS: u32 = 3;
-
-loop {
-    match risky_operation() {
-        Ok(result) => return Ok(result),
-        Err(error) if attempts < MAX_ATTEMPTS => {
-            attempts += 1;
-            self.error_reporter.report_simple(
-                error, 
-                "ComponentName", 
-                &format!("operation_attempt_{}", attempts)
-            );
-            tokio::time::sleep(Duration::from_millis(1000 * attempts as u64)).await;
-        }
-        Err(error) => {
-            self.error_reporter.report_simple(
-                error,
-                "ComponentName",
-                "operation_final_failure"
-            );
-            return Err(error);
-        }
-    }
+// Correct pattern
+if let Err(e) = operation() {
+    self.error_reporter.report_simple(e, "Component", "operation");
+    return None; // ← Always return None after error reporting
 }
 ```
 
-### Graceful Degradation
-```rust
-match critical_operation() {
-    Ok(result) => result,
-    Err(error) => {
-        self.error_reporter.report_simple(error, "ServiceManager", "primary_operation");
-        
-        // Fall back to alternative approach
-        match fallback_operation() {
-            Ok(fallback_result) => {
-                log::info!("Successfully used fallback operation");
-                fallback_result
-            }
-            Err(fallback_error) => {
-                self.error_reporter.report_simple(
-                    fallback_error,
-                    "ServiceManager", 
-                    "fallback_operation"
-                );
-                return Err(fallback_error);
-            }
-        }
-    }
-}
+## Error Flow Architecture
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Model         │───▶│   TaskManager    │───▶│   Components    │
+│ ┌─────────────┐ │    │ ┌──────────────┐ │    │ ┌─────────────┐ │
+│ │ErrorReporter│ │    │ │ErrorReporter │ │    │ │ErrorReporter│ │
+│ └─────────────┘ │    │ └──────────────┘ │    │ └─────────────┘ │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 │
+                                 ▼
+                    ┌─────────────────────────┐
+                    │    UI Error System      │
+                    │                         │
+                    │ • Error Popups          │
+                    │ • Warning Popups        │
+                    │ • Structured Logging    │
+                    │ • User-Friendly Messages│
+                    └─────────────────────────┘
 ```
 
-## Monitoring and Logging
+## Summary
 
-The ErrorReporter automatically handles:
-- Structured logging with component and operation context
-- Error popup integration for user notification
-- Consistent error formatting across the application
-- Technical detail capture for debugging
+The enhanced error handling system provides:
 
-All errors are logged with full context in the format:
-```
-[Component:operation] User_Message (AppError_Details) - Technical: Details
-```
+✅ **Unified Architecture**: Single ErrorReporter instance across the entire application  
+✅ **Severity Levels**: Info, Warning, Error, Critical with appropriate UI responses  
+✅ **User-Friendly Messages**: Automatic generation of helpful error messages  
+✅ **Rich Context**: Technical details, suggestions, and contextual information  
+✅ **Builder Pattern**: Flexible error context creation  
+✅ **Async Safety**: Clone-based sharing for thread-safe async operations  
+✅ **Comprehensive Testing**: Full test coverage for all error reporting features  
+✅ **Zero Breaking Changes**: Backward compatibility maintained  
 
-This provides comprehensive error tracking while maintaining clean separation between user-facing messages and technical details. 
+This system ensures consistent, helpful, and user-friendly error handling throughout the Quetty application while providing developers with rich debugging information.
+ 

@@ -1,5 +1,6 @@
 use crate::app::model::Model;
 use crate::components::common::{Msg, ThemeActivityMsg};
+use crate::error::AppError;
 use crate::theme::ThemeManager;
 use crate::theme::types::ThemeConfig;
 use tuirealm::terminal::TerminalAdapter;
@@ -40,8 +41,9 @@ where
                         );
                     }
 
+                    // Theme errors are warnings since they don't break core functionality
                     self.error_reporter
-                        .report_simple(e, "ThemeManager", "handle_theme_selected");
+                        .report_warning(e, "Theme", "switch_theme");
                     return None;
                 }
             }
@@ -56,15 +58,10 @@ where
                     );
                 }
 
-                let lock_error = crate::error::AppError::Component(format!(
-                    "Failed to acquire theme manager lock: {}",
-                    e
-                ));
-                self.error_reporter.report_simple(
-                    lock_error,
-                    "ThemeManager",
-                    "handle_theme_selected",
-                );
+                let lock_error =
+                    AppError::Component(format!("Failed to acquire theme manager lock: {}", e));
+                self.error_reporter
+                    .report_simple(lock_error, "Theme", "acquire_lock");
                 return None;
             }
         }
@@ -73,7 +70,7 @@ where
         if let Err(e) = self.unmount_theme_picker() {
             log::error!("Failed to unmount theme picker: {}", e);
             self.error_reporter
-                .report_simple(e, "ThemeManager", "handle_theme_selected");
+                .report_simple(e, "Theme", "unmount_picker");
             return None;
         }
 
@@ -94,7 +91,7 @@ where
         if let Err(e) = self.unmount_theme_picker() {
             log::error!("Failed to unmount theme picker: {}", e);
             self.error_reporter
-                .report_simple(e, "ThemeManager", "handle_theme_picker_closed");
+                .report_simple(e, "Theme", "picker_closed");
             None
         } else {
             None

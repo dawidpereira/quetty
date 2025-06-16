@@ -128,8 +128,14 @@ where
 
         self.reset_pagination_state();
         if let Err(e) = self.load_messages() {
-            self.error_reporter
-                .report_simple(e, "MessageStateHandler", "handle_consumer_created");
+            // Enhanced error reporting with user-friendly message and suggestion
+            self.error_reporter.report_with_suggestion(
+                e,
+                "MessageStateHandler",
+                "handle_consumer_created",
+                "Failed to load messages after connecting to the queue",
+                "Please check your connection and try refreshing the queue",
+            );
             return None;
         }
         None
@@ -144,11 +150,8 @@ where
     /// Handle previewing message details
     pub fn handle_preview_message_details(&mut self, index: usize) -> Option<Msg> {
         if let Err(e) = self.remount_message_details(index) {
-            self.error_reporter.report_simple(
-                e,
-                "MessageStateHandler",
-                "handle_preview_message_details",
-            );
+            self.error_reporter
+                .report_simple(e, "MessageState", "preview_details");
             return None;
         }
         None
@@ -171,11 +174,8 @@ where
         }
 
         if let Err(e) = self.update_current_page_view() {
-            self.error_reporter.report_simple(
-                e,
-                "MessageStateHandler",
-                "handle_new_messages_loaded",
-            );
+            self.error_reporter
+                .report_simple(e, "MessageState", "new_messages");
             return None;
         }
 
@@ -188,11 +188,8 @@ where
             .is_empty()
         {
             if let Err(e) = self.remount_message_details(0) {
-                self.error_reporter.report_simple(
-                    e,
-                    "MessageStateHandler",
-                    "handle_new_messages_loaded",
-                );
+                self.error_reporter
+                    .report_simple(e, "MessageState", "new_messages");
                 return None;
             }
         }
@@ -285,8 +282,8 @@ where
             log::error!("Failed to send pagination state update: {}", e);
             self.error_reporter.report_simple(
                 AppError::Component(e.to_string()),
-                "MessageStateHandler",
-                "update_pagination_and_view",
+                "MessageState",
+                "pagination_update",
             );
             return None;
         }
@@ -294,11 +291,8 @@ where
         // Force cursor reset to position 0 after bulk removal
         // This is different from normal page navigation where we preserve cursor
         if let Err(e) = self.remount_messages_with_cursor_control(false) {
-            self.error_reporter.report_simple(
-                e,
-                "MessageStateHandler",
-                "update_pagination_and_view",
-            );
+            self.error_reporter
+                .report_simple(e, "MessageState", "cursor_reset");
             return None;
         }
 
@@ -322,11 +316,8 @@ where
         };
 
         if let Err(e) = self.remount_message_details(index) {
-            self.error_reporter.report_simple(
-                e,
-                "MessageStateHandler",
-                "remount_message_details_safe",
-            );
+            self.error_reporter
+                .report_simple(e, "MessageState", "safe_remount");
             return None;
         }
 

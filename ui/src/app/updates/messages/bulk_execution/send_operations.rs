@@ -20,13 +20,13 @@ pub fn handle_bulk_resend_from_dlq_execution<T: TerminalAdapter>(
         return None;
     }
 
-    if let Err(error_msg) = validate_bulk_resend_request(model, &message_ids) {
-        return Some(error_msg);
+    if validate_bulk_resend_request(model, &message_ids).is_err() {
+        return None;
     }
 
     let consumer = match get_consumer_for_bulk_operation(model) {
         Ok(consumer) => consumer,
-        Err(error_msg) => return Some(error_msg),
+        Err(_) => return None,
     };
 
     // Get the main queue name for DLQ to Main operation
@@ -34,11 +34,9 @@ pub fn handle_bulk_resend_from_dlq_execution<T: TerminalAdapter>(
         Ok(name) => name,
         Err(e) => {
             log::error!("Failed to get main queue name: {}", e);
-            model.error_reporter.report_simple(
-                e,
-                "BulkSendHandler",
-                "handle_bulk_resend_from_dlq_execution",
-            );
+            model
+                .error_reporter
+                .report_simple(e, "BulkSend", "get_queue_name");
             return None;
         }
     };
@@ -65,14 +63,14 @@ pub fn handle_bulk_resend_from_dlq_only_execution<T: TerminalAdapter>(
         return None;
     }
 
-    if let Err(error_msg) = validate_bulk_resend_request(model, &message_ids) {
-        return Some(error_msg);
+    if validate_bulk_resend_request(model, &message_ids).is_err() {
+        return None;
     }
 
     // For resend-only, we get message data from the current state (peeked messages)
     let messages_data = match extract_message_data_for_resend_only(model, &message_ids) {
         Ok(data) => data,
-        Err(error_msg) => return Some(error_msg),
+        Err(_) => return None,
     };
 
     // Get the main queue name for DLQ to Main operation
@@ -80,18 +78,16 @@ pub fn handle_bulk_resend_from_dlq_only_execution<T: TerminalAdapter>(
         Ok(name) => name,
         Err(e) => {
             log::error!("Failed to get main queue name: {}", e);
-            model.error_reporter.report_simple(
-                e,
-                "BulkSendHandler",
-                "handle_bulk_resend_from_dlq_only_execution",
-            );
+            model
+                .error_reporter
+                .report_simple(e, "BulkSend", "get_queue_name");
             return None;
         }
     };
 
     let consumer = match get_consumer_for_bulk_operation(model) {
         Ok(consumer) => consumer,
-        Err(error_msg) => return Some(error_msg),
+        Err(_) => return None,
     };
 
     start_bulk_send_with_data_operation(
@@ -118,13 +114,13 @@ pub fn handle_bulk_send_to_dlq_execution<T: TerminalAdapter>(
         return None;
     }
 
-    if let Err(error_msg) = validate_bulk_send_to_dlq_request(model, &message_ids) {
-        return Some(error_msg);
+    if validate_bulk_send_to_dlq_request(model, &message_ids).is_err() {
+        return None;
     }
 
     let consumer = match get_consumer_for_bulk_operation(model) {
         Ok(consumer) => consumer,
-        Err(error_msg) => return Some(error_msg),
+        Err(_) => return None,
     };
 
     // Get the DLQ name for Main to DLQ operation
@@ -153,7 +149,7 @@ pub fn handle_bulk_send_to_dlq_execution<T: TerminalAdapter>(
 fn extract_message_data_for_resend_only<T: TerminalAdapter>(
     model: &Model<T>,
     message_ids: &[MessageIdentifier],
-) -> Result<Vec<(MessageIdentifier, Vec<u8>)>, Msg> {
+) -> Result<Vec<(MessageIdentifier, Vec<u8>)>, bool> {
     let mut messages_data = Vec::new();
 
     // Get messages from pagination state (these are peeked messages)
@@ -174,10 +170,14 @@ fn extract_message_data_for_resend_only<T: TerminalAdapter>(
             log::debug!("Extracted message data for {}", message_id.id);
         } else {
             log::error!("Message {} not found in current state", message_id.id);
-            return Err(Msg::Error(AppError::State(format!(
+            let error = AppError::State(format!(
                 "Message {} not found in current state for resend-only operation",
                 message_id.id
-            ))));
+            ));
+            model
+                .error_reporter
+                .report_simple(error, "BulkSend", "extract_data");
+            return Err(true);
         }
     }
 
@@ -192,14 +192,16 @@ fn extract_message_data_for_resend_only<T: TerminalAdapter>(
 /// Gets the consumer for bulk operations
 fn get_consumer_for_bulk_operation<T: TerminalAdapter>(
     model: &Model<T>,
-) -> Result<std::sync::Arc<tokio::sync::Mutex<server::consumer::Consumer>>, Msg> {
+) -> Result<std::sync::Arc<tokio::sync::Mutex<server::consumer::Consumer>>, bool> {
     match model.queue_state.consumer.clone() {
         Some(consumer) => Ok(consumer),
         None => {
             log::error!("No consumer available for bulk operation");
-            Err(Msg::Error(AppError::State(
-                "No consumer available for bulk operation".to_string(),
-            )))
+            let error = AppError::State("No consumer available for bulk operation".to_string());
+            model
+                .error_reporter
+                .report_simple(error, "BulkSend", "get_consumer");
+            Err(true)
         }
     }
 }

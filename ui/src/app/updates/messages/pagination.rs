@@ -107,11 +107,8 @@ where
     pub fn handle_next_page_request(&mut self) -> Option<Msg> {
         if self.queue_state.message_pagination.has_next_page {
             if let Err(e) = self.handle_next_page() {
-                self.error_reporter.report_simple(
-                    e,
-                    "MessagePagination",
-                    "handle_next_page_request",
-                );
+                self.error_reporter
+                    .report_simple(e, "Pagination", "next_page");
                 return None;
             }
         }
@@ -121,11 +118,8 @@ where
     pub fn handle_previous_page_request(&mut self) -> Option<Msg> {
         if self.queue_state.message_pagination.has_previous_page {
             if let Err(e) = self.handle_previous_page() {
-                self.error_reporter.report_simple(
-                    e,
-                    "MessagePagination",
-                    "handle_previous_page_request",
-                );
+                self.error_reporter
+                    .report_simple(e, "Pagination", "prev_page");
                 return None;
             }
         }
@@ -174,7 +168,7 @@ where
     pub fn handle_page_changed(&mut self) -> Option<Msg> {
         if let Err(e) = self.update_current_page_view() {
             self.error_reporter
-                .report_simple(e, "MessagePagination", "handle_page_changed");
+                .report_simple(e, "Pagination", "page_changed");
             return None;
         }
         None

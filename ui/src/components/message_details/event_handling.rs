@@ -1,6 +1,7 @@
 use super::component::MessageDetails;
 use crate::components::common::{MessageActivityMsg, Msg, PopupActivityMsg};
 use crate::config;
+use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
 use tuirealm::{
     NoUserEvent,
@@ -69,8 +70,8 @@ pub fn handle_event(details: &mut MessageDetails, ev: Event<NoUserEvent>) -> Opt
                         MessageActivityMsg::ReplaceEditedMessage(edited_content, message_id),
                     ));
                 } else {
-                    return Some(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
-                        "❌ No message available for replacement".to_string(),
+                    return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(
+                        AppError::State("No message available for replacement".to_string()),
                     )));
                 }
             } else if details.is_editing && !details.is_dirty {
@@ -207,8 +208,8 @@ pub fn handle_event(details: &mut MessageDetails, ev: Event<NoUserEvent>) -> Opt
                 }
                 Err(e) => {
                     log::error!("Failed to copy to clipboard: {}", e);
-                    return Some(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
-                        "❌ Failed to copy to clipboard".to_string(),
+                    return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(
+                        AppError::Component("Failed to copy message to clipboard".to_string()),
                     )));
                 }
             }
@@ -227,8 +228,8 @@ pub fn handle_event(details: &mut MessageDetails, ev: Event<NoUserEvent>) -> Opt
                 }
                 Err(e) => {
                     log::error!("Failed to copy to clipboard: {}", e);
-                    return Some(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
-                        "❌ Failed to yank to clipboard".to_string(),
+                    return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(
+                        AppError::Component("Failed to yank message to clipboard".to_string()),
                     )));
                 }
             }

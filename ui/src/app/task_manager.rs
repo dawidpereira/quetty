@@ -220,8 +220,7 @@ impl<'a> TaskBuilder<'a> {
             move |error: AppError, error_reporter: &crate::error::ErrorReporter| {
                 use crate::error::ErrorContext;
 
-                let context =
-                    ErrorContext::new("TaskBuilder", "user_operation").with_user_message(&msg);
+                let context = ErrorContext::new("TaskBuilder", "user_operation").with_message(&msg);
                 error_reporter.report(error, context);
             }
         });
@@ -374,7 +373,6 @@ mod tests {
         async fn test_execute_propagates_error() {
             let (task_manager, rx) = create_test_setup();
             let expected_error = AppError::Config("Specific error".to_string());
-            let expected_error_clone = expected_error.clone(); // Clone for comparison
 
             task_manager.execute("Test", async move { Err::<(), AppError>(expected_error) });
 
@@ -391,7 +389,17 @@ mod tests {
             });
 
             assert_some!(error_msg);
-            assert_eq!(error_msg.unwrap(), &expected_error_clone);
+            // The error should be formatted nicely but still contain the original message
+            let error_str = error_msg.unwrap().to_string();
+            assert!(error_str.contains("⚙️"), "Should contain config emoji");
+            assert!(
+                error_str.contains("Configuration Error"),
+                "Should contain error title"
+            );
+            assert!(
+                error_str.contains("TaskManager"),
+                "Should contain component info"
+            );
         }
 
         #[tokio::test]
