@@ -51,11 +51,8 @@ where
         }
 
         if let Err(e) = self.remount_messages_with_focus(true) {
-            self.error_reporter.report_simple(
-                e,
-                "BulkSelection",
-                "handle_toggle_message_selection_by_index",
-            );
+            self.error_reporter
+                .report_simple(e, "BulkSelection", "toggle_select");
             return None;
         }
 
@@ -96,7 +93,7 @@ where
 
         if let Err(e) = self.remount_messages_with_focus(true) {
             self.error_reporter
-                .report_simple(e, "BulkSelection", "handle_select_all_current_page");
+                .report_simple(e, "BulkSelection", "select_all_page");
             return None;
         }
 
@@ -112,7 +109,7 @@ where
 
         if all_messages_count == 0 {
             return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(
-                crate::error::AppError::State("No messages to select".to_string()),
+                AppError::State("No messages to select".to_string()),
             )));
         }
 
@@ -121,11 +118,8 @@ where
         log::info!("Selected all {} loaded messages", all_messages_count);
 
         if let Err(e) = self.remount_messages_with_focus(true) {
-            self.error_reporter.report_simple(
-                e,
-                "BulkSelection",
-                "handle_select_all_loaded_messages",
-            );
+            self.error_reporter
+                .report_simple(e, "BulkSelection", "select_all_loaded");
             return None;
         }
 
@@ -145,7 +139,7 @@ where
 
         if let Err(e) = self.remount_messages_with_focus(true) {
             self.error_reporter
-                .report_simple(e, "BulkSelection", "handle_clear_all_selections");
+                .report_simple(e, "BulkSelection", "clear_all");
             return None;
         }
 

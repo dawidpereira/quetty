@@ -127,6 +127,9 @@ pub enum LoadingActivityMsg {
 pub enum PopupActivityMsg {
     ShowError(AppError),
     CloseError,
+    ShowWarning(String),
+    #[allow(dead_code)]
+    CloseWarning,
     ShowSuccess(String),
     CloseSuccess,
     ShowConfirmation {
@@ -149,6 +152,8 @@ impl PartialEq for PopupActivityMsg {
         match (self, other) {
             (PopupActivityMsg::ShowError(e1), PopupActivityMsg::ShowError(e2)) => e1 == e2,
             (PopupActivityMsg::CloseError, PopupActivityMsg::CloseError) => true,
+            (PopupActivityMsg::ShowWarning(w1), PopupActivityMsg::ShowWarning(w2)) => w1 == w2,
+            (PopupActivityMsg::CloseWarning, PopupActivityMsg::CloseWarning) => true,
             (PopupActivityMsg::ShowSuccess(s1), PopupActivityMsg::ShowSuccess(s2)) => s1 == s2,
             (PopupActivityMsg::CloseSuccess, PopupActivityMsg::CloseSuccess) => true,
             (

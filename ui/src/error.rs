@@ -38,6 +38,11 @@ pub type AppResult<T> = Result<T, AppError>;
 /// Error severity levels for appropriate UI response
 #[derive(Debug, Clone)]
 pub enum ErrorSeverity {
+    /// Informational - log only, no UI popup
+    #[allow(dead_code)]
+    Info,
+    /// Warning severity - show warning popup and log
+    Warning,
     /// High severity - show error popup and log
     Error,
     /// Critical severity - show error popup, log, and potentially exit
@@ -52,23 +57,51 @@ pub struct ErrorContext {
     pub operation: String,
     pub user_message: String,
     pub technical_details: Option<String>,
+    pub suggestion: Option<String>,
     pub severity: ErrorSeverity,
 }
 
 impl ErrorContext {
+    /// Create new error context with component and operation
+    /// Uses generic message based on component/operation. Use .with_message() for custom messages.
     pub fn new(component: &str, operation: &str) -> Self {
         Self {
             component: component.to_string(),
             operation: operation.to_string(),
-            user_message: format!("Error in {} during {}", component, operation),
+            user_message: Self::generate_fallback_message(component),
             technical_details: None,
+            suggestion: None,
             severity: ErrorSeverity::Error,
         }
     }
 
-    /// Builder pattern method for setting user message
-    pub fn with_user_message(mut self, message: &str) -> Self {
+    /// Generate simple generic fallback message
+    /// The preferred approach is to use .with_message() for explicit user messages.
+    fn generate_fallback_message(component: &str) -> String {
+        format!("An error occurred in {}. Please try again.", component)
+    }
+
+    /// Builder pattern method for setting custom user message
+    pub fn with_message(mut self, message: &str) -> Self {
         self.user_message = message.to_string();
+        self
+    }
+
+    /// Builder pattern method for adding technical details
+    pub fn with_technical_details(mut self, details: &str) -> Self {
+        self.technical_details = Some(details.to_string());
+        self
+    }
+
+    /// Builder pattern method for adding user suggestion
+    pub fn with_suggestion(mut self, suggestion: &str) -> Self {
+        self.suggestion = Some(suggestion.to_string());
+        self
+    }
+
+    /// Builder pattern method for setting severity
+    pub fn with_severity(mut self, severity: ErrorSeverity) -> Self {
+        self.severity = severity;
         self
     }
 }
@@ -109,27 +142,231 @@ impl ErrorReporter {
         self.report(error, context);
     }
 
+    /// Report an informational message (log only, no UI popup)
+    #[allow(dead_code)]
+    pub fn report_info(&self, error: AppError, component: &str, operation: &str) {
+        let context = ErrorContext::new(component, operation).with_severity(ErrorSeverity::Info);
+        self.report(error, context);
+    }
+
+    /// Report a warning (shows warning popup)
+    pub fn report_warning(&self, error: AppError, component: &str, operation: &str) {
+        let context = ErrorContext::new(component, operation).with_severity(ErrorSeverity::Warning);
+        self.report(error, context);
+    }
+
+    /// Report a critical error (shows error popup, logs extensively)
+    /// Use this for errors that cause application termination or major system failures
+    #[allow(dead_code)]
+    pub fn report_critical(&self, error: AppError, component: &str, operation: &str) {
+        let context =
+            ErrorContext::new(component, operation).with_severity(ErrorSeverity::Critical);
+        self.report(error, context);
+    }
+
+    /// Report a critical error that will cause application exit
+    /// This method should be used when the error is severe enough to terminate the application
+    #[allow(dead_code)]
+    pub fn report_critical_and_exit(
+        &self,
+        error: AppError,
+        component: &str,
+        operation: &str,
+        user_message: &str,
+    ) {
+        let context = ErrorContext::new(component, operation)
+            .with_message(user_message)
+            .with_severity(ErrorSeverity::Critical)
+            .with_suggestion("The application will terminate. Please fix the issue and restart.");
+        self.report(error, context);
+    }
+
+    /// Report error with custom user message and suggestion
+    pub fn report_with_suggestion(
+        &self,
+        error: AppError,
+        component: &str,
+        operation: &str,
+        user_message: &str,
+        suggestion: &str,
+    ) {
+        let context = ErrorContext::new(component, operation)
+            .with_message(user_message)
+            .with_suggestion(suggestion);
+        self.report(error, context);
+    }
+
+    /// Report error with full contextual information
+    pub fn report_detailed(
+        &self,
+        error: AppError,
+        component: &str,
+        operation: &str,
+        user_message: &str,
+        technical_details: &str,
+        suggestion: &str,
+    ) {
+        let context = ErrorContext::new(component, operation)
+            .with_message(user_message)
+            .with_technical_details(technical_details)
+            .with_suggestion(suggestion);
+        self.report(error, context);
+    }
+
     /// Report error with full context
     pub fn report(&self, error: AppError, context: ErrorContext) {
         let contextual_error = ContextualError::new(error.clone(), context.clone());
 
-        // Log the error with full context
-        log::error!(
-            "[{}:{}] {} - Technical: {}",
-            context.component,
-            context.operation,
-            contextual_error,
-            context.technical_details.as_deref().unwrap_or("None")
-        );
+        // Enhanced logging with full context
+        match context.severity {
+            ErrorSeverity::Info => {
+                log::info!(
+                    "[{}:{}] {} {}",
+                    context.component,
+                    context.operation,
+                    contextual_error,
+                    self.format_additional_context(&context)
+                );
+            }
+            ErrorSeverity::Warning => {
+                log::warn!(
+                    "[{}:{}] {} {}",
+                    context.component,
+                    context.operation,
+                    contextual_error,
+                    self.format_additional_context(&context)
+                );
+            }
+            ErrorSeverity::Error => {
+                log::error!(
+                    "[{}:{}] {} {}",
+                    context.component,
+                    context.operation,
+                    contextual_error,
+                    self.format_additional_context(&context)
+                );
+            }
+            ErrorSeverity::Critical => {
+                log::error!(
+                    "[CRITICAL] [{}:{}] {} {}",
+                    context.component,
+                    context.operation,
+                    contextual_error,
+                    self.format_additional_context(&context)
+                );
+            }
+        }
 
         // Send to UI based on severity
         match context.severity {
+            ErrorSeverity::Info => {
+                // Info messages don't show UI popups, only log
+            }
+            ErrorSeverity::Warning => {
+                let popup_msg = Msg::PopupActivity(PopupActivityMsg::ShowWarning(
+                    self.format_user_message(&context),
+                ));
+                if let Err(e) = self.tx.send(popup_msg) {
+                    log::error!("Failed to send warning popup message: {}", e);
+                }
+            }
             ErrorSeverity::Error | ErrorSeverity::Critical => {
-                let popup_msg = Msg::PopupActivity(PopupActivityMsg::ShowError(error));
+                let formatted_error = self.create_formatted_error(&error, &context);
+                let popup_msg = Msg::PopupActivity(PopupActivityMsg::ShowError(formatted_error));
                 if let Err(e) = self.tx.send(popup_msg) {
                     log::error!("Failed to send error popup message: {}", e);
                 }
             }
+        }
+    }
+
+    /// Format additional context information for logging
+    fn format_additional_context(&self, context: &ErrorContext) -> String {
+        let mut parts = Vec::new();
+
+        if let Some(ref technical) = context.technical_details {
+            parts.push(format!("🔍 Technical: {}", technical));
+        }
+
+        if let Some(ref suggestion) = context.suggestion {
+            parts.push(format!("💡 Suggestion: {}", suggestion));
+        }
+
+        if parts.is_empty() {
+            String::new()
+        } else {
+            format!("\n{}", parts.join("\n"))
+        }
+    }
+
+    /// Format user-friendly message for UI display
+    fn format_user_message(&self, context: &ErrorContext) -> String {
+        let mut message = context.user_message.clone();
+
+        if let Some(ref suggestion) = context.suggestion {
+            message.push_str(&format!("\n\n💡 Suggestion: {}", suggestion));
+        }
+
+        message
+    }
+
+    /// Create a warning error with proper formatting
+    pub fn create_warning_error(&self, message: String) -> AppError {
+        // Create formatted warning with warning emoji
+        let mut formatted_message = String::new();
+        formatted_message.push_str("⚠️ Warning");
+        formatted_message.push_str(&format!("\n\n{}", message));
+
+        AppError::Component(formatted_message)
+    }
+
+    /// Create a beautifully formatted error for UI display
+    fn create_formatted_error(&self, error: &AppError, context: &ErrorContext) -> AppError {
+        let mut formatted_message = String::new();
+
+        // Add appropriate emoji based on error type
+        let emoji = match error {
+            AppError::Config(_) => "⚙️",
+            AppError::ServiceBus(_) => "🔗",
+            AppError::Component(_) => "🎛️",
+            AppError::State(_) => "📊",
+            AppError::Io(_) => "📁",
+        };
+
+        // Add error title with emoji
+        formatted_message.push_str(&format!("{} {}", emoji, self.get_error_title(error)));
+
+        // Add main user message with proper formatting
+        formatted_message.push_str(&format!("\n\n{}", context.user_message));
+
+        // Add technical details if available (for debugging)
+        if let Some(ref technical) = context.technical_details {
+            formatted_message.push_str(&format!("\n\n🔍 Details: {}", technical));
+        }
+
+        // Add suggestion if available
+        if let Some(ref suggestion) = context.suggestion {
+            formatted_message.push_str(&format!("\n\n💡 Suggestion: {}", suggestion));
+        }
+
+        // Create a new AppError with the formatted message
+        match error {
+            AppError::Config(_) => AppError::Config(formatted_message),
+            AppError::ServiceBus(_) => AppError::ServiceBus(formatted_message),
+            AppError::Component(_) => AppError::Component(formatted_message),
+            AppError::State(_) => AppError::State(formatted_message),
+            AppError::Io(_) => AppError::Io(formatted_message),
+        }
+    }
+
+    /// Get appropriate title for error type
+    fn get_error_title(&self, error: &AppError) -> String {
+        match error {
+            AppError::Config(_) => "Configuration Error".to_string(),
+            AppError::ServiceBus(_) => "Service Bus Error".to_string(),
+            AppError::Component(_) => "Component Error".to_string(),
+            AppError::State(_) => "Application State Error".to_string(),
+            AppError::Io(_) => "File System Error".to_string(),
         }
     }
 }
@@ -174,15 +411,15 @@ mod tests {
         assert_eq!(context.operation, "test_operation");
         assert_eq!(
             context.user_message,
-            "Error in TestComponent during test_operation"
+            "An error occurred in TestComponent. Please try again."
         );
     }
 
     #[test]
     fn test_contextual_error_with_custom_message() {
         let error = AppError::Config("Test error".to_string());
-        let context = ErrorContext::new("TestComponent", "test_operation")
-            .with_user_message("Custom message");
+        let context =
+            ErrorContext::new("TestComponent", "test_operation").with_message("Custom message");
 
         let contextual = ContextualError::new(error, context);
         assert_eq!(contextual.context.user_message, "Custom message");
@@ -196,17 +433,21 @@ mod tests {
         let contextual = ContextualError::new(error, context);
         assert_eq!(
             contextual.context.user_message,
-            "Error in TestComponent during test_operation"
+            "An error occurred in TestComponent. Please try again."
         );
     }
 
     #[test]
     fn test_result_extension_trait() {
         let (tx, _rx) = mpsc::channel();
-        let error_reporter = ErrorReporter::new(tx);
+        let reporter = ErrorReporter::new(tx);
+        let error = AppError::Config("Test error".to_string());
 
-        let result: Result<(), AppError> = Err(AppError::Config("Test error".to_string()));
-        let _handled = result.report_on_error(&error_reporter, "TestComponent", "test_operation");
+        // Test that error is reported when Result is Err
+        let result: Result<(), AppError> = Err(error.clone());
+        let returned_result = result.report_on_error(&reporter, "TestComponent", "test_operation");
+
+        assert_eq!(returned_result, Err(error));
     }
 
     #[test]
@@ -217,18 +458,152 @@ mod tests {
 
     #[test]
     fn test_critical_severity() {
-        let context = ErrorContext::new("TestComponent", "test_operation");
-        // Test that we can access and use the Critical variant
-        let context_with_critical = ErrorContext {
-            severity: ErrorSeverity::Critical,
-            ..context
-        };
+        let context = ErrorContext::new("TestComponent", "test_operation")
+            .with_severity(ErrorSeverity::Critical);
 
-        match context_with_critical.severity {
-            ErrorSeverity::Critical => {
-                // Expected - this ensures the Critical variant is used
-            }
-            _ => panic!("Expected Critical severity"),
-        }
+        matches!(context.severity, ErrorSeverity::Critical);
+    }
+
+    #[test]
+    fn test_enhanced_error_reporting_features() {
+        let (tx, rx) = mpsc::channel();
+        let reporter = ErrorReporter::new(tx);
+        let error = AppError::Config("Test configuration error".to_string());
+
+        // Test detailed error reporting
+        reporter.report_detailed(
+            error.clone(),
+            "TestComponent",
+            "test_operation",
+            "Custom user message",
+            "Technical details about the error",
+            "Try this to fix the issue",
+        );
+
+        // Verify message was sent
+        let msg = rx.recv().unwrap();
+        assert!(matches!(
+            msg,
+            Msg::PopupActivity(PopupActivityMsg::ShowError(_))
+        ));
+    }
+
+    #[test]
+    fn test_warning_severity_reporting() {
+        let (tx, rx) = mpsc::channel();
+        let reporter = ErrorReporter::new(tx);
+        let error = AppError::Component("Warning message".to_string());
+
+        // Test warning reporting
+        reporter.report_warning(error, "TestComponent", "test_operation");
+
+        // Verify warning message was sent
+        let msg = rx.recv().unwrap();
+        assert!(matches!(
+            msg,
+            Msg::PopupActivity(PopupActivityMsg::ShowWarning(_))
+        ));
+    }
+
+    #[test]
+    fn test_info_severity_no_popup() {
+        let (tx, rx) = mpsc::channel();
+        let reporter = ErrorReporter::new(tx);
+        let error = AppError::Component("Info message".to_string());
+
+        // Test info reporting (should not send popup)
+        reporter.report_info(error, "TestComponent", "test_operation");
+
+        // Verify no message was sent (info only logs)
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_user_friendly_message_generation() {
+        let context = ErrorContext::new("MessageLoader", "load_messages");
+        assert_eq!(
+            context.user_message,
+            "An error occurred in MessageLoader. Please try again."
+        );
+
+        let context = ErrorContext::new("UnknownComponent", "unknown_operation");
+        assert_eq!(
+            context.user_message,
+            "An error occurred in UnknownComponent. Please try again."
+        );
+    }
+
+    #[test]
+    fn test_error_context_builder_pattern() {
+        let context = ErrorContext::new("TestComponent", "test_operation")
+            .with_message("Custom message")
+            .with_technical_details("Technical information")
+            .with_suggestion("Try this solution")
+            .with_severity(ErrorSeverity::Warning);
+
+        assert_eq!(context.user_message, "Custom message");
+        assert_eq!(
+            context.technical_details,
+            Some("Technical information".to_string())
+        );
+        assert_eq!(context.suggestion, Some("Try this solution".to_string()));
+        assert!(matches!(context.severity, ErrorSeverity::Warning));
+    }
+
+    #[test]
+    fn test_contextual_error_display() {
+        let error = AppError::Config("Test error".to_string());
+        let context = ErrorContext::new("TestComponent", "test_operation");
+
+        let contextual = ContextualError::new(error, context);
+        let display_str = format!("{}", contextual);
+
+        assert!(display_str.contains("TestComponent"));
+        assert!(display_str.contains("Test error"));
+    }
+
+    #[test]
+    fn test_new_with_message_method() {
+        let context = ErrorContext::new("TestComponent", "test_operation")
+            .with_message("Custom error message");
+
+        assert_eq!(context.component, "TestComponent");
+        assert_eq!(context.operation, "test_operation");
+        assert_eq!(context.user_message, "Custom error message");
+        assert!(matches!(context.severity, ErrorSeverity::Error));
+    }
+
+    #[test]
+    fn test_critical_error_reporting() {
+        let (tx, rx) = mpsc::channel();
+        let reporter = ErrorReporter::new(tx);
+        let error = AppError::Config("Critical configuration error".to_string());
+
+        // Test critical error reporting
+        reporter.report_critical(error, "Config", "load_config");
+
+        // Verify message was sent
+        let msg = rx.recv().unwrap();
+        assert!(matches!(
+            msg,
+            Msg::PopupActivity(PopupActivityMsg::ShowError(_))
+        ));
+    }
+
+    #[test]
+    fn test_format_additional_context_consistency() {
+        let (tx, _rx) = mpsc::channel();
+        let reporter = ErrorReporter::new(tx);
+
+        let context = ErrorContext::new("TestComponent", "test_operation")
+            .with_technical_details("Technical error details")
+            .with_suggestion("Try this fix");
+
+        let formatted = reporter.format_additional_context(&context);
+
+        // Should use emojis and newline formatting like format_user_message
+        assert!(formatted.contains("🔍 Technical:"));
+        assert!(formatted.contains("💡 Suggestion:"));
+        assert!(formatted.contains("\n"));
     }
 }

@@ -1,4 +1,5 @@
 use crate::components::common::{LoadingActivityMsg, Msg};
+use crate::error::AppError;
 use azservicebus::{ServiceBusClient, core::BasicRetryPolicy};
 use server::bulk_operations::{BulkOperationContext, BulkSendParams, MessageIdentifier};
 use server::bulk_operations::{BulkOperationHandler, BulkOperationResult};
@@ -284,7 +285,7 @@ fn handle_bulk_send_error(
     // Send error message using error sender
     BulkTaskManager::send_message_or_log_error(
         tx_to_main_err,
-        Msg::Error(crate::error::AppError::ServiceBus(context_message)),
+        Msg::Error(AppError::ServiceBus(context_message)),
         "error",
     );
 }

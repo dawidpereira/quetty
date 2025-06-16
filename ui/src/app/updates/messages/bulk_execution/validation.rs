@@ -1,13 +1,13 @@
 use crate::app::model::Model;
-use crate::components::common::{Msg, QueueType};
+use crate::components::common::QueueType;
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
 use tuirealm::terminal::TerminalAdapter;
 
 /// Common validation trait for bulk operations
 pub trait BulkOperationValidator {
-    fn validate_message_ids(&self, message_ids: &[MessageIdentifier]) -> Result<(), Msg>;
-    fn validate_queue_type(&self, expected_queue_type: QueueType) -> Result<(), Msg>;
+    fn validate_message_ids(&self, message_ids: &[MessageIdentifier]) -> Result<(), bool>;
+    fn validate_queue_type(&self, expected_queue_type: QueueType) -> Result<(), bool>;
     fn validate_batch_configuration(
         &self,
         message_ids: &[MessageIdentifier],
@@ -19,7 +19,7 @@ where
     T: TerminalAdapter,
 {
     /// Validates that message IDs are not empty and within limits
-    fn validate_message_ids(&self, message_ids: &[MessageIdentifier]) -> Result<(), Msg> {
+    fn validate_message_ids(&self, message_ids: &[MessageIdentifier]) -> Result<(), bool> {
         use crate::config::CONFIG;
 
         let count = message_ids.len();
@@ -28,9 +28,10 @@ where
 
         if count < min_count {
             log::warn!("Insufficient messages for bulk operation: {}", count);
-            return Err(Msg::Error(AppError::State(
-                "No messages selected for bulk operation".to_string(),
-            )));
+            let error = AppError::State("No messages selected for bulk operation".to_string());
+            self.error_reporter
+                .report_simple(error, "BulkValidation", "count_check");
+            return Err(true);
         }
 
         if count > max_count {
@@ -39,10 +40,13 @@ where
                 count,
                 max_count
             );
-            return Err(Msg::Error(AppError::State(format!(
+            let error = AppError::State(format!(
                 "Too many messages selected ({}). Maximum allowed: {} (configured limit)",
                 count, max_count
-            ))));
+            ));
+            self.error_reporter
+                .report_simple(error, "BulkValidation", "count_check");
+            return Err(true);
         }
 
         log::debug!(
@@ -55,7 +59,7 @@ where
     }
 
     /// Validates the current queue type matches the expected type
-    fn validate_queue_type(&self, expected_queue_type: QueueType) -> Result<(), Msg> {
+    fn validate_queue_type(&self, expected_queue_type: QueueType) -> Result<(), bool> {
         if self.queue_state.current_queue_type != expected_queue_type {
             let current_type = match self.queue_state.current_queue_type {
                 QueueType::Main => "main queue",
@@ -72,10 +76,13 @@ where
                 current_type
             );
 
-            return Err(Msg::Error(AppError::State(format!(
+            let error = AppError::State(format!(
                 "Operation not allowed: currently in {} but operation requires {}",
                 current_type, expected_type
-            ))));
+            ));
+            self.error_reporter
+                .report_simple(error, "BulkValidation", "queue_type");
+            return Err(true);
         }
         Ok(())
     }
@@ -109,7 +116,7 @@ where
 pub fn validate_bulk_resend_request<T: TerminalAdapter>(
     model: &Model<T>,
     message_ids: &[MessageIdentifier],
-) -> Result<(), Msg> {
+) -> Result<(), bool> {
     // Validate basic requirements
     model.validate_message_ids(message_ids)?;
 
@@ -134,7 +141,7 @@ pub fn validate_bulk_resend_request<T: TerminalAdapter>(
 pub fn validate_bulk_send_to_dlq_request<T: TerminalAdapter>(
     model: &Model<T>,
     message_ids: &[MessageIdentifier],
-) -> Result<(), Msg> {
+) -> Result<(), bool> {
     // Validate basic requirements
     model.validate_message_ids(message_ids)?;
 
@@ -159,13 +166,16 @@ pub fn validate_bulk_send_to_dlq_request<T: TerminalAdapter>(
 pub fn validate_bulk_delete_request<T: TerminalAdapter>(
     model: &Model<T>,
     message_ids: &[MessageIdentifier],
-) -> Result<(), Msg> {
+) -> Result<(), bool> {
     // Validate basic requirements
     model.validate_message_ids(message_ids)?;
 
     // Validate batch configuration
     if let Err(e) = model.validate_batch_configuration(message_ids) {
-        return Err(Msg::Error(e));
+        model
+            .error_reporter
+            .report_simple(e, "BulkValidation", "batch_config");
+        return Err(true);
     }
 
     // Log operation details

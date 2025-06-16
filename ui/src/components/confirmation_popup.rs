@@ -57,6 +57,10 @@ impl MockComponent for ConfirmationPopup {
 
         // Split the message into lines and create text
         let mut lines = Vec::new();
+
+        // Add empty line at the top for better spacing
+        lines.push(Line::from(""));
+
         for line in self.message.lines() {
             lines.push(Line::from(line));
         }
