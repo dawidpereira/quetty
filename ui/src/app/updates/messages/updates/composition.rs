@@ -1,7 +1,5 @@
 use crate::app::model::{AppState, Model};
-use crate::components::common::{
-    ComponentId, LoadingActivityMsg, MessageActivityMsg, Msg, PopupActivityMsg,
-};
+use crate::components::common::{ComponentId, MessageActivityMsg, Msg, PopupActivityMsg};
 use crate::config::CONFIG;
 use crate::error::AppError;
 use server::consumer::Consumer;
@@ -11,7 +9,6 @@ use tokio::sync::Mutex;
 use tuirealm::terminal::TerminalAdapter;
 
 // Bulk send configuration is now handled via the config system
-
 impl<T> Model<T>
 where
     T: TerminalAdapter,
@@ -91,34 +88,21 @@ where
 
     /// Load messages from the beginning (fresh start), similar to initial queue load
     pub fn load_messages_from_beginning(&self) -> Result<(), AppError> {
-        let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
-
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Start(
-            "Loading messages...".to_string(),
-        ))) {
-            log::error!("Failed to send loading start message: {e}");
-        }
 
         let consumer = self.queue_state.consumer.clone().ok_or_else(|| {
             log::error!("No consumer available");
             AppError::State("No consumer available".to_string())
         })?;
 
-        let error_reporter = self.error_reporter.clone();
-        taskpool.execute(async move {
-            let result = Self::execute_fresh_message_load(tx_to_main.clone(), consumer).await;
-
-            if let Err(e) = result {
-                log::error!("Error loading messages from beginning: {e}");
-
-                if let Err(err) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
-                    log::error!("Failed to send loading stop message: {err}");
+        self.task_manager
+            .execute("Loading messages...", async move {
+                let result = Self::execute_fresh_message_load(tx_to_main.clone(), consumer).await;
+                if let Err(e) = &result {
+                    log::error!("Error loading messages from beginning: {e}");
                 }
-
-                error_reporter.report_simple(e, "MessageComposer", "load_messages_from_beginning");
-            }
-        });
+                result
+            });
 
         Ok(())
     }
@@ -139,10 +123,6 @@ where
             })?;
 
         log::info!("Loaded {} messages from beginning", messages.len());
-
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
-            log::error!("Failed to send loading stop message: {e}");
-        }
 
         let activity_msg = if messages.is_empty() {
             MessageActivityMsg::MessagesLoaded(messages)
