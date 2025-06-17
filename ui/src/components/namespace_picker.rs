@@ -1,16 +1,12 @@
-use crate::app::model::Model;
-use crate::components::common::{LoadingActivityMsg, Msg, NamespaceActivityMsg};
-use crate::config::{self, CONFIG};
-use crate::error::{AppError, AppResult};
+use crate::components::common::{Msg, NamespaceActivityMsg};
+use crate::config::{self};
 use crate::theme::ThemeManager;
-use server::service_bus_manager::ServiceBusManager;
 use tuirealm::command::{Cmd, CmdResult};
 use tuirealm::event::{Event, Key, KeyEvent, NoUserEvent};
 use tuirealm::props::{Alignment, TextModifiers};
 use tuirealm::ratatui::layout::Rect;
 use tuirealm::ratatui::style::Style;
 use tuirealm::ratatui::widgets::{List, ListItem};
-use tuirealm::terminal::TerminalAdapter;
 use tuirealm::{AttrValue, Attribute, Component, Frame, MockComponent, State, StateValue};
 
 const CMD_RESULT_NAMESPACE_SELECTED: &str = "NamespaceSelected";
@@ -176,77 +172,5 @@ impl Component<Msg, NoUserEvent> for NamespacePicker {
             }
             _ => Some(Msg::ForceRedraw),
         }
-    }
-}
-
-impl<T> Model<T>
-where
-    T: TerminalAdapter,
-{
-    pub fn load_namespaces(&mut self) -> AppResult<()> {
-        let taskpool = &self.taskpool;
-        let tx_to_main = self.tx_to_main.clone();
-
-        // Show loading indicator
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Start(
-            "Loading namespaces...".to_string(),
-        ))) {
-            log::error!("Failed to send loading start message: {}", e);
-        }
-
-        let error_reporter = self.error_reporter.clone();
-        taskpool.execute(async move {
-            let result = async {
-                log::debug!("Requesting namespaces from Azure AD");
-
-                // Send an update that we're requesting namespaces
-                if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Update(
-                    "Connecting to Azure AD...".to_string(),
-                ))) {
-                    log::error!("Failed to send loading update message: {}", e);
-                }
-
-                let namespaces = ServiceBusManager::list_namespaces_azure_ad(CONFIG.azure_ad())
-                    .await
-                    .map_err(|e| {
-                        log::error!("Failed to list namespaces: {}", e);
-                        AppError::ServiceBus(e.to_string())
-                    })?;
-
-                // Send an update that we've received namespaces
-                if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Update(
-                    "Processing namespaces...".to_string(),
-                ))) {
-                    log::error!("Failed to send loading update message: {}", e);
-                }
-
-                log::info!("Loaded {} namespaces", namespaces.len());
-
-                // Stop loading indicator
-                if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
-                    log::error!("Failed to send loading stop message: {}", e);
-                }
-
-                // Send loaded namespaces
-                tx_to_main
-                    .send(Msg::NamespaceActivity(
-                        NamespaceActivityMsg::NamespacesLoaded(namespaces),
-                    ))
-                    .map_err(|e| {
-                        log::error!("Failed to send namespaces loaded message: {}", e);
-                        AppError::Component(e.to_string())
-                    })?;
-
-                Ok::<(), AppError>(())
-            }
-            .await;
-            if let Err(e) = result {
-                log::error!("Error in namespace loading task: {}", e);
-                // Use the shared error reporter instead of creating a temporary one
-                error_reporter.report_simple(e, "NamespacePicker", "load_namespaces");
-            }
-        });
-
-        Ok(())
     }
 }

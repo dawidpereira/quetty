@@ -1,4 +1,4 @@
-use crate::app::model::{AppState, Model};
+use crate::app::model::Model;
 use crate::components::common::{ComponentId, Msg, NamespaceActivityMsg};
 use tuirealm::State;
 use tuirealm::terminal::TerminalAdapter;
@@ -15,36 +15,30 @@ where
                         .report_simple(e, "NamespaceHandler", "update_namespace");
                     return None;
                 }
-                self.app_state = AppState::NamespacePicker;
                 None
             }
-            NamespaceActivityMsg::NamespaceSelected => {
-                // Store the currently selected namespace from the namespace picker component
-                if let Ok(State::One(tuirealm::StateValue::String(namespace))) =
-                    self.app.state(&ComponentId::NamespacePicker)
-                {
-                    log::info!("Selected namespace: {}", namespace);
-                    self.selected_namespace = Some(namespace);
-                }
-
-                if let Err(e) = self.load_queues() {
-                    self.error_reporter
-                        .report_simple(e, "NamespaceHandler", "update_namespace");
-                    return None;
-                }
-                None
-            }
+            NamespaceActivityMsg::NamespaceSelected => self.handle_namespace_selection(),
             NamespaceActivityMsg::NamespaceUnselected => {
                 // Clear selected namespace
                 self.selected_namespace = None;
 
-                if let Err(e) = self.load_namespaces() {
-                    self.error_reporter
-                        .report_simple(e, "NamespaceHandler", "update_namespace");
-                    return None;
-                }
+                self.load_namespaces();
                 None
             }
         }
+    }
+
+    /// Handle namespace selection by storing the selected namespace and loading queues
+    fn handle_namespace_selection(&mut self) -> Option<Msg> {
+        // Store the currently selected namespace from the namespace picker component
+        if let Ok(State::One(tuirealm::StateValue::String(namespace))) =
+            self.app.state(&ComponentId::NamespacePicker)
+        {
+            log::info!("Selected namespace: {}", namespace);
+            self.selected_namespace = Some(namespace);
+        }
+
+        self.load_queues();
+        None
     }
 }
