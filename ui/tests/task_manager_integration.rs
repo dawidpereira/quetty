@@ -129,7 +129,7 @@ async fn test_execute_error_complete_flow() {
     // Expect PopupActivity::ShowError with formatted error message
     assert_matches!(&messages[2],
         Msg::PopupActivity(PopupActivityMsg::ShowError(error))
-        if error.to_string().contains("Configuration Error") && 
+        if error.to_string().contains("Configuration Error") &&
            error.to_string().contains("TaskManager")
     );
 }
@@ -222,38 +222,19 @@ async fn test_task_builder_error_complete_flow() {
 async fn test_execute_with_updates_complete_flow() {
     let (task_manager, rx) = create_test_setup();
 
-    task_manager.execute_with_updates("Testing progress updates", |tx| {
+    // Since LoadingActivityMsg::Update is removed, just test Start and Stop
+    task_manager.execute_with_updates("Testing progress updates", |_tx| {
         Box::new(Box::pin(async move {
-            // Send a progress update
-            tx.send(Msg::LoadingActivity(LoadingActivityMsg::Update(
-                "Progress: 50%".to_string(),
-            )))
-            .unwrap();
-
+            // Simulate some work
             sleep(Duration::from_millis(10)).await;
-
-            // Send another progress update
-            tx.send(Msg::LoadingActivity(LoadingActivityMsg::Update(
-                "Progress: 100%".to_string(),
-            )))
-            .unwrap();
-
             Ok::<(), AppError>(())
         }))
     });
 
     sleep(Duration::from_millis(150)).await;
-    let messages = collect_messages_with_timeout(&rx, 4, 2000);
+    let messages = collect_messages_with_timeout(&rx, 2, 2000);
 
-    assert_eq!(messages.len(), 4, "Expected complete progress workflow");
+    assert_eq!(messages.len(), 2, "Expected start and stop workflow");
     assert_start_message(&messages[0], "Testing progress updates");
-
-    // Check for update messages (order might vary due to async)
-    let update_messages: Vec<_> = messages
-        .iter()
-        .filter(|msg| matches!(msg, Msg::LoadingActivity(LoadingActivityMsg::Update(_))))
-        .collect();
-    assert_eq!(update_messages.len(), 2, "Should have 2 update messages");
-
-    assert_stop_message(&messages[3]);
+    assert_stop_message(&messages[1]);
 }
