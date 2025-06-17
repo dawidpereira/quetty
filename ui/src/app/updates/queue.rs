@@ -1,6 +1,5 @@
 use crate::app::model::{AppState, Model};
-use crate::components::common::{ComponentId, Msg, QueueActivityMsg};
-use crate::error::AppError;
+use crate::components::common::{Msg, QueueActivityMsg};
 use tuirealm::terminal::TerminalAdapter;
 
 impl<T> Model<T>

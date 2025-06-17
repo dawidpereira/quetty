@@ -1,8 +1,6 @@
 use crate::app::model::{AppState, Model};
 use crate::app::updates::messages::async_operations;
-use crate::components::common::{
-    ComponentId, LoadingActivityMsg, MessageActivityMsg, Msg, PopupActivityMsg,
-};
+use crate::components::common::{ComponentId, MessageActivityMsg, Msg, PopupActivityMsg};
 use crate::error::AppError;
 use azservicebus::{ServiceBusClient, core::BasicRetryPolicy};
 use server::bulk_operations::MessageIdentifier;
@@ -87,15 +85,10 @@ where
             format!("Sending message {} times...", repeat_count)
         };
 
-        let feedback_msg = Some(Msg::LoadingActivity(LoadingActivityMsg::Start(
-            loading_message,
-        )));
-
         let service_bus_client = self.service_bus_client.clone();
         let tx_to_main = self.tx_to_main.clone();
-        let taskpool = &self.taskpool;
 
-        let task = async move {
+        self.task_manager.execute(loading_message, async move {
             let result = Self::send_message_multiple_times(
                 service_bus_client,
                 queue_name,
@@ -110,12 +103,15 @@ where
                 format!("✅ {} messages sent successfully!", repeat_count)
             };
 
-            async_operations::send_completion_messages(&tx_to_main, result, &success_message)
-        };
+            async_operations::send_completion_messages(
+                &tx_to_main,
+                result.clone(),
+                &success_message,
+            );
+            result
+        });
 
-        taskpool.execute(task);
-
-        feedback_msg
+        None
     }
 
     /// Handle replacing original message with edited content (send new + delete original)
@@ -135,57 +131,51 @@ where
             queue_name
         );
 
-        let feedback_msg = Some(Msg::LoadingActivity(LoadingActivityMsg::Start(
-            "Replacing message...".to_string(),
-        )));
-
         let consumer = self.queue_state.consumer.clone();
         let service_bus_client = self.service_bus_client.clone();
         let tx_to_main = self.tx_to_main.clone();
-        let taskpool = &self.taskpool;
 
-        let task = async move {
-            let result = async {
-                // Step 1: Send new message with edited content
-                Self::send_message_to_queue(service_bus_client, queue_name.clone(), content)
-                    .await?;
+        self.task_manager
+            .execute("Replacing message...", async move {
+                let result = async {
+                    // Step 1: Send new message with edited content
+                    Self::send_message_to_queue(service_bus_client, queue_name.clone(), content)
+                        .await?;
 
-                // Step 2: Delete original message
-                match consumer {
-                    Some(consumer) => Self::delete_message(consumer, &message_id).await?,
-                    None => {
-                        return Err(AppError::ServiceBus(
-                            "No consumer available for message deletion".to_string(),
-                        ));
+                    // Step 2: Delete original message
+                    match consumer {
+                        Some(consumer) => Self::delete_message(consumer, &message_id).await?,
+                        None => {
+                            return Err(AppError::ServiceBus(
+                                "No consumer available for message deletion".to_string(),
+                            ));
+                        }
                     }
+
+                    log::info!(
+                        "Successfully replaced message {} in queue: {}",
+                        message_id.id,
+                        queue_name
+                    );
+                    Ok::<(), AppError>(())
+                }
+                .await;
+
+                if result.is_ok() {
+                    let _ = tx_to_main.send(Msg::MessageActivity(
+                        MessageActivityMsg::BulkRemoveMessagesFromState(vec![message_id]),
+                    ));
                 }
 
-                log::info!(
-                    "Successfully replaced message {} in queue: {}",
-                    message_id.id,
-                    queue_name
+                async_operations::send_completion_messages(
+                    &tx_to_main,
+                    result.clone(),
+                    "✅ Message replaced successfully!",
                 );
-                Ok::<(), AppError>(())
-            }
-            .await;
+                result
+            });
 
-            if result.is_ok() {
-                let _ = tx_to_main.send(Msg::MessageActivity(
-                    MessageActivityMsg::BulkRemoveMessagesFromState(vec![message_id]),
-                ));
-            }
-
-            async_operations::send_completion_messages(
-                &tx_to_main,
-                result,
-                "✅ Message replaced successfully!",
-            )
-        };
-
-        taskpool.execute(task);
-
-        // Return immediate feedback, then stay in current state until task completes
-        feedback_msg
+        None
     }
 
     /// Helper function to delete a message by completing it

@@ -1,5 +1,5 @@
 use crate::app::model::Model;
-use crate::components::common::{LoadingActivityMsg, MessageActivityMsg, Msg};
+use crate::components::common::{MessageActivityMsg, Msg};
 use crate::error::{AppError, AppResult};
 use server::consumer::Consumer;
 use server::model::MessageModel;
@@ -20,39 +20,32 @@ where
             self.queue_state.message_pagination.last_loaded_sequence
         );
 
-        let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
 
-        self.send_loading_start_message(&tx_to_main);
-
         let consumer = self.get_consumer()?;
-        let error_reporter = self.error_reporter.clone();
         let from_sequence = self
             .queue_state
             .message_pagination
             .last_loaded_sequence
             .map(|seq| seq + 1);
 
-        taskpool.execute(async move {
-            Self::execute_message_loading_task_with_count(
-                tx_to_main,
-                error_reporter,
-                consumer,
-                from_sequence,
-                message_count,
-            )
-            .await;
-        });
+        self.task_manager
+            .execute("Loading more messages...", async move {
+                let result = Self::load_messages_from_consumer_with_count(
+                    tx_to_main.clone(),
+                    consumer,
+                    from_sequence,
+                    message_count,
+                )
+                .await;
+
+                if let Err(e) = &result {
+                    log::error!("Error in message loading task: {}", e);
+                }
+                result
+            });
 
         Ok(())
-    }
-
-    fn send_loading_start_message(&self, tx_to_main: &Sender<Msg>) {
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Start(
-            "Loading more messages...".to_string(),
-        ))) {
-            log::error!("Failed to send loading start message: {}", e);
-        }
     }
 
     fn get_consumer(&self) -> AppResult<Arc<Mutex<Consumer>>> {
@@ -60,26 +53,6 @@ where
             log::error!("No consumer available");
             AppError::State("No consumer available".to_string())
         })
-    }
-
-    async fn execute_message_loading_task_with_count(
-        tx_to_main: Sender<Msg>,
-        error_reporter: crate::error::ErrorReporter,
-        consumer: Arc<Mutex<Consumer>>,
-        from_sequence: Option<i64>,
-        message_count: u32,
-    ) {
-        let result = Self::load_messages_from_consumer_with_count(
-            tx_to_main.clone(),
-            consumer,
-            from_sequence,
-            message_count,
-        )
-        .await;
-
-        if let Err(e) = result {
-            Self::handle_loading_error(tx_to_main, error_reporter, e);
-        }
     }
 
     async fn load_messages_from_consumer_with_count(
@@ -104,16 +77,9 @@ where
             message_count
         );
 
-        Self::send_loading_stop_message(&tx_to_main);
         Self::send_loaded_messages(&tx_to_main, messages)?;
 
         Ok(())
-    }
-
-    fn send_loading_stop_message(tx_to_main: &Sender<Msg>) {
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
-            log::error!("Failed to send loading stop message: {}", e);
-        }
     }
 
     fn send_loaded_messages(
@@ -142,16 +108,5 @@ where
                 log::error!("Failed to send page changed message: {}", e);
                 AppError::Component(e.to_string())
             })
-    }
-
-    fn handle_loading_error(
-        tx_to_main: Sender<Msg>,
-        error_reporter: crate::error::ErrorReporter,
-        error: AppError,
-    ) {
-        log::error!("Error in message loading task: {}", error);
-
-        Self::send_loading_stop_message(&tx_to_main);
-        error_reporter.report_simple(error, "MessageLoader", "load_messages_from_api_with_count");
     }
 }

@@ -362,71 +362,36 @@ where
             self.queue_state.message_pagination.last_loaded_sequence
         );
 
-        let taskpool = &self.taskpool;
         let tx_to_main = self.tx_to_main.clone();
-
-        // Send loading start message
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
-            crate::components::common::LoadingActivityMsg::Start(
-                "Loading more messages...".to_string(),
-            ),
-        )) {
-            log::error!("Failed to send loading start message: {}", e);
-        }
 
         let consumer = self.queue_state.consumer.clone().ok_or_else(|| {
             log::error!("No consumer available");
             AppError::State("No consumer available".to_string())
         })?;
 
-        let error_reporter = self.error_reporter.clone();
         let from_sequence = self
             .queue_state
             .message_pagination
             .last_loaded_sequence
             .map(|seq| seq + 1);
 
-        taskpool.execute(async move {
-            Self::execute_backfill_loading_task(
-                tx_to_main,
-                error_reporter,
-                consumer,
-                from_sequence,
-                message_count,
-            )
-            .await;
-        });
+        self.task_manager
+            .execute("Loading more messages...", async move {
+                let result = Self::load_messages_for_backfill_from_consumer(
+                    tx_to_main.clone(),
+                    consumer,
+                    from_sequence,
+                    message_count,
+                )
+                .await;
+
+                if let Err(e) = &result {
+                    log::error!("Error in backfill loading task: {}", e);
+                }
+                result
+            });
 
         Ok(())
-    }
-
-    async fn execute_backfill_loading_task(
-        tx_to_main: Sender<Msg>,
-        error_reporter: crate::error::ErrorReporter,
-        consumer: Arc<tokio::sync::Mutex<server::consumer::Consumer>>,
-        from_sequence: Option<i64>,
-        message_count: u32,
-    ) {
-        let result = Self::load_messages_for_backfill_from_consumer(
-            tx_to_main.clone(),
-            consumer,
-            from_sequence,
-            message_count,
-        )
-        .await;
-
-        if let Err(e) = result {
-            log::error!("Error in backfill loading task: {}", e);
-
-            // Send loading stop message
-            if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
-                crate::components::common::LoadingActivityMsg::Stop,
-            )) {
-                log::error!("Failed to send loading stop message: {}", e);
-            }
-
-            error_reporter.report_simple(e, "MessagePagination", "load_messages_for_backfill");
-        }
     }
 
     async fn load_messages_for_backfill_from_consumer(
@@ -450,13 +415,6 @@ where
             messages.len(),
             message_count
         );
-
-        // Send loading stop message
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(
-            crate::components::common::LoadingActivityMsg::Stop,
-        )) {
-            log::error!("Failed to send loading stop message: {}", e);
-        }
 
         // Send backfill messages (different from NewMessagesLoaded)
         if !messages.is_empty() {
