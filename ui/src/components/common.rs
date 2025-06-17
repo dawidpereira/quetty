@@ -119,7 +119,6 @@ pub enum MessageActivityMsg {
 #[derive(Debug, PartialEq)]
 pub enum LoadingActivityMsg {
     Start(String),
-    Update(String),
     Stop,
 }
 

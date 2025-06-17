@@ -26,25 +26,6 @@ where
                 self.redraw = true;
                 None
             }
-            LoadingActivityMsg::Update(message) => {
-                log::debug!("Updating loading message: {}", message);
-
-                // Update loading message, keep previous state
-                if let Some((_, previous_state)) = &self.loading_message {
-                    self.loading_message = Some((message.clone(), previous_state.clone()));
-                } else {
-                    // If no previous message, store current state
-                    self.loading_message = Some((message.clone(), self.app_state.clone()));
-                }
-
-                // Mount loading indicator with proper subscriptions
-                if let Err(e) = self.mount_loading_indicator(&message) {
-                    log::error!("Failed to mount loading indicator: {}", e);
-                }
-
-                self.redraw = true;
-                None
-            }
             LoadingActivityMsg::Stop => {
                 log::debug!("Stopping loading");
 

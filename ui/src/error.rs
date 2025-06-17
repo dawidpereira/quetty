@@ -181,21 +181,6 @@ impl ErrorReporter {
         self.report(error, context);
     }
 
-    /// Report error with custom user message and suggestion
-    pub fn report_with_suggestion(
-        &self,
-        error: AppError,
-        component: &str,
-        operation: &str,
-        user_message: &str,
-        suggestion: &str,
-    ) {
-        let context = ErrorContext::new(component, operation)
-            .with_message(user_message)
-            .with_suggestion(suggestion);
-        self.report(error, context);
-    }
-
     /// Report error with full contextual information
     pub fn report_detailed(
         &self,
