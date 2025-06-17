@@ -1,12 +1,10 @@
 use crate::app::model::{AppState, Model};
-use crate::components::common::{ComponentId, LoadingActivityMsg, MessageActivityMsg, Msg};
-use crate::config::CONFIG;
-use crate::error::{AppError, AppResult};
+use crate::components::common::{ComponentId, MessageActivityMsg, Msg};
+use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
 use server::consumer::Consumer;
 use server::model::MessageModel;
 use std::sync::Arc;
-use std::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tuirealm::terminal::TerminalAdapter;
 
@@ -14,87 +12,6 @@ impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
-    pub fn load_messages(&mut self) -> AppResult<()> {
-        let taskpool = &self.taskpool;
-        let tx_to_main = self.tx_to_main.clone();
-
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Start(
-            "Loading messages...".to_string(),
-        ))) {
-            log::error!("Failed to send loading start message: {}", e);
-        }
-
-        let consumer = self.queue_state.consumer.clone().ok_or_else(|| {
-            log::error!("No consumer available");
-            AppError::State("No consumer available".to_string())
-        })?;
-
-        let error_reporter = self.error_reporter.clone();
-        taskpool.execute(async move {
-            let result =
-                Self::execute_message_loading_task(tx_to_main.clone(), consumer, None).await;
-            if let Err(e) = result {
-                log::error!("Error in message loading task: {}", e);
-
-                if let Err(err) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
-                    log::error!("Failed to send loading stop message: {}", err);
-                }
-
-                error_reporter.report_simple(e, "MessageLoader", "load_messages");
-            }
-        });
-
-        Ok(())
-    }
-
-    /// Execute message loading task asynchronously
-    async fn execute_message_loading_task(
-        tx_to_main: Sender<Msg>,
-        consumer: Arc<Mutex<Consumer>>,
-        from_sequence: Option<i64>,
-    ) -> Result<(), AppError> {
-        let mut consumer = consumer.lock().await;
-
-        let messages = consumer
-            .peek_messages(CONFIG.max_messages(), from_sequence)
-            .await
-            .map_err(|e| {
-                log::error!("Failed to peek messages: {}", e);
-                AppError::ServiceBus(e.to_string())
-            })?;
-
-        log::info!("Loaded {} messages", messages.len());
-
-        // Stop loading indicator
-        if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
-            log::error!("Failed to send loading stop message: {}", e);
-        }
-
-        // Send initial messages as new messages loaded
-        if !messages.is_empty() {
-            tx_to_main
-                .send(Msg::MessageActivity(MessageActivityMsg::NewMessagesLoaded(
-                    messages,
-                )))
-                .map_err(|e| {
-                    log::error!("Failed to send new messages loaded message: {}", e);
-                    AppError::Component(e.to_string())
-                })?;
-        } else {
-            // No messages, but still need to update the view
-            tx_to_main
-                .send(Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(
-                    messages,
-                )))
-                .map_err(|e| {
-                    log::error!("Failed to send messages loaded message: {}", e);
-                    AppError::Component(e.to_string())
-                })?;
-        }
-
-        Ok(())
-    }
-
     /// Handle initial messages loaded
     pub fn handle_messages_loaded(&mut self, messages: Vec<MessageModel>) -> Option<Msg> {
         self.queue_state.messages = Some(messages);
@@ -127,17 +44,7 @@ where
         }
 
         self.reset_pagination_state();
-        if let Err(e) = self.load_messages() {
-            // Enhanced error reporting with user-friendly message and suggestion
-            self.error_reporter.report_with_suggestion(
-                e,
-                "MessageStateHandler",
-                "handle_consumer_created",
-                "Failed to load messages after connecting to the queue",
-                "Please check your connection and try refreshing the queue",
-            );
-            return None;
-        }
+        self.load_messages();
         None
     }
 

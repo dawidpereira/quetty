@@ -1,5 +1,6 @@
 use crate::app::model::{AppState, Model};
-use crate::components::common::{Msg, QueueActivityMsg};
+use crate::components::common::{ComponentId, Msg, QueueActivityMsg};
+use crate::error::AppError;
 use tuirealm::terminal::TerminalAdapter;
 
 impl<T> Model<T>
@@ -10,11 +11,7 @@ where
         match msg {
             QueueActivityMsg::QueueSelected(queue) => {
                 self.queue_state.set_selected_queue(queue);
-                if let Err(e) = self.new_consumer_for_queue() {
-                    self.error_reporter
-                        .report_simple(e, "QueueHandler", "update_queue");
-                    return None;
-                }
+                self.new_consumer_for_queue();
                 None
             }
             QueueActivityMsg::QueuesLoaded(queues) => {
@@ -23,7 +20,6 @@ where
                         .report_simple(e, "QueueHandler", "update_queue");
                     return None;
                 }
-                self.app_state = AppState::QueuePicker;
                 None
             }
             QueueActivityMsg::QueueUnselected => {
@@ -32,11 +28,7 @@ where
             }
             QueueActivityMsg::ToggleDeadLetterQueue => {
                 if self.queue_state.toggle_queue_type().is_some() {
-                    if let Err(e) = self.new_consumer_for_queue() {
-                        self.error_reporter
-                            .report_simple(e, "QueueHandler", "update_queue");
-                        return None;
-                    }
+                    self.new_consumer_for_queue();
                 }
                 None
             }

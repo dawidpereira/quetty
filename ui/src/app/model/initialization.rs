@@ -1,6 +1,7 @@
 use super::{AppState, Model};
 use crate::app::queue_state::QueueState;
-use crate::components::common::{ComponentId, LoadingActivityMsg, Msg};
+use crate::app::task_manager::TaskManager;
+use crate::components::common::{ComponentId, Msg};
 use crate::components::global_key_watcher::GlobalKeyWatcher;
 use crate::components::loading_indicator::LoadingIndicator;
 use crate::components::message_details::MessageDetails;
@@ -100,6 +101,10 @@ impl Model<CrosstermTerminalAdapter> {
         // Create error reporter for enhanced error handling
         let error_reporter = ErrorReporter::new(tx_to_main.clone());
 
+        // Create task manager for consistent async operations
+        let task_manager =
+            TaskManager::new(taskpool.clone(), tx_to_main.clone(), error_reporter.clone());
+
         let queue_state = QueueState::new();
         let mut app = Self {
             app: Self::init_app(&queue_state)?,
@@ -120,6 +125,7 @@ impl Model<CrosstermTerminalAdapter> {
             pending_confirmation_action: None,
             is_editing_message: false,
             error_reporter,
+            task_manager,
         };
 
         // Initialize loading indicator with ComponentState pattern using extension trait
@@ -129,21 +135,8 @@ impl Model<CrosstermTerminalAdapter> {
             Vec::default(),
         )?;
 
-        // Load namespaces and handle any errors through the message system
-        if app
-            .tx_to_main
-            .send(Msg::LoadingActivity(LoadingActivityMsg::Start(
-                "Loading namespaces...".to_string(),
-            )))
-            .is_err()
-        {
-            log::error!("Failed to send loading start message");
-        }
-
-        if let Err(e) = app.load_namespaces() {
-            app.error_reporter
-                .report_simple(e, "Initialization", "load_namespaces");
-        }
+        // Use task manager for loading namespaces instead of direct error handling
+        app.load_namespaces();
 
         Ok(app)
     }

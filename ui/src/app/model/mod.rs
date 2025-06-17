@@ -1,4 +1,5 @@
 use crate::app::queue_state::QueueState;
+use crate::app::task_manager::TaskManager;
 use crate::components::common::{ComponentId, Msg};
 use crate::error::ErrorReporter;
 use azservicebus::ServiceBusClient;
@@ -12,6 +13,7 @@ use tuirealm::terminal::{TerminalAdapter, TerminalBridge};
 use tuirealm::{Application, Update};
 
 // Submodules
+mod async_operations;
 mod initialization;
 mod popup_management;
 mod state_management;
@@ -67,6 +69,9 @@ where
 
     // Enhanced error reporting system
     pub error_reporter: ErrorReporter,
+
+    // Task manager for consistent async operations
+    pub task_manager: TaskManager,
 }
 
 impl<T> Model<T>
@@ -76,8 +81,9 @@ where
     pub fn update_outside_msg(&mut self) {
         // Handle messages sent from background tasks
         while let Ok(msg) = self.rx_to_main.try_recv() {
-            if let Some(msg) = self.update(Some(msg)) {
-                let _ = self.update(Some(msg));
+            let mut msg = Some(msg);
+            while msg.is_some() {
+                msg = self.update(msg);
             }
         }
     }

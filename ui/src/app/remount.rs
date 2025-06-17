@@ -8,6 +8,8 @@ use crate::components::state::ComponentStateMount;
 use crate::error::{AppError, AppResult};
 use tuirealm::terminal::TerminalAdapter;
 
+use super::model::AppState;
+
 impl<T> Model<T>
 where
     T: TerminalAdapter,
@@ -229,6 +231,14 @@ where
             )
             .map_err(|e| AppError::Component(e.to_string()))?;
 
+        // Activate the queue picker component to ensure it receives events
+        self.app
+            .active(&ComponentId::QueuePicker)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        // Set the app state to QueuePicker
+        self.app_state = AppState::QueuePicker;
+
         Ok(())
     }
 
@@ -240,6 +250,14 @@ where
                 Vec::default(),
             )
             .map_err(|e| AppError::Component(e.to_string()))?;
+
+        // Activate the namespace picker component to ensure it receives events
+        self.app
+            .active(&ComponentId::NamespacePicker)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        // Set the app state to NamespacePicker
+        self.app_state = AppState::NamespacePicker;
 
         Ok(())
     }
