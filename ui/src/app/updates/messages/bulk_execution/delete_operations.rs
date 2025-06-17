@@ -4,7 +4,7 @@ use super::task_manager::BulkTaskManager;
 use super::validation::validate_bulk_delete_request;
 use crate::app::model::Model;
 use crate::components::common::{
-    LoadingActivityMsg, MessageActivityMsg, Msg, PopupActivityMsg, QueueType,
+    MessageActivityMsg, Msg, PopupActivityMsg, QueueType,
 };
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
@@ -55,28 +55,13 @@ fn start_bulk_delete_operation<T: TerminalAdapter>(
     message_ids: Vec<MessageIdentifier>,
     consumer: Arc<Mutex<Consumer>>,
 ) -> Option<Msg> {
-    let taskpool = &model.taskpool;
-    let tx_to_main = model.tx_to_main.clone();
     let queue_type = model.queue_state.current_queue_type.clone();
+    let loading_message = format!("Deleting {} messages...", message_ids.len());
+    let tx_to_main = model.tx_to_main.clone();
 
-    // Start loading indicator
-    BulkTaskManager::send_message_or_log_error(
-        &tx_to_main,
-        Msg::LoadingActivity(LoadingActivityMsg::Start(format!(
-            "Deleting {} messages...",
-            message_ids.len()
-        ))),
-        "loading start",
-    );
-
-    // Clone necessary data for the async task
-    let consumer_clone = consumer.clone();
-    let message_ids_clone = message_ids.clone();
-    let tx_to_main_clone = tx_to_main.clone();
-
-    // Spawn delete task
-    taskpool.execute(async move {
-        match execute_bulk_delete_operation(consumer_clone, message_ids_clone).await {
+    // Use TaskManager for proper loading management
+    model.task_manager.execute(loading_message, async move {
+        match execute_bulk_delete_operation(consumer, message_ids.clone()).await {
             Ok(actually_deleted_ids) => {
                 handle_bulk_delete_success(
                     &tx_to_main,
@@ -84,9 +69,12 @@ fn start_bulk_delete_operation<T: TerminalAdapter>(
                     &actually_deleted_ids,
                     queue_type,
                 );
+                Ok(())
             }
             Err(error) => {
-                handle_bulk_delete_error(&tx_to_main, &tx_to_main_clone, error, queue_type);
+                let error_clone = error.clone();
+                handle_bulk_delete_error(&tx_to_main, error, queue_type);
+                Err(error_clone)
             }
         }
     });
@@ -362,13 +350,6 @@ fn handle_bulk_delete_success(
         originally_selected_count
     );
 
-    // Stop loading indicator
-    BulkTaskManager::send_message_or_log_error(
-        tx_to_main,
-        Msg::LoadingActivity(LoadingActivityMsg::Stop),
-        "loading stop",
-    );
-
     // Remove only the messages that were actually deleted from local state
     BulkTaskManager::send_message_or_log_error(
         tx_to_main,
@@ -399,19 +380,11 @@ fn handle_bulk_delete_success(
 
 /// Handle bulk delete operation errors
 fn handle_bulk_delete_error(
-    tx_to_main: &Sender<Msg>,
     tx_to_main_err: &Sender<Msg>,
     error: AppError,
     queue_type: QueueType,
 ) {
     log::error!("Error in bulk delete operation: {}", error);
-
-    // Stop loading indicator
-    BulkTaskManager::send_message_or_log_error(
-        tx_to_main,
-        Msg::LoadingActivity(LoadingActivityMsg::Stop),
-        "loading stop",
-    );
 
     // Show error message
     let queue_name = match queue_type {
