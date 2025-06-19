@@ -276,11 +276,14 @@ where
                 log::error!("Failed to activate messages: {}", e);
             }
         } else {
-            // Normal page change: check if messages should remain focused
-            let should_stay_focused = matches!(self.app_state, AppState::MessagePicker);
+            let messages_currently_focused = self
+                .app
+                .focus()
+                .map(|cid| *cid == ComponentId::Messages)
+                .unwrap_or(false);
 
-            if should_stay_focused {
-                // Keep focus when navigating pages (teal border)
+            if messages_currently_focused {
+                // Keep the teal border and cursor position
                 self.remount_messages_with_focus(true)?;
             } else {
                 // Reset cursor to position 0 when changing pages (no focus)
