@@ -5,10 +5,43 @@ use crate::theme::{
 };
 use once_cell::sync::OnceCell;
 use std::sync::{Arc, Mutex};
+
 use tuirealm::props::Color;
 
 // Global theme manager instance - now wrapped in Mutex for thread-safe updates
 static GLOBAL_THEME_MANAGER: OnceCell<Mutex<ThemeManager>> = OnceCell::new();
+
+// Fallback colors for when theme loading fails
+mod fallback_colors {
+    use tuirealm::props::Color;
+
+    pub const TEXT_PRIMARY: Color = Color::White;
+    pub const TEXT_MUTED: Color = Color::Gray;
+    pub const SURFACE: Color = Color::Black;
+    pub const PRIMARY_ACCENT: Color = Color::Cyan;
+    pub const TITLE_ACCENT: Color = Color::LightCyan;
+    pub const HEADER_ACCENT: Color = Color::Blue;
+    pub const SELECTION_BG: Color = Color::DarkGray;
+    pub const SELECTION_FG: Color = Color::White;
+    pub const MESSAGE_SEQUENCE: Color = Color::Yellow;
+    pub const MESSAGE_ID: Color = Color::LightBlue;
+    pub const MESSAGE_TIMESTAMP: Color = Color::Green;
+    pub const MESSAGE_DELIVERY_COUNT: Color = Color::Magenta;
+    pub const MESSAGE_STATE_READY: Color = Color::Green;
+    pub const MESSAGE_STATE_DEFERRED: Color = Color::Yellow;
+    pub const MESSAGE_STATE_OUTCOME: Color = Color::Blue;
+    pub const MESSAGE_STATE_FAILED: Color = Color::Red;
+    pub const NAMESPACE_LIST_ITEM: Color = Color::White;
+    pub const STATUS_SUCCESS: Color = Color::Green;
+    pub const STATUS_WARNING: Color = Color::Yellow;
+    pub const STATUS_ERROR: Color = Color::Red;
+    pub const STATUS_INFO: Color = Color::Blue;
+    pub const STATUS_LOADING: Color = Color::Cyan;
+    pub const SHORTCUT_KEY: Color = Color::LightCyan;
+    pub const SHORTCUT_DESCRIPTION: Color = Color::Gray;
+    pub const HELP_SECTION_TITLE: Color = Color::LightBlue;
+    pub const POPUP_TEXT: Color = Color::White;
+}
 
 pub struct ThemeManager {
     current_theme: Arc<Theme>,
@@ -41,6 +74,137 @@ impl ThemeManager {
             .expect("Theme manager not initialized. Call ThemeManager::init_global() first.")
     }
 
+    /// Safe helper function to access the theme manager with timeout and fallback
+    fn with_theme_manager<F, R>(f: F, fallback: R) -> R
+    where
+        F: FnOnce(&Arc<Theme>) -> R,
+    {
+        match GLOBAL_THEME_MANAGER.get() {
+            Some(manager_mutex) => {
+                // Try to acquire lock with timeout
+                match manager_mutex.try_lock() {
+                    Ok(manager) => f(&manager.current_theme),
+                    Err(_) => {
+                        log::warn!("Theme manager lock contention, using fallback");
+                        fallback
+                    }
+                }
+            }
+            None => {
+                log::warn!("Theme manager not initialized, using fallback");
+                fallback
+            }
+        }
+    }
+
+    /// Get a color from the theme with fallback
+    fn get_theme_color<F>(color_getter: F, fallback: Color) -> Color
+    where
+        F: FnOnce(&Theme) -> Color,
+    {
+        Self::with_theme_manager(|theme| color_getter(theme), fallback)
+    }
+}
+
+// Macro to generate theme accessor methods with proper error handling and fallbacks
+macro_rules! theme_accessor {
+    ($method:ident, $field:ident, $fallback:expr) => {
+        impl ThemeManager {
+            pub fn $method() -> Color {
+                Self::get_theme_color(
+                    |theme| theme.colors.hex_to_color(&theme.colors.$field),
+                    $fallback,
+                )
+            }
+        }
+    };
+}
+
+// Generate all theme accessor methods
+theme_accessor!(text_primary, text_primary, fallback_colors::TEXT_PRIMARY);
+theme_accessor!(text_muted, text_muted, fallback_colors::TEXT_MUTED);
+theme_accessor!(surface, surface, fallback_colors::SURFACE);
+theme_accessor!(
+    primary_accent,
+    primary_accent,
+    fallback_colors::PRIMARY_ACCENT
+);
+theme_accessor!(title_accent, title_accent, fallback_colors::TITLE_ACCENT);
+theme_accessor!(header_accent, header_accent, fallback_colors::HEADER_ACCENT);
+theme_accessor!(selection_bg, selection_bg, fallback_colors::SELECTION_BG);
+theme_accessor!(selection_fg, selection_fg, fallback_colors::SELECTION_FG);
+theme_accessor!(
+    message_sequence,
+    message_sequence,
+    fallback_colors::MESSAGE_SEQUENCE
+);
+theme_accessor!(message_id, message_id, fallback_colors::MESSAGE_ID);
+theme_accessor!(
+    message_timestamp,
+    message_timestamp,
+    fallback_colors::MESSAGE_TIMESTAMP
+);
+theme_accessor!(
+    message_delivery_count,
+    message_delivery_count,
+    fallback_colors::MESSAGE_DELIVERY_COUNT
+);
+theme_accessor!(
+    message_state_ready,
+    message_state_ready,
+    fallback_colors::MESSAGE_STATE_READY
+);
+theme_accessor!(
+    message_state_deferred,
+    message_state_deferred,
+    fallback_colors::MESSAGE_STATE_DEFERRED
+);
+theme_accessor!(
+    message_state_outcome,
+    message_state_outcome,
+    fallback_colors::MESSAGE_STATE_OUTCOME
+);
+theme_accessor!(
+    message_state_failed,
+    message_state_failed,
+    fallback_colors::MESSAGE_STATE_FAILED
+);
+theme_accessor!(
+    namespace_list_item,
+    namespace_list_item,
+    fallback_colors::NAMESPACE_LIST_ITEM
+);
+theme_accessor!(
+    status_success,
+    status_success,
+    fallback_colors::STATUS_SUCCESS
+);
+theme_accessor!(
+    status_warning,
+    status_warning,
+    fallback_colors::STATUS_WARNING
+);
+theme_accessor!(status_error, status_error, fallback_colors::STATUS_ERROR);
+theme_accessor!(status_info, status_info, fallback_colors::STATUS_INFO);
+theme_accessor!(
+    status_loading,
+    status_loading,
+    fallback_colors::STATUS_LOADING
+);
+theme_accessor!(shortcut_key, shortcut_key, fallback_colors::SHORTCUT_KEY);
+theme_accessor!(
+    shortcut_description,
+    shortcut_description,
+    fallback_colors::SHORTCUT_DESCRIPTION
+);
+theme_accessor!(
+    help_section_title,
+    help_section_title,
+    fallback_colors::HELP_SECTION_TITLE
+);
+theme_accessor!(popup_text, popup_text, fallback_colors::POPUP_TEXT);
+
+impl ThemeManager {
     /// Switch to a new theme by name and flavor
     pub fn switch_theme(&mut self, theme_name: &str, flavor_name: &str) -> AppResult<()> {
         let theme = self.loader.load_theme(theme_name, flavor_name)?;
@@ -52,228 +216,6 @@ impl ThemeManager {
     /// Switch to a new theme using ThemeConfig
     pub fn switch_theme_from_config(&mut self, config: &ThemeConfig) -> AppResult<()> {
         self.switch_theme(&config.theme_name, &config.flavor_name)
-    }
-
-    // === Convenience methods for accessing theme colors ===
-    // These are static methods that access the global theme manager
-
-    // === Core Text Colors ===
-    pub fn text_primary() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.text_primary)
-    }
-
-    pub fn text_muted() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.text_muted)
-    }
-
-    // === Layout Colors ===
-    pub fn surface() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.surface)
-    }
-
-    // === Accent Colors ===
-    pub fn primary_accent() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.primary_accent)
-    }
-
-    pub fn title_accent() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.title_accent)
-    }
-
-    pub fn header_accent() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.header_accent)
-    }
-
-    // === Selection Colors ===
-    pub fn selection_bg() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.selection_bg)
-    }
-
-    pub fn selection_fg() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.selection_fg)
-    }
-
-    // === Message Table Colors ===
-    pub fn message_sequence() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.message_sequence)
-    }
-
-    pub fn message_id() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.message_id)
-    }
-
-    pub fn message_timestamp() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.message_timestamp)
-    }
-
-    pub fn message_delivery_count() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.message_delivery_count)
-    }
-
-    // === Message State Group Colors ===
-    pub fn message_state_ready() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.message_state_ready)
-    }
-
-    pub fn message_state_deferred() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.message_state_deferred)
-    }
-
-    pub fn message_state_outcome() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.message_state_outcome)
-    }
-
-    pub fn message_state_failed() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.message_state_failed)
-    }
-
-    // === List Item Colors ===
-    pub fn namespace_list_item() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.namespace_list_item)
-    }
-
-    // === Status Colors ===
-    pub fn status_success() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.status_success)
-    }
-
-    pub fn status_warning() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.status_warning)
-    }
-
-    pub fn status_error() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.status_error)
-    }
-
-    pub fn status_info() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.status_info)
-    }
-
-    pub fn status_loading() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.status_loading)
-    }
-
-    // === Help System Colors ===
-    pub fn shortcut_key() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.shortcut_key)
-    }
-
-    pub fn shortcut_description() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.shortcut_description)
-    }
-
-    pub fn help_section_title() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.help_section_title)
-    }
-
-    // === Popup System Colors (used by confirmation popup) ===
-
-    pub fn popup_text() -> Color {
-        let manager = Self::global().lock().unwrap();
-        manager
-            .current_theme
-            .colors
-            .hex_to_color(&manager.current_theme.colors.popup_text)
     }
 
     /// Get available themes with metadata
@@ -336,7 +278,22 @@ impl ThemeManager {
 
     /// Static method to get available themes with metadata from global manager
     pub fn global_discover_themes_with_metadata() -> AppResult<ThemeCollectionWithMetadata> {
-        let manager = Self::global().lock().unwrap();
-        manager.discover_themes_with_metadata()
+        match GLOBAL_THEME_MANAGER.get() {
+            Some(manager_mutex) => match manager_mutex.try_lock() {
+                Ok(manager) => manager.discover_themes_with_metadata(),
+                Err(_) => {
+                    log::warn!("Theme manager lock contention during theme discovery");
+                    Err(AppError::Config(
+                        "Theme manager is busy, try again".to_string(),
+                    ))
+                }
+            },
+            None => {
+                log::error!("Theme manager not initialized during theme discovery");
+                Err(AppError::Config(
+                    "Theme manager not initialized".to_string(),
+                ))
+            }
+        }
     }
 }
