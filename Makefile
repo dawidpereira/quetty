@@ -1,8 +1,8 @@
 run:
-	cd ui && cargo run 
+	cd ui && rm -f quetty.log && cargo run 
 
 backtrace:
-	cd ui && RUST_BACKTRACE=1 cargo run
+	cd ui && rm -f quetty.log && RUST_BACKTRACE=1 cargo run
 
 test:
 	cd ui && cargo test
