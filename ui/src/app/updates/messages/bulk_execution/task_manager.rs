@@ -266,7 +266,7 @@ fn handle_bulk_send_success_simple(
     };
 
     // Get auto-reload threshold
-    let auto_reload_threshold = crate::config::CONFIG
+    let auto_reload_threshold = crate::config::get_config_or_panic()
         .bulk_operations()
         .auto_reload_threshold();
 

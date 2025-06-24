@@ -460,7 +460,7 @@ mod tests {
         reporter.report_warning(error, "TestComponent", "test_operation");
 
         // Verify warning message was sent
-        let msg = rx.recv().unwrap();
+        let msg = rx.recv().expect("Should receive warning message");
         assert!(matches!(
             msg,
             Msg::PopupActivity(PopupActivityMsg::ShowWarning(_))
@@ -545,7 +545,7 @@ mod tests {
         reporter.report_critical(error, "Config", "load_config");
 
         // Verify message was sent
-        let msg = rx.recv().unwrap();
+        let msg = rx.recv().expect("Should receive critical error message");
         assert!(matches!(
             msg,
             Msg::PopupActivity(PopupActivityMsg::ShowError(_))
@@ -569,7 +569,7 @@ mod tests {
         );
 
         // Verify message was sent
-        let msg = rx.recv().unwrap();
+        let msg = rx.recv().expect("Should receive detailed error message");
         assert!(matches!(
             msg,
             Msg::PopupActivity(PopupActivityMsg::ShowError(_))

@@ -23,7 +23,7 @@ impl HelpBar {
 
     /// Get the global shortcuts that are always available
     fn get_global_shortcuts(&self) -> Vec<(String, bool)> {
-        let keys = config::CONFIG.keys();
+        let keys = config::get_config_or_panic().keys();
         vec![
             (format!("[{}]", keys.help()), true),
             (" Help ".to_string(), false),
@@ -50,7 +50,7 @@ impl HelpBar {
                 ];
 
                 // Add bulk mode shortcuts - simplified
-                let keys = config::CONFIG.keys();
+                let keys = config::get_config_or_panic().keys();
                 if bulk_mode.unwrap_or(false) {
                     shortcuts.push((format!("[{}]", keys.toggle_selection()), true));
                     shortcuts.push((" Select ".to_string(), false));
@@ -90,7 +90,7 @@ impl HelpBar {
                 shortcuts
             }
             ComponentId::MessageDetails => {
-                let keys = config::CONFIG.keys();
+                let keys = config::get_config_or_panic().keys();
                 vec![
                     ("[e/i]".to_string(), true),
                     (" Edit ".to_string(), false),
@@ -110,7 +110,7 @@ impl HelpBar {
                 ]
             }
             ComponentId::QueuePicker => {
-                let keys = config::CONFIG.keys();
+                let keys = config::get_config_or_panic().keys();
                 vec![
                     (format!("[{}/{}]", keys.up(), keys.down()), true),
                     (" Navigate ".to_string(), false),
@@ -121,7 +121,7 @@ impl HelpBar {
                 ]
             }
             ComponentId::NamespacePicker => {
-                let keys = config::CONFIG.keys();
+                let keys = config::get_config_or_panic().keys();
                 vec![
                     (format!("[{}/{}]", keys.up(), keys.down()), true),
                     (" Navigate ".to_string(), false),
@@ -134,7 +134,7 @@ impl HelpBar {
                 (" Close ".to_string(), false),
             ],
             ComponentId::ConfirmationPopup => {
-                let keys = config::CONFIG.keys();
+                let keys = config::get_config_or_panic().keys();
                 vec![
                     (format!("[{}]", keys.confirm_yes().to_uppercase()), true),
                     (" Yes ".to_string(), false),

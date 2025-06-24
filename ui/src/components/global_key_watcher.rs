@@ -37,7 +37,7 @@ impl Component<Msg, NoUserEvent> for GlobalKeyWatcher {
                     return None;
                 }
 
-                let keys = config::CONFIG.keys();
+                let keys = config::get_config_or_panic().keys();
                 if c == keys.quit() {
                     Some(Msg::AppClose)
                 } else if c == keys.help() {

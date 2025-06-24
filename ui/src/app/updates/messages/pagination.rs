@@ -1,6 +1,6 @@
 use crate::app::model::{AppState, Model};
 use crate::components::common::{ComponentId, MessageActivityMsg, Msg};
-use crate::config::CONFIG;
+use crate::config;
 use crate::error::{AppError, AppResult};
 use server::model::MessageModel;
 
@@ -143,7 +143,7 @@ where
             self.switch_to_loaded_page(next_page);
         } else {
             log::debug!("Loading new page {} from API", next_page);
-            self.load_messages_from_api_with_count(CONFIG.max_messages())?;
+            self.load_messages_from_api_with_count(config::get_config_or_panic().max_messages())?;
         }
 
         Ok(())
@@ -228,7 +228,7 @@ where
     }
 
     fn update_pagination_state(&mut self) {
-        let page_size = CONFIG.max_messages();
+        let page_size = config::get_config_or_panic().max_messages();
         self.queue_state.message_pagination.update(page_size);
 
         log::debug!(
@@ -241,7 +241,7 @@ where
     }
 
     pub fn update_current_page_view(&mut self) -> AppResult<()> {
-        let page_size = CONFIG.max_messages();
+        let page_size = config::get_config_or_panic().max_messages();
         let current_page_messages = self
             .queue_state
             .message_pagination
@@ -317,7 +317,7 @@ where
     /// Check if current page is under-filled and backfill it if needed
     /// Returns Ok(true) if backfilling happened, Ok(false) if no backfilling was needed
     fn check_and_backfill_current_page(&mut self) -> AppResult<bool> {
-        let page_size = CONFIG.max_messages();
+        let page_size = config::get_config_or_panic().max_messages();
         let current_page = self.queue_state.message_pagination.current_page;
         let current_page_messages = self
             .queue_state

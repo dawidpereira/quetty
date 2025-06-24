@@ -48,7 +48,7 @@ impl MockComponent for HelpScreen {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(chunks[1]);
 
-        let keys = config::CONFIG.keys();
+        let keys = config::get_config_or_panic().keys();
 
         // Define key width for consistent alignment
         let key_width = 20;

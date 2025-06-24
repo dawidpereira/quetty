@@ -1,6 +1,6 @@
 use crate::components::common::Msg;
 use crate::components::state::ComponentState;
-use crate::config::CONFIG;
+use crate::config;
 use crate::theme::ThemeManager;
 use std::time::{Duration, Instant};
 use tui_realm_stdlib::Label;
@@ -58,7 +58,7 @@ impl LoadingIndicator {
     // Update the animation frame
     fn update_animation(&mut self) {
         let now = Instant::now();
-        let frame_duration = Duration::from_millis(CONFIG.ui().loading_frame_duration_ms());
+        let frame_duration = Duration::from_millis(config::get_config_or_panic().ui().loading_frame_duration_ms());
         if now.duration_since(self.last_frame_time) >= frame_duration {
             // Move to next frame
             self.frame_index = (self.frame_index + 1) % SPINNER_FRAMES.len();

@@ -10,7 +10,7 @@ mod validation;
 use crate::theme::{ThemeConfig, ThemeManager};
 use app::model::Model;
 use components::common::ComponentId;
-use config::CONFIG;
+
 use error::AppError;
 use log::{debug, error, info};
 use std::error::Error as StdError;
@@ -29,9 +29,9 @@ impl ConfigErrorDisplay {
         validation_errors: Vec<config::ConfigValidationError>,
     ) -> Result<Self, Box<dyn StdError>> {
         // Initialize a minimal model for error display
-        let mut model = Model::new()
-            .await
-            .expect("Failed to initialize model for error display");
+        let mut model = Model::new().await.map_err(|e| {
+            format!("Failed to initialize model for error display: {}", e)
+        })?;
 
         // Show the first error in a popup (most critical one)
         if let Some(first_error) = validation_errors.first() {
@@ -181,14 +181,17 @@ async fn main() -> Result<(), Box<dyn StdError>> {
     info!("Starting Quetty application");
 
     // Load configuration early, but don't validate yet
-    let config_loading_result = std::panic::catch_unwind(|| &*CONFIG);
-
-    let config = match config_loading_result {
-        Ok(config) => config,
-        Err(_) => {
-            let error_msg = "Failed to load configuration. Please check your config.toml file for syntax errors.";
-            error!("{}", error_msg);
-            eprintln!("Critical configuration error: {}", error_msg);
+    let config = match config::get_config() {
+        config::ConfigLoadResult::Success(config) => config,
+        config::ConfigLoadResult::LoadError(error) => {
+            error!("Configuration loading failed: {}", error);
+            eprintln!("Critical configuration error: {}", error);
+            eprintln!("Please fix your configuration and try again.");
+            return Ok(());
+        }
+        config::ConfigLoadResult::DeserializeError(error) => {
+            error!("Configuration parsing failed: {}", error);
+            eprintln!("Critical configuration error: {}", error);
             eprintln!("Please fix your configuration and try again.");
             return Ok(());
         }
@@ -217,8 +220,18 @@ async fn main() -> Result<(), Box<dyn StdError>> {
     info!("Configuration loaded and validated successfully");
 
     // Setup model - now we know config is valid and ThemeManager is initialized
-    let mut model = Model::new().await.expect("Failed to initialize model");
-    info!("Model initialized successfully");
+    let mut model = match Model::new().await {
+        Ok(model) => {
+            info!("Model initialized successfully");
+            model
+        }
+        Err(e) => {
+            error!("Failed to initialize application model: {}", e);
+            eprintln!("Critical initialization error: {}", e);
+            eprintln!("The application cannot start. Please check your configuration and try again.");
+            return Ok(());
+        }
+    };
 
     // Show theme error popup if there was a theme loading issue
     if let ThemeInitializationResult::FallbackSuccess { error_message } = theme_init_result {

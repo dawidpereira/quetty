@@ -1,6 +1,6 @@
 use crate::app::model::Model;
 
-use crate::config::CONFIG;
+use crate::config;
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
 use server::service_bus_manager::QueueType;
@@ -23,8 +23,8 @@ where
     /// Validates that message IDs are not empty and within limits
     fn validate_message_ids(&self, message_ids: &[MessageIdentifier]) -> Result<(), bool> {
         let count = message_ids.len();
-        let min_count = CONFIG.bulk_operations().min_count();
-        let max_count = CONFIG.bulk_operations().max_count();
+        let min_count = config::get_config_or_panic().bulk_operations().min_count();
+        let max_count = config::get_config_or_panic().bulk_operations().max_count();
 
         if count < min_count {
             log::warn!("Insufficient messages for bulk operation: {}", count);
@@ -93,7 +93,7 @@ where
         message_ids: &[MessageIdentifier],
     ) -> Result<(), AppError> {
         // Use the configured maximum batch size
-        let max_batch_size = CONFIG.batch().max_batch_size() as usize;
+        let max_batch_size = config::get_config_or_panic().batch().max_batch_size() as usize;
         if message_ids.len() > max_batch_size {
             return Err(AppError::State(format!(
                 "Batch size {} exceeds maximum allowed size of {}",

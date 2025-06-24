@@ -43,8 +43,11 @@ impl QueueInfo {
                 if self.name.ends_with("/$deadletterqueue") {
                     self.name
                         .strip_suffix("/$deadletterqueue")
-                        .unwrap()
-                        .to_string()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| {
+                            log::warn!("Failed to strip DLQ suffix from queue name: {}", self.name);
+                            self.name.clone()
+                        })
                 } else {
                     self.name.clone()
                 }

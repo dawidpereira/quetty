@@ -224,7 +224,7 @@ mod tests {
 
             assert_some!(error_msg);
             // The error should be formatted nicely but still contain the original message
-            let error_str = error_msg.unwrap().to_string();
+            let error_str = error_msg.expect("Error message should be Some").to_string();
             assert!(error_str.contains("⚙️"), "Should contain config emoji");
             assert!(
                 error_str.contains("Configuration Error"),

@@ -1,6 +1,6 @@
 use super::Model;
 use crate::components::common::{MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg};
-use crate::config::CONFIG;
+use crate::config;
 use crate::error::AppError;
 use server::service_bus_manager::{QueueType, ServiceBusCommand, ServiceBusResponse};
 use server::service_bus_manager::ServiceBusManager;
@@ -19,7 +19,7 @@ where
             .execute("Loading namespaces...", async move {
                 log::debug!("Requesting namespaces from Azure AD");
 
-                let namespaces = ServiceBusManager::list_namespaces_azure_ad(CONFIG.azure_ad())
+                let namespaces = ServiceBusManager::list_namespaces_azure_ad(config::get_config_or_panic().azure_ad())
                     .await
                     .map_err(|e| {
                         log::error!("Failed to list namespaces: {}", e);
@@ -48,7 +48,7 @@ where
             .execute("Loading queues...", async move {
                 log::debug!("Requesting queues from Azure AD");
 
-                let queues = ServiceBusManager::list_queues_azure_ad(CONFIG.azure_ad())
+                let queues = ServiceBusManager::list_queues_azure_ad(config::get_config_or_panic().azure_ad())
                     .await
                     .map_err(|e| {
                         log::error!("Failed to list queues: {}", e);
@@ -137,7 +137,7 @@ where
     pub fn load_messages(&self) {
         let service_bus_manager = self.service_bus_manager.clone();
         let tx_to_main = self.tx_to_main.clone();
-        let max_messages = CONFIG.max_messages();
+        let max_messages = config::get_config_or_panic().max_messages();
 
         self.task_manager.execute("Loading messages...", async move {
             log::debug!("Loading messages from current queue");

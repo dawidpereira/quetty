@@ -302,7 +302,7 @@ impl Component<Msg, NoUserEvent> for ThemePicker {
             Event::Keyboard(KeyEvent {
                 code: Key::Char(c), ..
             }) => {
-                let keys = crate::config::CONFIG.keys();
+                let keys = crate::config::get_config_or_panic().keys();
                 if c == keys.up() {
                     match self.mode {
                         PickerMode::SelectingTheme => {

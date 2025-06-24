@@ -68,7 +68,7 @@ impl MockComponent for ConfirmationPopup {
         // Add empty line for spacing
         lines.push(Line::from(""));
 
-        let keys = config::CONFIG.keys();
+        let keys = config::get_config_or_panic().keys();
         lines.push(Line::from(vec![
             Span::styled(
                 format!("[{}] Yes", keys.confirm_yes().to_uppercase()),
@@ -124,7 +124,7 @@ impl Component<Msg, NoUserEvent> for ConfirmationPopup {
             Event::Keyboard(KeyEvent {
                 code: Key::Char(c), ..
             }) => {
-                let keys = config::CONFIG.keys();
+                let keys = config::get_config_or_panic().keys();
                 let c_lower = c.to_lowercase().next().unwrap_or(c);
                 let yes_key = keys
                     .confirm_yes()

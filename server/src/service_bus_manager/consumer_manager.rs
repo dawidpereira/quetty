@@ -68,10 +68,9 @@ impl ConsumerManager {
         self.current_consumer = Some(Arc::new(Mutex::new(consumer)));
         self.current_queue = Some(queue_info);
 
-        log::info!(
-            "Successfully switched to queue: {}",
-            self.current_queue.as_ref().unwrap().name
-        );
+        if let Some(queue) = self.current_queue.as_ref() {
+            log::info!("Successfully switched to queue: {}", queue.name);
+        }
         Ok(())
     }
 
