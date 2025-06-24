@@ -111,7 +111,7 @@ where
                 let command = ServiceBusCommand::DisposeAllResources;
                 let response = service_bus_manager.lock().await.execute_command(command).await;
                 match response {
-                    AllResourcesDisposed => Ok(()),
+                    ServiceBusResponse::AllResourcesDisposed => Ok(()),
                     ServiceBusResponse::Error { error } => {
                         Err(AppError::ServiceBus(error.to_string()))
                     }
