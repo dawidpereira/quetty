@@ -87,7 +87,7 @@ impl ErrorContext {
         self
     }
 
-    /// Builder pattern method for adding technical details
+    /// Builder pattern method for adding technical details (restored for debugging)
     pub fn with_technical_details(mut self, details: &str) -> Self {
         self.technical_details = Some(details.to_string());
         self
@@ -181,7 +181,8 @@ impl ErrorReporter {
         self.report(error, context);
     }
 
-    /// Report error with full contextual information
+    /// Report error with detailed technical information (restored for service bus debugging)
+    #[allow(dead_code)]
     pub fn report_detailed(
         &self,
         error: AppError,
@@ -269,8 +270,8 @@ impl ErrorReporter {
     fn format_additional_context(&self, context: &ErrorContext) -> String {
         let mut parts = Vec::new();
 
-        if let Some(ref technical) = context.technical_details {
-            parts.push(format!("🔍 Technical: {}", technical));
+        if let Some(ref technical_details) = context.technical_details {
+            parts.push(format!("🔍 Technical: {}", technical_details));
         }
 
         if let Some(ref suggestion) = context.suggestion {
@@ -450,30 +451,6 @@ mod tests {
     }
 
     #[test]
-    fn test_enhanced_error_reporting_features() {
-        let (tx, rx) = mpsc::channel();
-        let reporter = ErrorReporter::new(tx);
-        let error = AppError::Config("Test configuration error".to_string());
-
-        // Test detailed error reporting
-        reporter.report_detailed(
-            error.clone(),
-            "TestComponent",
-            "test_operation",
-            "Custom user message",
-            "Technical details about the error",
-            "Try this to fix the issue",
-        );
-
-        // Verify message was sent
-        let msg = rx.recv().unwrap();
-        assert!(matches!(
-            msg,
-            Msg::PopupActivity(PopupActivityMsg::ShowError(_))
-        ));
-    }
-
-    #[test]
     fn test_warning_severity_reporting() {
         let (tx, rx) = mpsc::channel();
         let reporter = ErrorReporter::new(tx);
@@ -566,6 +543,30 @@ mod tests {
 
         // Test critical error reporting
         reporter.report_critical(error, "Config", "load_config");
+
+        // Verify message was sent
+        let msg = rx.recv().unwrap();
+        assert!(matches!(
+            msg,
+            Msg::PopupActivity(PopupActivityMsg::ShowError(_))
+        ));
+    }
+
+    #[test]
+    fn test_detailed_error_reporting() {
+        let (tx, rx) = mpsc::channel();
+        let reporter = ErrorReporter::new(tx);
+        let error = AppError::ServiceBus("Service bus connection failed".to_string());
+
+        // Test detailed error reporting (restored functionality)
+        reporter.report_detailed(
+            error.clone(),
+            "ServiceBus",
+            "connect",
+            "Failed to connect to service bus",
+            "Connection timeout after 30 seconds",
+            "Check network connectivity and service bus configuration",
+        );
 
         // Verify message was sent
         let msg = rx.recv().unwrap();

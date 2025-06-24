@@ -1,8 +1,8 @@
 use super::component::MessageDetails;
 use crate::components::common::{MessageActivityMsg, Msg, PopupActivityMsg};
+// use crate::components::message_details::navigation::NextPrevAction; // Not needed
 use crate::config;
 use crate::error::AppError;
-use server::bulk_operations::MessageIdentifier;
 use tuirealm::{
     NoUserEvent,
     event::{Event, Key, KeyEvent, KeyModifiers},
@@ -65,9 +65,9 @@ pub fn handle_event(details: &mut MessageDetails, ev: Event<NoUserEvent>) -> Opt
                     }
 
                     // Replace original message with edited content
-                    let message_id = MessageIdentifier::from_message(message);
+                    let message_id = message.id.clone();
                     return Some(Msg::MessageActivity(
-                        MessageActivityMsg::ReplaceEditedMessage(edited_content, message_id),
+                        MessageActivityMsg::ReplaceEditedMessage(edited_content, message_id.into()),
                     ));
                 } else {
                     return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(

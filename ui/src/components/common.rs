@@ -1,13 +1,11 @@
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
-use server::consumer::Consumer;
 use server::model::MessageModel;
+use server::service_bus_manager::QueueInfo;
+use std::fmt;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum QueueType {
-    Main,
-    DeadLetter,
-}
+// Re-export QueueType from service bus instead of defining locally
+pub use server::service_bus_manager::QueueType;
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum ComponentId {
@@ -26,6 +24,26 @@ pub enum ComponentId {
     TextLabel,
 }
 
+impl fmt::Display for ComponentId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ComponentId::TextLabel => write!(f, "TextLabel"),
+            ComponentId::NamespacePicker => write!(f, "NamespacePicker"),
+            ComponentId::QueuePicker => write!(f, "QueuePicker"),
+            ComponentId::Messages => write!(f, "Messages"),
+            ComponentId::MessageDetails => write!(f, "MessageDetails"),
+            ComponentId::GlobalKeyWatcher => write!(f, "GlobalKeyWatcher"),
+            ComponentId::LoadingIndicator => write!(f, "LoadingIndicator"),
+            ComponentId::ConfirmationPopup => write!(f, "ConfirmationPopup"),
+            ComponentId::ErrorPopup => write!(f, "ErrorPopup"),
+            ComponentId::SuccessPopup => write!(f, "SuccessPopup"),
+            ComponentId::HelpScreen => write!(f, "HelpScreen"),
+            ComponentId::NumberInputPopup => write!(f, "NumberInputPopup"),
+            ComponentId::ThemePicker => write!(f, "ThemePicker"),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Msg {
     AppClose,
@@ -38,6 +56,7 @@ pub enum Msg {
     LoadingActivity(LoadingActivityMsg),
     PopupActivity(PopupActivityMsg),
     Error(AppError),
+    ShowError(String),
     ToggleHelpScreen,
     ToggleThemePicker,
 }
@@ -69,8 +88,8 @@ pub enum MessageActivityMsg {
     PreviewMessageDetails(usize),
     CancelEditMessage,
     MessagesLoaded(Vec<MessageModel>),
-    ConsumerCreated(Consumer),
-    QueueNameUpdated(String), // Update current queue name after consumer creation
+    QueueSwitched(QueueInfo),
+    QueueNameUpdated(String),
     NextPage,
     PreviousPage,
     PaginationStateUpdated {
@@ -79,41 +98,35 @@ pub enum MessageActivityMsg {
         current_page: usize,
         total_pages_loaded: usize,
     },
-    NewMessagesLoaded(Vec<MessageModel>), // New messages loaded from API
-    BackfillMessagesLoaded(Vec<MessageModel>), // Messages loaded for backfilling current page
-    PageChanged,                          // Just changed page within already loaded messages
-    // Bulk selection messages
-    ToggleMessageSelectionByIndex(usize), // Helper for UI components
+    NewMessagesLoaded(Vec<MessageModel>),
+    BackfillMessagesLoaded(Vec<MessageModel>),
+    PageChanged,
+    ToggleMessageSelectionByIndex(usize),
     SelectAllCurrentPage,
     SelectAllLoadedMessages,
     ClearAllSelections,
-
-    // Bulk operations - use currently selected messages
     BulkDeleteSelected,
-    BulkSendSelectedToDLQ,
-    BulkResendSelectedFromDLQ(bool), // bool: true = delete from DLQ, false = keep in DLQ
-
-    // Bulk operations - with specific message lists
+    BulkSendSelectedToDLQWithDelete,
+    BulkResendSelectedFromDLQ(bool),
     BulkDeleteMessages(Vec<MessageIdentifier>),
-    BulkSendToDLQ(Vec<MessageIdentifier>),
-    BulkResendFromDLQ(Vec<MessageIdentifier>, bool), // bool: true = delete from DLQ, false = keep in DLQ
+    BulkSendToDLQWithDelete(Vec<MessageIdentifier>),
+    BulkResendFromDLQ(Vec<MessageIdentifier>, bool),
+    BulkRemoveMessagesFromState(Vec<String>),
+    SendEditedMessage(String),
+    ReplaceEditedMessage(String, MessageIdentifier),
+    ComposeNewMessage,
+    SetMessageRepeatCount,
+    UpdateRepeatCount(usize),
+    MessagesSentSuccessfully,
+    EditingModeStarted,
+    EditingModeStopped,
 
-    // Bulk state management - remove multiple messages from local state
-    BulkRemoveMessagesFromState(Vec<MessageIdentifier>),
-
-    // Message editing operations
-    SendEditedMessage(String), // Send edited content as new message
-    ReplaceEditedMessage(String, MessageIdentifier), // Replace original message with edited content
-
-    // Message composition operations
-    ComposeNewMessage,        // Open empty message details in edit mode
-    SetMessageRepeatCount,    // Open popup to set how many times to send message
-    UpdateRepeatCount(usize), // Internal: Update the repeat count value
-    MessagesSentSuccessfully, // Trigger auto-reload after successful message sending
-
-    // Message editing mode state tracking
-    EditingModeStarted, // Notify that message details entered edit mode
-    EditingModeStopped, // Notify that message details exited edit mode
+    BulkDeleteCompleted {
+        successful_count: usize,
+        failed_count: usize,
+        total_count: usize,
+    },
+    ForceReloadMessages,
 }
 
 #[derive(Debug, PartialEq)]
@@ -127,8 +140,6 @@ pub enum PopupActivityMsg {
     ShowError(AppError),
     CloseError,
     ShowWarning(String),
-    #[allow(dead_code)]
-    CloseWarning,
     ShowSuccess(String),
     CloseSuccess,
     ShowConfirmation {
@@ -152,7 +163,6 @@ impl PartialEq for PopupActivityMsg {
             (PopupActivityMsg::ShowError(e1), PopupActivityMsg::ShowError(e2)) => e1 == e2,
             (PopupActivityMsg::CloseError, PopupActivityMsg::CloseError) => true,
             (PopupActivityMsg::ShowWarning(w1), PopupActivityMsg::ShowWarning(w2)) => w1 == w2,
-            (PopupActivityMsg::CloseWarning, PopupActivityMsg::CloseWarning) => true,
             (PopupActivityMsg::ShowSuccess(s1), PopupActivityMsg::ShowSuccess(s2)) => s1 == s2,
             (PopupActivityMsg::CloseSuccess, PopupActivityMsg::CloseSuccess) => true,
             (

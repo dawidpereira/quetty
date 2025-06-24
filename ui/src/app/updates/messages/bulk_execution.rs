@@ -4,8 +4,7 @@ use server::bulk_operations::MessageIdentifier;
 use tuirealm::terminal::TerminalAdapter;
 
 pub mod delete_operations;
-pub mod display_helpers;
-pub mod message_collector;
+
 pub mod send_operations;
 pub mod task_manager;
 pub mod validation;
@@ -30,12 +29,12 @@ where
         send_operations::handle_bulk_resend_from_dlq_only_execution(self, message_ids)
     }
 
-    /// Execute bulk send to DLQ operation
-    pub fn handle_bulk_send_to_dlq_execution(
+    /// Execute bulk send to DLQ operation with deletion (move to DLQ)
+    pub fn handle_bulk_send_to_dlq_with_delete_execution(
         &mut self,
         message_ids: Vec<MessageIdentifier>,
     ) -> Option<Msg> {
-        send_operations::handle_bulk_send_to_dlq_execution(self, message_ids)
+        send_operations::handle_bulk_send_to_dlq_with_delete_execution(self, message_ids)
     }
 
     /// Execute bulk delete operation

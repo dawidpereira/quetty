@@ -2,6 +2,7 @@
 // This allows integration tests to access the modules
 
 pub mod app;
+
 pub mod components;
 pub mod config;
 pub mod error;

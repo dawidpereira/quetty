@@ -1,11 +1,11 @@
-use crate::app::model::{AppState, Model};
+use crate::app::model::AppState;
+use crate::app::model::Model;
 use crate::components::common::{ComponentId, MessageActivityMsg, Msg};
+use crate::config::CONFIG;
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
-use server::consumer::Consumer;
+use server::service_bus_manager::QueueInfo;
 use server::model::MessageModel;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use tuirealm::terminal::TerminalAdapter;
 
 impl<T> Model<T>
@@ -14,7 +14,17 @@ where
 {
     /// Handle initial messages loaded
     pub fn handle_messages_loaded(&mut self, messages: Vec<MessageModel>) -> Option<Msg> {
+        // Initialize pagination state with the loaded messages
+        self.queue_state.message_pagination.reset();
+        self.queue_state.message_pagination.add_loaded_page(messages.clone());
+        
+        // Set the current page messages
         self.queue_state.messages = Some(messages);
+        
+        // Update pagination state to calculate has_next_page properly
+        let page_size = CONFIG.max_messages();
+        self.queue_state.message_pagination.update(page_size);
+        
         if let Err(e) = self.remount_messages_with_focus(true) {
             self.error_reporter
                 .report_simple(e, "MessageStateHandler", "handle_messages_loaded");
@@ -36,12 +46,20 @@ where
         Some(Msg::ForceRedraw)
     }
 
-    /// Handle consumer creation
-    pub fn handle_consumer_created(&mut self, consumer: Consumer) -> Option<Msg> {
-        self.queue_state.consumer = Some(Arc::new(Mutex::new(consumer)));
-        if let Some(pending_queue) = &self.queue_state.pending_queue {
-            self.queue_state.current_queue_name = Some(pending_queue.clone());
-        }
+    /// Handle queue switch completion
+    pub fn handle_queue_switched(
+        &mut self,
+        queue_info: QueueInfo,
+    ) -> Option<Msg> {
+        // Update the queue state with the new queue information
+        self.queue_state.current_queue_name = Some(queue_info.name.clone());
+        self.queue_state.current_queue_type = queue_info.queue_type.clone();
+
+        log::info!(
+            "Queue switched to: {} (type: {:?})",
+            queue_info.name,
+            queue_info.queue_type
+        );
 
         self.reset_pagination_state();
         self.load_messages();
@@ -122,7 +140,7 @@ where
     /// Handle bulk removal of messages from state - now simplified and focused
     pub fn handle_bulk_remove_messages_from_state(
         &mut self,
-        message_ids: Vec<MessageIdentifier>,
+        message_ids: Vec<String>,
     ) -> Option<Msg> {
         if message_ids.is_empty() {
             log::warn!("No message IDs provided for bulk removal");
@@ -134,11 +152,7 @@ where
             message_ids.len()
         );
         for msg_id in &message_ids {
-            log::debug!(
-                "Removing message ID: {}, sequence: {}",
-                msg_id.id,
-                msg_id.sequence
-            );
+            log::debug!("Removing message ID: {}", msg_id);
         }
 
         let removed_count = self.remove_messages_from_pagination_state(&message_ids);
@@ -166,7 +180,7 @@ where
     /// Update pagination and view after state changes
     pub fn update_pagination_and_view(&mut self) -> Option<Msg> {
         // Update the pagination state and messages data
-        let page_size = crate::config::CONFIG.max_messages();
+        let page_size = CONFIG.max_messages();
         let current_page_messages = self
             .queue_state
             .message_pagination
@@ -211,7 +225,7 @@ where
         let current_messages = self
             .queue_state
             .message_pagination
-            .get_current_page_messages(crate::config::CONFIG.max_messages());
+            .get_current_page_messages(CONFIG.max_messages());
 
         let index = if current_messages.is_empty() {
             0
@@ -239,7 +253,7 @@ where
         let current_messages = self
             .queue_state
             .message_pagination
-            .get_current_page_messages(crate::config::CONFIG.max_messages());
+            .get_current_page_messages(CONFIG.max_messages());
         let remaining_on_current_page = current_messages.len();
 
         // If current page is empty and we have other pages, move to previous page
@@ -259,10 +273,7 @@ where
     }
 
     /// Remove messages from pagination state and return count removed
-    pub fn remove_messages_from_pagination_state(
-        &mut self,
-        message_ids: &[MessageIdentifier],
-    ) -> usize {
+    pub fn remove_messages_from_pagination_state(&mut self, message_ids: &[String]) -> usize {
         let initial_count = self
             .queue_state
             .message_pagination
@@ -275,11 +286,7 @@ where
             .message_pagination
             .all_loaded_messages
             .retain(|msg| {
-                let msg_identifier = MessageIdentifier {
-                    id: msg.id.clone(),
-                    sequence: msg.sequence,
-                };
-                let should_keep = !message_ids.contains(&msg_identifier);
+                let should_keep = !message_ids.contains(&msg.id);
 
                 if !should_keep {
                     log::debug!("Removing message: {} (sequence: {})", msg.id, msg.sequence);
@@ -291,16 +298,36 @@ where
             });
 
         if let Some(ref mut messages) = self.queue_state.messages {
-            messages.retain(|msg| {
-                let msg_identifier = MessageIdentifier {
-                    id: msg.id.clone(),
-                    sequence: msg.sequence,
-                };
-                !message_ids.contains(&msg_identifier)
-            });
+            messages.retain(|msg| !message_ids.contains(&msg.id));
         }
 
-        self.queue_state.bulk_selection.remove_messages(message_ids);
+        // Remove messages from bulk selection using proper MessageIdentifier objects
+        // We need to find the actual MessageIdentifier objects with correct sequence numbers
+        let message_ids_to_remove: Vec<MessageIdentifier> = self
+            .queue_state
+            .bulk_selection
+            .selected_messages
+            .iter()
+            .filter(|msg_id| message_ids.contains(&msg_id.id))
+            .cloned()
+            .collect();
+
+        log::debug!(
+            "Removing {} messages from bulk selection (out of {} selected)",
+            message_ids_to_remove.len(),
+            self.queue_state.bulk_selection.selected_messages.len()
+        );
+
+        self.queue_state
+            .bulk_selection
+            .remove_messages(&message_ids_to_remove);
+
+        // If all selected messages were processed, clear the selection entirely
+        // This prevents any residual state from accumulating across operations
+        if self.queue_state.bulk_selection.selected_messages.is_empty() {
+            log::debug!("All selected messages processed, clearing bulk selection state");
+            self.queue_state.bulk_selection.clear_all();
+        }
 
         let final_count = self
             .queue_state
@@ -328,7 +355,11 @@ where
             self.queue_state.message_pagination.current_page = target_page;
         }
 
-        let page_size = crate::config::CONFIG.max_messages();
+        // Update pagination state BEFORE making auto-loading decisions
+        // This ensures has_next_page reflects the current state after message removal
+        self.update_pagination_state_after_removal();
+
+        let page_size = CONFIG.max_messages();
         let current_page = self.queue_state.message_pagination.current_page;
         let current_page_messages = self
             .queue_state
@@ -337,26 +368,50 @@ where
         let current_page_size = current_page_messages.len();
         let page_is_under_filled = current_page_size < page_size as usize;
 
-        let should_auto_fill =
-            page_is_under_filled && self.queue_state.message_pagination.has_next_page;
+        // For single message deletions, be more aggressive about backfilling
+        // Check if this looks like a small deletion that should always trigger backfill
+        let small_deletion_threshold = crate::config::CONFIG
+            .bulk_operations()
+            .small_deletion_threshold();
+        let is_small_deletion = page_is_under_filled
+            && (page_size as usize - current_page_size) <= small_deletion_threshold;
+
+        // Always try to backfill for small deletions, even if has_next_page is false
+        // This handles the case where the pagination state hasn't been updated properly
+        let should_auto_fill = page_is_under_filled
+            && (self.queue_state.message_pagination.has_next_page ||
+            is_small_deletion ||
+            // Additional condition: if we have any loaded messages beyond the current page
+            self.queue_state.message_pagination.all_loaded_messages.len() > (current_page + 1) * page_size as usize);
 
         if should_auto_fill {
             let messages_needed = page_size as usize - current_page_size;
             log::info!(
-                "Page {} is under-filled with {} messages (expected {}), auto-loading {} more",
+                "Page {} is under-filled with {} messages (expected {}), auto-loading {} more (has_next_page: {}, is_small_deletion: {}, total_loaded: {})",
                 current_page + 1,
                 current_page_size,
                 page_size,
-                messages_needed
+                messages_needed,
+                self.queue_state.message_pagination.has_next_page,
+                is_small_deletion,
+                self.queue_state
+                    .message_pagination
+                    .all_loaded_messages
+                    .len()
             );
 
             self.load_messages_for_backfill(messages_needed as u32)?;
             return Ok(true);
         } else if page_is_under_filled {
             log::debug!(
-                "Page {} has {} messages but no more messages available from API - no auto-loading needed",
+                "Page {} has {} messages but no more messages available from API and not a small deletion - no auto-loading needed (has_next_page: {}, total_loaded: {})",
                 current_page + 1,
-                current_page_size
+                current_page_size,
+                self.queue_state.message_pagination.has_next_page,
+                self.queue_state
+                    .message_pagination
+                    .all_loaded_messages
+                    .len()
             );
         } else {
             log::debug!(
@@ -369,9 +424,61 @@ where
         Ok(false) // No backfilling happened
     }
 
+    /// Update pagination state after message removal (called before auto-loading decisions)
+    fn update_pagination_state_after_removal(&mut self) {
+        let messages_per_page = CONFIG.max_messages();
+        let total_messages = self
+            .queue_state
+            .message_pagination
+            .all_loaded_messages
+            .len();
+
+        let new_total_pages = if total_messages == 0 {
+            0
+        } else {
+            total_messages.div_ceil(messages_per_page as usize)
+        };
+
+        self.queue_state.message_pagination.total_pages_loaded = new_total_pages;
+
+        // Ensure current page is within bounds
+        if new_total_pages == 0 {
+            self.queue_state.message_pagination.current_page = 0;
+        } else if self.queue_state.message_pagination.current_page >= new_total_pages {
+            self.queue_state.message_pagination.current_page = new_total_pages - 1;
+        }
+
+        // Update pagination controls based on current state
+        self.queue_state.message_pagination.has_previous_page =
+            self.queue_state.message_pagination.current_page > 0;
+
+        // For has_next_page, we need to be more optimistic about potential messages
+        // If we're on the last loaded page but it's under-filled, there might be more messages
+        let current_page_messages = self
+            .queue_state
+            .message_pagination
+            .get_current_page_messages(messages_per_page);
+        let current_page_size = current_page_messages.len();
+        let page_is_under_filled = current_page_size < messages_per_page as usize;
+
+        self.queue_state.message_pagination.has_next_page =
+            self.queue_state.message_pagination.current_page < new_total_pages.saturating_sub(1)
+                || (page_is_under_filled && new_total_pages > 0); // Assume more messages might be available if page is under-filled
+
+        log::debug!(
+            "Updated pagination state after removal: page {}/{}, current page: {}, has_next: {}, page_size: {}/{}",
+            self.queue_state.message_pagination.current_page + 1,
+            new_total_pages,
+            self.queue_state.message_pagination.current_page,
+            self.queue_state.message_pagination.has_next_page,
+            current_page_size,
+            messages_per_page
+        );
+    }
+
     /// Finalize bulk removal pagination
     pub fn finalize_bulk_removal_pagination(&mut self) {
-        let messages_per_page = crate::config::CONFIG.max_messages();
+        let messages_per_page = CONFIG.max_messages();
 
         let total_messages = self
             .queue_state
@@ -407,6 +514,38 @@ where
         );
     }
 
+    /// Handle bulk delete completion
+    pub fn handle_bulk_delete_completed(
+        &mut self,
+        successful_count: usize,
+        failed_count: usize,
+        total_count: usize,
+    ) -> Option<Msg> {
+        // Show success/status popup
+        let queue_name = match &self.queue_state.current_queue_type {
+            server::service_bus_manager::QueueType::Main => "main queue",
+            server::service_bus_manager::QueueType::DeadLetter => "dead letter queue",
+        };
+
+        let success_message = if failed_count == 0 {
+            format!(
+                "✅ Successfully deleted {} message{} from {}",
+                successful_count,
+                if successful_count == 1 { "" } else { "s" },
+                queue_name
+            )
+        } else {
+            format!(
+                "⚠️ Bulk delete completed: {} successful, {} failed from {} (total: {})",
+                successful_count, failed_count, queue_name, total_count
+            )
+        };
+
+        Some(Msg::PopupActivity(
+            crate::components::common::PopupActivityMsg::ShowSuccess(success_message),
+        ))
+    }
+
     /// Add backfill messages to state
     pub fn add_backfill_messages_to_state(&mut self, messages: Vec<MessageModel>) {
         log::info!("Adding {} backfill messages to state", messages.len());
@@ -432,7 +571,7 @@ where
             .message_pagination
             .all_loaded_messages
             .len();
-        let messages_per_page = crate::config::CONFIG.max_messages();
+        let messages_per_page = CONFIG.max_messages();
 
         let new_total_pages = if total_messages == 0 {
             0

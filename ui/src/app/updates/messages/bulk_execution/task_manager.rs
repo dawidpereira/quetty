@@ -1,13 +1,11 @@
+use crate::app::bulk_operation_processor::BulkOperationPostProcessor;
 use crate::components::common::{LoadingActivityMsg, Msg};
 use crate::error::AppError;
-use azservicebus::{ServiceBusClient, core::BasicRetryPolicy};
-use server::bulk_operations::{BulkOperationContext, BulkSendParams, MessageIdentifier};
-use server::bulk_operations::{BulkOperationHandler, BulkOperationResult};
-use server::consumer::Consumer;
+use server::bulk_operations::{BulkOperationResult, MessageIdentifier};
+use server::service_bus_manager::{ServiceBusCommand, ServiceBusManager, ServiceBusResponse};
 use server::taskpool::TaskPool;
-use std::error::Error;
-use std::sync::Arc;
 use std::sync::mpsc::Sender;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 // Constants for consistent queue display names
@@ -15,8 +13,8 @@ pub const DLQ_DISPLAY_NAME: &str = "DLQ";
 pub const MAIN_QUEUE_DISPLAY_NAME: &str = "Main";
 
 /// Parameters for bulk send operations
-pub struct BulkSendOperationParams {
-    pub consumer: Arc<Mutex<Consumer>>,
+#[derive(Clone)]
+pub struct BulkSendParams {
     pub target_queue: String,
     pub should_delete: bool,
     pub loading_message_template: String,
@@ -24,9 +22,8 @@ pub struct BulkSendOperationParams {
     pub to_queue_display: String,
 }
 
-impl BulkSendOperationParams {
+impl BulkSendParams {
     pub fn new(
-        consumer: Arc<Mutex<Consumer>>,
         target_queue: String,
         should_delete: bool,
         loading_message_template: &str,
@@ -34,7 +31,6 @@ impl BulkSendOperationParams {
         to_queue_display: &str,
     ) -> Self {
         Self {
-            consumer,
             target_queue,
             should_delete,
             loading_message_template: loading_message_template.to_string(),
@@ -46,8 +42,8 @@ impl BulkSendOperationParams {
 
 /// Data types for bulk send operations
 pub enum BulkSendData {
-    MessageIds(Vec<MessageIdentifier>),
-    MessageData(Vec<(MessageIdentifier, Vec<u8>)>),
+    MessageIds(Vec<String>),
+    MessageData(Vec<(String, Vec<u8>)>),
 }
 
 impl BulkSendData {
@@ -62,25 +58,28 @@ impl BulkSendData {
 /// Task parameters for async bulk send operations
 pub struct BulkSendTaskParams {
     pub bulk_data: BulkSendData,
-    pub operation_params: BulkSendOperationParams,
-    pub service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+    pub operation_params: BulkSendParams,
+    pub service_bus_manager: Arc<Mutex<ServiceBusManager>>,
     pub tx_to_main: Sender<Msg>,
     pub tx_to_main_err: Sender<Msg>,
+    pub repeat_count: usize,
 }
 
 impl BulkSendTaskParams {
     pub fn new(
         bulk_data: BulkSendData,
-        operation_params: BulkSendOperationParams,
-        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+        operation_params: BulkSendParams,
+        service_bus_manager: Arc<Mutex<ServiceBusManager>>,
         tx_to_main: Sender<Msg>,
+        repeat_count: usize,
     ) -> Self {
         Self {
             bulk_data,
             operation_params,
-            service_bus_client,
+            service_bus_manager,
             tx_to_main_err: tx_to_main.clone(),
             tx_to_main,
+            repeat_count,
         }
     }
 
@@ -139,50 +138,80 @@ pub async fn execute_bulk_send_task(params: BulkSendTaskParams) {
         params.message_count()
     );
 
-    // Use the service bus client reference directly
+    // Execute the bulk send operation using service bus manager
+    let result = match &params.bulk_data {
+        BulkSendData::MessageData(messages_data) => {
+            // Convert to the format expected by the service bus manager
+            let messages_data_converted: Vec<(MessageIdentifier, Vec<u8>)> = messages_data
+                .iter()
+                .map(|(id, data)| (MessageIdentifier::new(id.clone(), 0), data.clone()))
+                .collect();
 
-    // Use the application's loaded configuration
-    let bulk_handler = BulkOperationHandler::new(crate::config::CONFIG.batch().clone());
+            let command = ServiceBusCommand::BulkSendPeeked {
+                messages_data: messages_data_converted,
+                target_queue: params.operation_params.target_queue.clone(),
+                should_delete_source: params.operation_params.should_delete,
+                repeat_count: params.repeat_count,
+            };
 
-    // Create operation context and parameters
-    let operation_context = BulkOperationContext::new(
-        params.operation_params.consumer.clone(),
-        params.service_bus_client.clone(),
-        params.operation_params.target_queue.clone(),
-    );
+            let response = params.service_bus_manager.lock().await.execute_command(command).await;
 
-    // Create BulkSendParams based on the data type
-    let bulk_send_params = create_bulk_send_params(&params.bulk_data, &params.operation_params);
+            match response {
+                ServiceBusResponse::MessagesSent { stats, .. } => {
+                    log::info!("Bulk send with data completed successfully: {:?}", stats);
+                    // Convert OperationStats to BulkOperationResult
+                    let mut result = BulkOperationResult::new(params.message_count());
+                    result.successful = stats.successful;
+                    result.failed = stats.failed;
+                    Ok(result)
+                }
+                ServiceBusResponse::Error { error } => {
+                    log::error!("Bulk send with data failed: {}", error);
+                    Err(AppError::ServiceBus(error.to_string()))
+                }
+                _ => {
+                    Err(AppError::ServiceBus("Unexpected response for bulk send peeked".to_string()))
+                }
+            }
+        }
+        BulkSendData::MessageIds(message_ids) => {
+            // Convert to the format expected by the service bus manager
+            let message_ids_converted: Vec<MessageIdentifier> = message_ids
+                .iter()
+                .map(|id| MessageIdentifier::new(id.clone(), 0))
+                .collect();
 
-    let result = bulk_handler
-        .bulk_send(operation_context, bulk_send_params)
-        .await;
+            let command = ServiceBusCommand::BulkSend {
+                message_ids: message_ids_converted,
+                target_queue: params.operation_params.target_queue.clone(),
+                should_delete_source: params.operation_params.should_delete,
+                repeat_count: params.repeat_count,
+            };
 
-    handle_bulk_send_task_result(result, params);
+            let response = params.service_bus_manager.lock().await.execute_command(command).await;
+
+            match response {
+                ServiceBusResponse::BulkOperationCompleted { result } => {
+                    log::info!("Bulk send with IDs completed successfully: {:?}", result);
+                    Ok(result)
+                }
+                ServiceBusResponse::Error { error } => {
+                    log::error!("Bulk send with IDs failed: {}", error);
+                    Err(AppError::ServiceBus(error.to_string()))
+                }
+                _ => {
+                    Err(AppError::ServiceBus("Unexpected response for bulk send".to_string()))
+                }
+            }
+        }
+    };
+
+    handle_bulk_send_task_result_simple(result, params);
 }
 
-/// Create bulk send parameters based on data type
-pub fn create_bulk_send_params(
-    bulk_data: &BulkSendData,
-    operation_params: &BulkSendOperationParams,
-) -> BulkSendParams {
-    match bulk_data {
-        BulkSendData::MessageIds(message_ids) => BulkSendParams::with_retrieval(
-            operation_params.target_queue.clone(),
-            operation_params.should_delete,
-            message_ids.clone(),
-        ),
-        BulkSendData::MessageData(messages_data) => BulkSendParams::with_message_data(
-            operation_params.target_queue.clone(),
-            operation_params.should_delete,
-            messages_data.clone(),
-        ),
-    }
-}
-
-/// Handle the result of the bulk send task
-pub fn handle_bulk_send_task_result(
-    result: Result<BulkOperationResult, Box<dyn Error>>,
+/// Handle the result of the bulk send task (simplified version)
+pub fn handle_bulk_send_task_result_simple(
+    result: Result<BulkOperationResult, crate::error::AppError>,
     params: BulkSendTaskParams,
 ) {
     match result {
@@ -194,7 +223,7 @@ pub fn handle_bulk_send_task_result(
                 operation_result.not_found
             );
 
-            handle_bulk_send_success(
+            handle_bulk_send_success_simple(
                 &params.tx_to_main,
                 operation_result,
                 &params.operation_params,
@@ -215,11 +244,11 @@ pub fn handle_bulk_send_task_result(
     }
 }
 
-/// Handle successful bulk send operation
-fn handle_bulk_send_success(
+/// Handle successful bulk send operation (simplified version)
+fn handle_bulk_send_success_simple(
     tx_to_main: &Sender<Msg>,
     result: BulkOperationResult,
-    operation_params: &BulkSendOperationParams,
+    operation_params: &BulkSendParams,
     bulk_data: &BulkSendData,
 ) {
     // Stop loading indicator
@@ -229,35 +258,31 @@ fn handle_bulk_send_success(
         "loading stop",
     );
 
-    // If messages should be deleted (moved, not copied), remove them from the local state
-    if operation_params.should_delete && result.successful > 0 {
-        let message_ids_to_remove =
-            extract_successfully_processed_message_ids(bulk_data, result.successful);
+    // Extract message IDs for centralized processing
+    let message_ids = if operation_params.should_delete && result.successful > 0 {
+        BulkOperationPostProcessor::extract_successfully_processed_message_ids(bulk_data, result.successful)
+    } else {
+        vec![] // No message IDs needed if not deleting or no successful operations
+    };
 
-        if !message_ids_to_remove.is_empty() {
-            log::info!(
-                "Removing {} successfully processed messages from local state",
-                message_ids_to_remove.len()
-            );
-            BulkTaskManager::send_message_or_log_error(
-                tx_to_main,
-                Msg::MessageActivity(
-                    crate::components::common::MessageActivityMsg::BulkRemoveMessagesFromState(
-                        message_ids_to_remove,
-                    ),
-                ),
-                "bulk remove from state",
-            );
-        }
-    }
+    // Get auto-reload threshold
+    let auto_reload_threshold = crate::config::CONFIG
+        .bulk_operations()
+        .auto_reload_threshold();
 
-    // Show success message
-    let success_message = format_bulk_send_success_message(&result, operation_params);
+    // Create context for centralized post-processing
+    let context = BulkOperationPostProcessor::create_send_context(
+        &result,
+        message_ids,
+        auto_reload_threshold,
+        operation_params.from_queue_display.clone(),
+        operation_params.to_queue_display.clone(),
+        operation_params.should_delete,
+    );
 
-    if let Err(e) = tx_to_main.send(Msg::PopupActivity(
-        crate::components::common::PopupActivityMsg::ShowSuccess(success_message),
-    )) {
-        log::error!("Failed to send success popup message: {}", e);
+    // Use centralized post-processor to handle completion
+    if let Err(e) = BulkOperationPostProcessor::handle_completion(&context, tx_to_main) {
+        log::error!("Failed to handle bulk send completion: {}", e);
     }
 }
 
@@ -290,72 +315,4 @@ fn handle_bulk_send_error(
     );
 }
 
-/// Extract message IDs that were successfully processed for removal from local state
-fn extract_successfully_processed_message_ids(
-    bulk_data: &BulkSendData,
-    successful_count: usize,
-) -> Vec<MessageIdentifier> {
-    match bulk_data {
-        BulkSendData::MessageIds(message_ids) => {
-            // Take up to the successful count from the original message IDs
-            // Note: This assumes the bulk operation processes messages in order
-            // For more precise tracking, we would need the actual IDs from the operation result
-            message_ids.iter().take(successful_count).cloned().collect()
-        }
-        BulkSendData::MessageData(messages_data) => {
-            // Extract message IDs from the message data
-            messages_data
-                .iter()
-                .take(successful_count)
-                .map(|(id, _)| id.clone())
-                .collect()
-        }
-    }
-}
 
-/// Format success message for bulk send operations
-fn format_bulk_send_success_message(
-    result: &BulkOperationResult,
-    operation_params: &BulkSendOperationParams,
-) -> String {
-    if result.failed > 0 || result.not_found > 0 {
-        // Partial success case
-        format!(
-            "Bulk {} operation completed with mixed results:\n\n\
-            ✅ Successfully processed: {} messages\n\
-            ❌ Failed: {} messages\n\
-            ⚠️  Not found: {} messages\n\n\
-            Direction: {} → {}",
-            if operation_params.should_delete {
-                "move"
-            } else {
-                "copy"
-            },
-            result.successful,
-            result.failed,
-            result.not_found,
-            operation_params.from_queue_display,
-            operation_params.to_queue_display
-        )
-    } else {
-        // Full success case
-        format!(
-            "✅ Bulk {} operation completed successfully!\n\n\
-            📦 {} messages processed from {} to {}\n\n\
-            All messages were {} successfully.",
-            if operation_params.should_delete {
-                "move"
-            } else {
-                "copy"
-            },
-            result.successful,
-            operation_params.from_queue_display,
-            operation_params.to_queue_display,
-            if operation_params.should_delete {
-                "moved"
-            } else {
-                "copied"
-            }
-        )
-    }
-}

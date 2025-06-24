@@ -8,7 +8,6 @@ pub mod bulk_execution;
 pub mod loading;
 pub mod pagination;
 pub mod updates;
-pub mod utils;
 pub use pagination::MessagePaginationState;
 
 impl<T> Model<T>
@@ -31,12 +30,13 @@ where
 
             // Bulk execution operations
             MessageActivityMsg::BulkDeleteSelected
-            | MessageActivityMsg::BulkSendSelectedToDLQ
+            | MessageActivityMsg::BulkSendSelectedToDLQWithDelete
             | MessageActivityMsg::BulkResendSelectedFromDLQ(_)
             | MessageActivityMsg::BulkDeleteMessages(_)
-            | MessageActivityMsg::BulkSendToDLQ(_)
+            | MessageActivityMsg::BulkSendToDLQWithDelete(_)
             | MessageActivityMsg::BulkResendFromDLQ(_, _)
-            | MessageActivityMsg::BulkRemoveMessagesFromState(_) => {
+            | MessageActivityMsg::BulkRemoveMessagesFromState(_)
+            | MessageActivityMsg::BulkDeleteCompleted { .. } => {
                 self.handle_bulk_execution_operations(msg)
             }
 
@@ -55,6 +55,9 @@ where
             | MessageActivityMsg::MessagesSentSuccessfully => {
                 self.handle_composition_operations(msg)
             }
+
+            // Force reload operations
+            MessageActivityMsg::ForceReloadMessages => self.handle_force_reload_messages(),
 
             // State management operations
             _ => self.handle_state_management_operations(msg),
@@ -93,15 +96,18 @@ where
     fn handle_bulk_execution_operations(&mut self, msg: MessageActivityMsg) -> Option<Msg> {
         match msg {
             MessageActivityMsg::BulkDeleteSelected => self.handle_bulk_delete_selected(),
-            MessageActivityMsg::BulkSendSelectedToDLQ => self.handle_bulk_send_selected_to_dlq(),
+            MessageActivityMsg::BulkSendSelectedToDLQWithDelete => {
+                self.handle_bulk_send_selected_to_dlq_with_delete()
+            }
             MessageActivityMsg::BulkResendSelectedFromDLQ(delete_from_dlq) => {
                 self.handle_bulk_resend_selected_from_dlq(delete_from_dlq)
             }
             MessageActivityMsg::BulkDeleteMessages(message_ids) => {
                 self.handle_bulk_delete_execution(message_ids)
             }
-            MessageActivityMsg::BulkSendToDLQ(message_ids) => {
-                self.handle_bulk_send_to_dlq_execution(message_ids)
+
+            MessageActivityMsg::BulkSendToDLQWithDelete(message_ids) => {
+                self.handle_bulk_send_to_dlq_with_delete_execution(message_ids)
             }
             MessageActivityMsg::BulkResendFromDLQ(message_ids, delete_from_dlq) => {
                 if delete_from_dlq {
@@ -113,6 +119,11 @@ where
             MessageActivityMsg::BulkRemoveMessagesFromState(message_ids) => {
                 self.handle_bulk_remove_messages_from_state(message_ids)
             }
+            MessageActivityMsg::BulkDeleteCompleted {
+                successful_count,
+                failed_count,
+                total_count,
+            } => self.handle_bulk_delete_completed(successful_count, failed_count, total_count),
             _ => None,
         }
     }
@@ -155,7 +166,7 @@ where
     fn handle_state_management_operations(&mut self, msg: MessageActivityMsg) -> Option<Msg> {
         match msg {
             MessageActivityMsg::MessagesLoaded(messages) => self.handle_messages_loaded(messages),
-            MessageActivityMsg::ConsumerCreated(consumer) => self.handle_consumer_created(consumer),
+            MessageActivityMsg::QueueSwitched(queue_info) => self.handle_queue_switched(queue_info),
             MessageActivityMsg::QueueNameUpdated(queue_name) => {
                 self.handle_queue_name_updated(queue_name)
             }
@@ -168,6 +179,7 @@ where
             MessageActivityMsg::BackfillMessagesLoaded(backfill_messages) => {
                 self.handle_backfill_messages_loaded(backfill_messages)
             }
+            MessageActivityMsg::ForceReloadMessages => self.handle_force_reload_messages(),
             _ => None,
         }
     }

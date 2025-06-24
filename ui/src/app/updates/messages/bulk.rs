@@ -49,16 +49,19 @@ where
         }))
     }
 
-    /// Handle bulk send to DLQ operation
-    pub fn handle_bulk_send_to_dlq(&mut self, message_ids: Vec<MessageIdentifier>) -> Option<Msg> {
+    /// Handle bulk send to DLQ operation with deletion (move to DLQ)
+    pub fn handle_bulk_send_to_dlq_with_delete(
+        &mut self,
+        message_ids: Vec<MessageIdentifier>,
+    ) -> Option<Msg> {
         if message_ids.is_empty() {
             return None;
         }
 
         let count = message_ids.len();
-        let title = "Send to Dead Letter Queue".to_string();
+        let title = "Move to Dead Letter Queue".to_string();
         let message = format!(
-            "You are about to send {} message{} to the dead letter queue.\n\n📤 Action: Messages will be moved to the DLQ\n🔄 Result: Messages can be processed or resent later",
+            "You are about to move {} message{} to the dead letter queue.\n\n📤 Action: Messages will be moved to the DLQ\n🗑️  Result: Messages will be DELETED from the main queue",
             count,
             if count == 1 { "" } else { "s" }
         );
@@ -66,9 +69,9 @@ where
         Some(Msg::PopupActivity(PopupActivityMsg::ShowConfirmation {
             title,
             message,
-            on_confirm: Box::new(Msg::MessageActivity(MessageActivityMsg::BulkSendToDLQ(
-                message_ids,
-            ))),
+            on_confirm: Box::new(Msg::MessageActivity(
+                MessageActivityMsg::BulkSendToDLQWithDelete(message_ids),
+            )),
         }))
     }
 
@@ -139,18 +142,18 @@ where
         None
     }
 
-    /// Handle bulk send to DLQ for currently selected messages or current message
-    pub fn handle_bulk_send_selected_to_dlq(&mut self) -> Option<Msg> {
+    /// Handle bulk send to DLQ with delete for currently selected messages or current message
+    pub fn handle_bulk_send_selected_to_dlq_with_delete(&mut self) -> Option<Msg> {
         let selected_messages = self.queue_state.bulk_selection.get_selected_messages();
         if !selected_messages.is_empty() {
             // Use bulk selected messages
-            return self.handle_bulk_send_to_dlq(selected_messages);
+            return self.handle_bulk_send_to_dlq_with_delete(selected_messages);
         }
 
         // No bulk selections - use current message as single-item bulk operation
         if let Some(current_message) = self.get_current_message() {
             let current_message_id = MessageIdentifier::from_message(&current_message);
-            return self.handle_bulk_send_to_dlq(vec![current_message_id]);
+            return self.handle_bulk_send_to_dlq_with_delete(vec![current_message_id]);
         }
 
         // No current message available
