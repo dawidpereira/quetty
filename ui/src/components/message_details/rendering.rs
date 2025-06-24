@@ -160,7 +160,7 @@ fn create_cursor_highlighted_spans<'a>(
 /// Create the status bar showing current position and mode
 fn create_status_bar(details: &MessageDetails) -> Paragraph {
     let status_text = if details.is_editing {
-        let keys = crate::config::CONFIG.keys();
+        let keys = crate::config::get_config_or_panic().keys();
 
         // Add repeat count info if we're in composition mode
         let repeat_info = if let Some(count) = details.repeat_count {

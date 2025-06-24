@@ -133,7 +133,7 @@ impl Component<Msg, NoUserEvent> for NamespacePicker {
             Event::Keyboard(KeyEvent {
                 code: Key::Char(c), ..
             }) => {
-                let keys = config::CONFIG.keys();
+                let keys = config::get_config_or_panic().keys();
                 if c == keys.down() {
                     if self.selected + 1 < self.namespaces.len() {
                         self.selected += 1;

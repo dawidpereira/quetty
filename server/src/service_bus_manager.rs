@@ -24,42 +24,59 @@ pub struct AzureAdConfig {
 }
 
 impl AzureAdConfig {
-    pub fn tenant_id(&self) -> &str {
+    pub fn tenant_id(&self) -> Result<&str, ServiceBusError> {
         self.tenant_id.as_deref()
-            .expect("AZURE_AD__TENANT_ID is required but not found in configuration or environment variables. Please set this value in .env file or environment.")
+            .ok_or_else(|| ServiceBusError::ConfigurationError(
+                "AZURE_AD__TENANT_ID is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
+            ))
     }
-    pub fn client_id(&self) -> &str {
+    
+    pub fn client_id(&self) -> Result<&str, ServiceBusError> {
         self.client_id.as_deref()
-            .expect("AZURE_AD__CLIENT_ID is required but not found in configuration or environment variables. Please set this value in .env file or environment.")
+            .ok_or_else(|| ServiceBusError::ConfigurationError(
+                "AZURE_AD__CLIENT_ID is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
+            ))
     }
-    pub fn client_secret(&self) -> &str {
+    
+    pub fn client_secret(&self) -> Result<&str, ServiceBusError> {
         self.client_secret.as_deref()
-            .expect("AZURE_AD__CLIENT_SECRET is required but not found in configuration or environment variables. Please set this value in .env file or environment.")
+            .ok_or_else(|| ServiceBusError::ConfigurationError(
+                "AZURE_AD__CLIENT_SECRET is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
+            ))
     }
-    pub fn subscription_id(&self) -> &str {
+    
+    pub fn subscription_id(&self) -> Result<&str, ServiceBusError> {
         self.subscription_id.as_deref()
-            .expect("AZURE_AD__SUBSCRIPTION_ID is required but not found in configuration or environment variables. Please set this value in .env file or environment.")
+            .ok_or_else(|| ServiceBusError::ConfigurationError(
+                "AZURE_AD__SUBSCRIPTION_ID is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
+            ))
     }
-    pub fn resource_group(&self) -> &str {
+    
+    pub fn resource_group(&self) -> Result<&str, ServiceBusError> {
         self.resource_group.as_deref()
-            .expect("AZURE_AD__RESOURCE_GROUP is required but not found in configuration or environment variables. Please set this value in .env file or environment.")
+            .ok_or_else(|| ServiceBusError::ConfigurationError(
+                "AZURE_AD__RESOURCE_GROUP is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
+            ))
     }
-    pub fn namespace(&self) -> &str {
+    
+    pub fn namespace(&self) -> Result<&str, ServiceBusError> {
         self.namespace.as_deref()
-            .expect("AZURE_AD__NAMESPACE is required but not found in configuration or environment variables. Please set this value in .env file or environment.")
+            .ok_or_else(|| ServiceBusError::ConfigurationError(
+                "AZURE_AD__NAMESPACE is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
+            ))
     }
 
     /// Azure AD operations
     pub async fn get_azure_ad_token(&self) -> Result<String, Box<dyn std::error::Error>> {
         let url = format!(
             "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
-            self.tenant_id()
+            self.tenant_id()?
         );
         let client = reqwest::Client::new();
         let params = [
             ("grant_type", "client_credentials"),
-            ("client_id", self.client_id()),
-            ("client_secret", self.client_secret()),
+            ("client_id", self.client_id()?),
+            ("client_secret", self.client_secret()?),
             ("scope", "https://management.azure.com/.default"),
         ];
         let resp = client.post(url).form(&params).send().await?;
@@ -75,9 +92,9 @@ impl AzureAdConfig {
         let token = self.get_azure_ad_token().await?;
         let url = format!(
             "https://management.azure.com/subscriptions/{}/resourceGroups/{}/providers/Microsoft.ServiceBus/namespaces/{}/queues?api-version=2017-04-01",
-            self.subscription_id(),
-            self.resource_group(),
-            self.namespace()
+            self.subscription_id()?,
+            self.resource_group()?,
+            self.namespace()?
         );
         let client = reqwest::Client::new();
         let resp = client.get(url).bearer_auth(token).send().await?;
@@ -99,8 +116,8 @@ impl AzureAdConfig {
         let token = self.get_azure_ad_token().await?;
         let url = format!(
             "https://management.azure.com/subscriptions/{}/resourceGroups/{}/providers/Microsoft.ServiceBus/namespaces?api-version=2017-04-01",
-            self.subscription_id(),
-            self.resource_group()
+            self.subscription_id()?,
+            self.resource_group()?
         );
         let client = reqwest::Client::new();
         let resp = client.get(url).bearer_auth(token).send().await?;

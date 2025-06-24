@@ -24,7 +24,7 @@ pub fn handle_bulk_delete_execution<T: TerminalAdapter>(
     let current_message_count = model
         .queue_state
         .message_pagination
-        .get_current_page_messages(crate::config::CONFIG.max_messages())
+        .get_current_page_messages(crate::config::get_config_or_panic().max_messages())
         .len();
     let selected_from_current_page = message_ids
         .iter()
@@ -41,7 +41,7 @@ pub fn handle_bulk_delete_execution<T: TerminalAdapter>(
     let service_bus_manager = model.service_bus_manager.clone();
     let loading_message = format!("Deleting {} messages...", message_ids.len());
     let tx_to_main = model.tx_to_main.clone();
-    let auto_reload_threshold = crate::config::CONFIG
+    let auto_reload_threshold = crate::config::get_config_or_panic()
         .bulk_operations()
         .auto_reload_threshold();
 

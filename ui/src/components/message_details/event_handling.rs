@@ -28,7 +28,7 @@ pub fn handle_event(details: &mut MessageDetails, ev: Event<NoUserEvent>) -> Opt
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::CONTROL,
-        }) if c == config::CONFIG.keys().send_edited_message() => {
+        }) if c == config::get_config_or_panic().keys().send_edited_message() => {
             if details.is_editing && details.is_dirty {
                 // Validate content before sending
                 let edited_content = details.get_edited_content();
@@ -52,7 +52,7 @@ pub fn handle_event(details: &mut MessageDetails, ev: Event<NoUserEvent>) -> Opt
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::CONTROL,
-        }) if c == config::CONFIG.keys().replace_edited_message() => {
+        }) if c == config::get_config_or_panic().keys().replace_edited_message() => {
             if details.is_editing && details.is_dirty {
                 if let Some(message) = &details.current_message {
                     // Validate content before replacing
@@ -198,7 +198,7 @@ pub fn handle_event(details: &mut MessageDetails, ev: Event<NoUserEvent>) -> Opt
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::CONTROL,
-        }) if c == config::CONFIG.keys().copy_message() => {
+        }) if c == config::get_config_or_panic().keys().copy_message() => {
             // Copy message content to clipboard with Ctrl+configured_key
             match details.copy_to_clipboard() {
                 Ok(()) => {
@@ -218,7 +218,7 @@ pub fn handle_event(details: &mut MessageDetails, ev: Event<NoUserEvent>) -> Opt
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().yank_message() => {
+        }) if c == config::get_config_or_panic().keys().yank_message() => {
             // Copy message content to clipboard with configured yank key
             match details.copy_to_clipboard() {
                 Ok(()) => {

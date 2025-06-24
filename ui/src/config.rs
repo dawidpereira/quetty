@@ -1,6 +1,6 @@
+use crate::error::{AppError, AppResult};
 use crate::theme::types::ThemeConfig;
 use config::{Config, Environment, File};
-use lazy_static::lazy_static;
 
 use serde::Deserialize;
 use server::bulk_operations::BatchConfig;
@@ -154,23 +154,70 @@ impl ConfigValidationError {
     }
 }
 
-lazy_static! {
-    pub static ref CONFIG: AppConfig = {
-        dotenv::dotenv().ok();
-        let env_source = Environment::default().separator("__");
-        let file_source = File::with_name("config.toml");
+use std::sync::OnceLock;
 
-        let config = Config::builder()
-            .add_source(file_source)
-            .add_source(env_source)
-            .build()
-            .expect("Failed to load configuration");
-
-        config
-            .try_deserialize::<AppConfig>()
-            .expect("Failed to deserialize configuration")
-    };
+/// Configuration loading result for better error handling
+pub enum ConfigLoadResult {
+    Success(AppConfig),
+    LoadError(String),
+    DeserializeError(String),
 }
+
+/// Safe configuration loading function
+fn load_config() -> ConfigLoadResult {
+    dotenv::dotenv().ok();
+    let env_source = Environment::default().separator("__");
+    let file_source = File::with_name("config.toml");
+
+    let config = match Config::builder()
+        .add_source(file_source)
+        .add_source(env_source)
+        .build()
+    {
+        Ok(config) => config,
+        Err(e) => {
+            log::error!("Failed to load configuration: {}", e);
+            return ConfigLoadResult::LoadError(format!(
+                "Configuration loading failed: {}. Please check your config.toml file and environment variables.",
+                e
+            ));
+        }
+    };
+
+    match config.try_deserialize::<AppConfig>() {
+        Ok(app_config) => ConfigLoadResult::Success(app_config),
+        Err(e) => {
+            log::error!("Failed to deserialize configuration: {}", e);
+            ConfigLoadResult::DeserializeError(format!(
+                "Configuration format error: {}. Please check your config.toml syntax.",
+                e
+            ))
+        }
+    }
+}
+
+static CONFIG_CELL: OnceLock<ConfigLoadResult> = OnceLock::new();
+
+/// Get the global configuration, loading it if necessary
+pub fn get_config() -> &'static ConfigLoadResult {
+    CONFIG_CELL.get_or_init(load_config)
+}
+
+/// Get the configuration, panicking if loading failed
+/// Used by components that can't handle config errors gracefully
+pub fn get_config_or_panic() -> &'static AppConfig {
+    match get_config() {
+        ConfigLoadResult::Success(config) => config,
+        ConfigLoadResult::LoadError(error) => {
+            panic!("Configuration loading failed: {}", error);
+        }
+        ConfigLoadResult::DeserializeError(error) => {
+            panic!("Configuration parsing failed: {}", error);
+        }
+    }
+}
+
+
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
@@ -475,10 +522,14 @@ impl AppConfig {
 }
 
 impl ServicebusConfig {
-    pub fn connection_string(&self) -> &str {
+    pub fn connection_string(&self) -> AppResult<&str> {
         self.connection_string.as_deref()
-            .expect("SERVICEBUS_CONNECTION_STRING is required but not found in configuration or environment variables. Please set this value in .env file or environment.")
+            .ok_or_else(|| AppError::Config(
+                "SERVICEBUS_CONNECTION_STRING is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
+            ))
     }
+
+
 }
 
 impl DLQConfig {

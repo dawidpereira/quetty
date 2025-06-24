@@ -1,6 +1,6 @@
 use quetty::app::queue_state::QueueState;
 use quetty::app::updates::messages::MessagePaginationState;
-use quetty::config::CONFIG;
+use quetty::config;
 use server::model::{BodyData, MessageModel, MessageState};
 use server::service_bus_manager::QueueType;
 use std::collections::HashSet;
@@ -37,7 +37,7 @@ mod helpers {
         queue_state.messages = Some(messages.clone());
 
         // Calculate total_pages_loaded correctly based on message count
-        let page_size = CONFIG.max_messages() as usize;
+        let page_size = config::get_config_or_panic().max_messages() as usize;
         let total_messages = messages.len();
         let total_pages = if total_messages == 0 {
             0
@@ -51,7 +51,7 @@ mod helpers {
             queue_state.message_pagination.last_loaded_sequence = Some(last_msg.sequence);
         }
 
-        queue_state.message_pagination.update(CONFIG.max_messages());
+        queue_state.message_pagination.update(config::get_config_or_panic().max_messages());
     }
 
     /// Create a test QueueState with pagination
@@ -87,7 +87,7 @@ mod helpers {
 
     /// Update pagination state after message removal
     pub fn update_pagination_after_removal(pagination: &mut MessagePaginationState) {
-        let page_size = CONFIG.max_messages();
+        let page_size = config::get_config_or_panic().max_messages();
         let total_messages = pagination.all_loaded_messages.len();
 
         let new_total_pages = if total_messages == 0 {
@@ -112,8 +112,8 @@ mod helpers {
 
     /// Check if current page is under-filled and needs backfill
     pub fn check_needs_backfill(pagination: &MessagePaginationState) -> (bool, usize) {
-        let page_size = CONFIG.max_messages() as usize;
-        let current_page_messages = pagination.get_current_page_messages(CONFIG.max_messages());
+        let page_size = config::get_config_or_panic().max_messages() as usize;
+        let current_page_messages = pagination.get_current_page_messages(config::get_config_or_panic().max_messages());
         let current_page_size = current_page_messages.len();
         let page_is_under_filled = current_page_size < page_size;
 
@@ -141,7 +141,7 @@ mod helpers {
 
         // Recalculate total_pages_loaded based on new message count (like the real implementation)
         let total_messages = pagination.all_loaded_messages.len();
-        let messages_per_page = CONFIG.max_messages() as usize;
+        let messages_per_page = config::get_config_or_panic().max_messages() as usize;
 
         let new_total_pages = if total_messages == 0 {
             0
@@ -196,7 +196,7 @@ fn test_backfill_after_delete_from_main_queue() {
 
     // Check if backfill is needed
     let (needs_backfill, messages_needed) = check_needs_backfill(&queue_state.message_pagination);
-    let page_size = CONFIG.max_messages() as usize;
+    let page_size = config::get_config_or_panic().max_messages() as usize;
 
     if page_size > 5 {
         assert!(
@@ -255,7 +255,7 @@ fn test_backfill_after_send_with_delete_from_main() {
 
     // Check if backfill is needed
     let (needs_backfill, messages_needed) = check_needs_backfill(&queue_state.message_pagination);
-    let page_size = CONFIG.max_messages() as usize;
+    let page_size = config::get_config_or_panic().max_messages() as usize;
 
     if page_size > 2 {
         assert!(
@@ -318,7 +318,7 @@ fn test_backfill_after_delete_from_dlq() {
 
     // Check if backfill is needed
     let (needs_backfill, messages_needed) = check_needs_backfill(&queue_state.message_pagination);
-    let page_size = CONFIG.max_messages() as usize;
+    let page_size = config::get_config_or_panic().max_messages() as usize;
 
     if page_size > 3 {
         assert!(needs_backfill, "DLQ should also support backfill");
@@ -366,7 +366,7 @@ fn test_backfill_after_resend_with_delete_from_dlq() {
 
     // Check if backfill is needed
     let (needs_backfill, _messages_needed) = check_needs_backfill(&queue_state.message_pagination);
-    let page_size = CONFIG.max_messages() as usize;
+    let page_size = config::get_config_or_panic().max_messages() as usize;
 
     if page_size > 4 {
         assert!(
@@ -391,7 +391,7 @@ fn test_small_deletion_threshold_logic() {
     let mut queue_state = create_test_queue_state(QueueType::Main);
 
     // Set up messages close to page size
-    let page_size = CONFIG.max_messages() as usize;
+    let page_size = config::get_config_or_panic().max_messages() as usize;
     let initial_count = page_size - 2; // Start 2 messages under capacity
 
     let mut initial_messages = Vec::new();
@@ -402,7 +402,7 @@ fn test_small_deletion_threshold_logic() {
     setup_pagination_with_messages(&mut queue_state, initial_messages);
 
     // Get small deletion threshold from config
-    let small_deletion_threshold = CONFIG.bulk_operations().small_deletion_threshold();
+    let small_deletion_threshold = config::get_config_or_panic().bulk_operations().small_deletion_threshold();
 
     // Delete exactly the small deletion threshold number of messages
     let mut to_remove = Vec::new();
@@ -437,7 +437,7 @@ fn test_pagination_consistency_after_backfill() {
     let mut queue_state = create_test_queue_state(QueueType::Main);
 
     // Set up messages for multiple pages
-    let page_size = CONFIG.max_messages() as usize;
+    let page_size = config::get_config_or_panic().max_messages() as usize;
     let total_messages = page_size * 2 + 5; // 2+ pages
 
     let mut initial_messages = Vec::new();
@@ -545,7 +545,7 @@ fn test_all_messages_deleted_edge_case() {
     let (needs_backfill, messages_needed) = check_needs_backfill(&queue_state.message_pagination);
 
     // Empty queue should still allow backfill if messages are available
-    let page_size = CONFIG.max_messages() as usize;
+    let page_size = config::get_config_or_panic().max_messages() as usize;
     assert!(needs_backfill, "Empty queue should need backfill");
     assert_eq!(messages_needed, page_size);
 }

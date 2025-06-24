@@ -27,14 +27,15 @@ where
     T: TerminalAdapter,
 {
     fn init_app(queue_state: &QueueState) -> AppResult<Application<ComponentId, Msg, NoUserEvent>> {
+        let config = config::get_config_or_panic();
         let mut app: Application<ComponentId, Msg, NoUserEvent> = Application::init(
             EventListenerCfg::default()
                 .crossterm_input_listener(
-                    config::CONFIG.crossterm_input_listener_interval(),
-                    config::CONFIG.crossterm_input_listener_retries(),
+                    config.crossterm_input_listener_interval(),
+                    config.crossterm_input_listener_retries(),
                 )
-                .poll_timeout(config::CONFIG.poll_timeout())
-                .tick_interval(config::CONFIG.tick_interval()),
+                .poll_timeout(config.poll_timeout())
+                .tick_interval(config.tick_interval()),
         );
         app.mount(
             ComponentId::TextLabel,
@@ -90,8 +91,12 @@ where
 impl Model<CrosstermTerminalAdapter> {
     pub async fn new() -> AppResult<Self> {
         // Create the underlying Azure Service Bus client
+        let config = config::get_config_or_panic();
+        let connection_string = config.servicebus().connection_string()
+            .map_err(|e| AppError::Config(format!("Failed to get connection string: {}", e)))?;
+        
         let azure_service_bus_client = AzureServiceBusClient::new_from_connection_string(
-            config::CONFIG.servicebus().connection_string(),
+            connection_string,
             ServiceBusClientOptions::default(),
         )
         .await

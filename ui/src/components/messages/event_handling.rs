@@ -15,7 +15,7 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().toggle_selection() => {
+        }) if c == config::get_config_or_panic().keys().toggle_selection() => {
             // Toggle selection for current message
             let index = match messages.state() {
                 State::One(StateValue::Usize(index)) => index,
@@ -27,7 +27,7 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::CONTROL,
-        }) if c == config::CONFIG.keys().select_all_page() => {
+        }) if c == config::get_config_or_panic().keys().select_all_page() => {
             // Select all messages on current page
             return Some(Msg::MessageActivity(
                 MessageActivityMsg::SelectAllCurrentPage,
@@ -61,14 +61,14 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::CONTROL,
-        }) if c == config::CONFIG.keys().alt_delete_message() => {
+        }) if c == config::get_config_or_panic().keys().alt_delete_message() => {
             // Bulk delete with Ctrl+X
             return Some(Msg::MessageActivity(MessageActivityMsg::BulkDeleteSelected));
         }
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().delete_message() => {
+        }) if c == config::get_config_or_panic().keys().delete_message() => {
             // Single delete with X
             return Some(Msg::MessageActivity(MessageActivityMsg::BulkDeleteSelected));
         }
@@ -84,7 +84,7 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().down() => {
+        }) if c == config::get_config_or_panic().keys().down() => {
             messages.move_down();
             CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, messages.state())
         }
@@ -98,7 +98,7 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().up() => {
+        }) if c == config::get_config_or_panic().keys().up() => {
             messages.move_up();
             CmdResult::Custom(CMD_RESULT_MESSAGE_PREVIEW, messages.state())
         }
@@ -125,42 +125,42 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().next_page() => {
+        }) if c == config::get_config_or_panic().keys().next_page() => {
             return Some(Msg::MessageActivity(MessageActivityMsg::NextPage));
         }
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().alt_next_page() => {
+        }) if c == config::get_config_or_panic().keys().alt_next_page() => {
             return Some(Msg::MessageActivity(MessageActivityMsg::NextPage));
         }
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().prev_page() => {
+        }) if c == config::get_config_or_panic().keys().prev_page() => {
             return Some(Msg::MessageActivity(MessageActivityMsg::PreviousPage));
         }
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().alt_prev_page() => {
+        }) if c == config::get_config_or_panic().keys().alt_prev_page() => {
             return Some(Msg::MessageActivity(MessageActivityMsg::PreviousPage));
         }
 
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().quit() => return Some(Msg::AppClose),
+        }) if c == config::get_config_or_panic().keys().quit() => return Some(Msg::AppClose),
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::CONTROL,
-        }) if c == config::CONFIG.keys().quit() => return Some(Msg::AppClose),
+        }) if c == config::get_config_or_panic().keys().quit() => return Some(Msg::AppClose),
 
         // Queue toggle
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().toggle_dlq() => {
+        }) if c == config::get_config_or_panic().keys().toggle_dlq() => {
             return Some(Msg::QueueActivity(QueueActivityMsg::ToggleDeadLetterQueue));
         }
 
@@ -168,7 +168,7 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().compose_multiple() => {
+        }) if c == config::get_config_or_panic().keys().compose_multiple() => {
             // Check if we're in DLQ - composition not allowed
             if let Some(pagination_info) = messages.pagination_info() {
                 match pagination_info.queue_type {
@@ -188,7 +188,7 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::CONTROL,
-        }) if c == config::CONFIG.keys().compose_single() => {
+        }) if c == config::get_config_or_panic().keys().compose_single() => {
             // Check if we're in DLQ - composition not allowed
             if let Some(pagination_info) = messages.pagination_info() {
                 match pagination_info.queue_type {

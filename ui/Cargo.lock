@@ -2458,7 +2458,6 @@ dependencies = [
  "dotenv",
  "env_logger",
  "fern",
- "lazy_static",
  "log",
  "once_cell",
  "serde",

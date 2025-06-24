@@ -1,6 +1,6 @@
 use crate::app::model::Model;
 use crate::components::common::{Msg, PopupActivityMsg};
-use crate::config::CONFIG;
+use crate::config;
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
 use tuirealm::terminal::TerminalAdapter;
@@ -17,7 +17,7 @@ where
         let current_messages = self
             .queue_state
             .message_pagination
-            .get_current_page_messages(CONFIG.max_messages());
+            .get_current_page_messages(config::get_config_or_panic().max_messages());
 
         if index >= current_messages.len() {
             return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(
@@ -75,7 +75,7 @@ where
         let current_messages = self
             .queue_state
             .message_pagination
-            .get_current_page_messages(CONFIG.max_messages());
+            .get_current_page_messages(config::get_config_or_panic().max_messages());
 
         if current_messages.is_empty() {
             return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(

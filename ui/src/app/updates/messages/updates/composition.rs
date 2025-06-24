@@ -1,6 +1,6 @@
 use crate::app::model::{AppState, Model};
 use crate::components::common::{ComponentId, MessageActivityMsg, Msg, PopupActivityMsg};
-use crate::config::CONFIG;
+use crate::config;
 use crate::error::AppError;
 use std::sync::mpsc::Sender;
 use tuirealm::terminal::TerminalAdapter;
@@ -40,7 +40,7 @@ where
 
     /// Handle setting the repeat count for bulk message sending
     pub fn handle_set_message_repeat_count(&self) -> Option<Msg> {
-        let bulk_config = CONFIG.bulk_operations();
+        let bulk_config = config::get_config_or_panic().bulk_operations();
 
         Some(Msg::PopupActivity(PopupActivityMsg::ShowNumberInput {
             title: "Bulk Send Message".to_string(),
@@ -65,11 +65,11 @@ where
         let current_messages = self
             .queue_state
             .message_pagination
-            .get_current_page_messages(CONFIG.max_messages());
+            .get_current_page_messages(config::get_config_or_panic().max_messages());
 
         // Only auto-reload if the queue appears to be empty (0 messages shown)
         // This is the only case where auto-reload makes sense with Azure Service Bus
-        if current_messages.len() < CONFIG.max_messages() as usize {
+        if current_messages.len() < config::get_config_or_panic().max_messages() as usize {
             log::info!("Queue appears empty, auto-reloading to show newly sent messages");
 
             self.reset_pagination_state();
@@ -109,7 +109,7 @@ where
         use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 
         let command = ServiceBusCommand::PeekMessages {
-            max_count: CONFIG.max_messages(),
+            max_count: config::get_config_or_panic().max_messages(),
             from_sequence: None,
         };
 

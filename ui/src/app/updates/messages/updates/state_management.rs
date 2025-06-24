@@ -1,7 +1,7 @@
 use crate::app::model::AppState;
 use crate::app::model::Model;
 use crate::components::common::{ComponentId, MessageActivityMsg, Msg};
-use crate::config::CONFIG;
+use crate::config;
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
 use server::service_bus_manager::QueueInfo;
@@ -22,7 +22,7 @@ where
         self.queue_state.messages = Some(messages);
         
         // Update pagination state to calculate has_next_page properly
-        let page_size = CONFIG.max_messages();
+        let page_size = config::get_config_or_panic().max_messages();
         self.queue_state.message_pagination.update(page_size);
         
         if let Err(e) = self.remount_messages_with_focus(true) {
@@ -180,7 +180,7 @@ where
     /// Update pagination and view after state changes
     pub fn update_pagination_and_view(&mut self) -> Option<Msg> {
         // Update the pagination state and messages data
-        let page_size = CONFIG.max_messages();
+        let page_size = config::get_config_or_panic().max_messages();
         let current_page_messages = self
             .queue_state
             .message_pagination
@@ -225,7 +225,7 @@ where
         let current_messages = self
             .queue_state
             .message_pagination
-            .get_current_page_messages(CONFIG.max_messages());
+            .get_current_page_messages(config::get_config_or_panic().max_messages());
 
         let index = if current_messages.is_empty() {
             0
@@ -253,7 +253,7 @@ where
         let current_messages = self
             .queue_state
             .message_pagination
-            .get_current_page_messages(CONFIG.max_messages());
+            .get_current_page_messages(config::get_config_or_panic().max_messages());
         let remaining_on_current_page = current_messages.len();
 
         // If current page is empty and we have other pages, move to previous page
@@ -359,7 +359,7 @@ where
         // This ensures has_next_page reflects the current state after message removal
         self.update_pagination_state_after_removal();
 
-        let page_size = CONFIG.max_messages();
+        let page_size = config::get_config_or_panic().max_messages();
         let current_page = self.queue_state.message_pagination.current_page;
         let current_page_messages = self
             .queue_state
@@ -370,7 +370,7 @@ where
 
         // For single message deletions, be more aggressive about backfilling
         // Check if this looks like a small deletion that should always trigger backfill
-        let small_deletion_threshold = crate::config::CONFIG
+        let small_deletion_threshold = crate::config::get_config_or_panic()
             .bulk_operations()
             .small_deletion_threshold();
         let is_small_deletion = page_is_under_filled
@@ -426,7 +426,7 @@ where
 
     /// Update pagination state after message removal (called before auto-loading decisions)
     fn update_pagination_state_after_removal(&mut self) {
-        let messages_per_page = CONFIG.max_messages();
+        let messages_per_page = config::get_config_or_panic().max_messages();
         let total_messages = self
             .queue_state
             .message_pagination
@@ -478,7 +478,7 @@ where
 
     /// Finalize bulk removal pagination
     pub fn finalize_bulk_removal_pagination(&mut self) {
-        let messages_per_page = CONFIG.max_messages();
+        let messages_per_page = config::get_config_or_panic().max_messages();
 
         let total_messages = self
             .queue_state
@@ -571,7 +571,7 @@ where
             .message_pagination
             .all_loaded_messages
             .len();
-        let messages_per_page = CONFIG.max_messages();
+        let messages_per_page = config::get_config_or_panic().max_messages();
 
         let new_total_pages = if total_messages == 0 {
             0

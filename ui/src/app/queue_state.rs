@@ -144,8 +144,11 @@ impl QueueState {
             let base_queue_name = if current_queue_name.ends_with("/$deadletterqueue") {
                 current_queue_name
                     .strip_suffix("/$deadletterqueue")
-                    .unwrap()
-                    .to_string()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| {
+                        log::warn!("Failed to strip DLQ suffix from queue name: {}", current_queue_name);
+                        current_queue_name.clone()
+                    })
             } else {
                 current_queue_name.clone()
             };
