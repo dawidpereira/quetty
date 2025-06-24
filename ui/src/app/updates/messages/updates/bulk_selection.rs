@@ -2,6 +2,7 @@ use crate::app::model::Model;
 use crate::components::common::{Msg, PopupActivityMsg};
 use crate::config::CONFIG;
 use crate::error::AppError;
+use server::bulk_operations::MessageIdentifier;
 use tuirealm::terminal::TerminalAdapter;
 
 impl<T> Model<T>
@@ -12,13 +13,11 @@ where
     pub fn handle_toggle_message_selection_by_index(&mut self, index: usize) -> Option<Msg> {
         use PopupActivityMsg;
 
-        let current_messages = if let Some(ref messages) = self.queue_state.messages {
-            messages.clone()
-        } else {
-            self.queue_state
-                .message_pagination
-                .get_current_page_messages(CONFIG.max_messages())
-        };
+        // Always use pagination state as the source of truth for current page messages
+        let current_messages = self
+            .queue_state
+            .message_pagination
+            .get_current_page_messages(CONFIG.max_messages());
 
         if index >= current_messages.len() {
             return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(
@@ -26,8 +25,11 @@ where
             )));
         }
 
+        // Update the messages field to ensure UI consistency
+        self.queue_state.messages = Some(current_messages.clone());
+
         let message = &current_messages[index];
-        let message_id = server::bulk_operations::MessageIdentifier::from_message(message);
+        let message_id = MessageIdentifier::from_message(message);
 
         log::debug!("Toggling selection for message: {:?}", message_id);
 
@@ -68,14 +70,12 @@ where
     pub fn handle_select_all_current_page(&mut self) -> Option<Msg> {
         use PopupActivityMsg;
 
-        // Get current page messages
-        let current_messages = if let Some(ref messages) = self.queue_state.messages {
-            messages.clone()
-        } else {
-            self.queue_state
-                .message_pagination
-                .get_current_page_messages(CONFIG.max_messages())
-        };
+        // Always use pagination state as the source of truth for current page messages
+        // This ensures we get the most up-to-date messages, including any backfill
+        let current_messages = self
+            .queue_state
+            .message_pagination
+            .get_current_page_messages(CONFIG.max_messages());
 
         if current_messages.is_empty() {
             return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(
@@ -88,6 +88,9 @@ where
         self.queue_state
             .bulk_selection
             .select_all(&current_messages);
+
+        // Also update the messages field to ensure UI consistency
+        self.queue_state.messages = Some(current_messages.clone());
 
         log::info!("Selected all {} messages on current page", message_count);
 

@@ -1,71 +1,56 @@
-use crate::app::model::{AppState, Model};
+use crate::app::model::Model;
 use crate::app::updates::messages::async_operations;
-use crate::components::common::{ComponentId, MessageActivityMsg, Msg, PopupActivityMsg};
+use crate::components::common::{MessageActivityMsg, Msg, PopupActivityMsg};
 use crate::error::AppError;
-use azservicebus::{ServiceBusClient, core::BasicRetryPolicy};
+use server::service_bus_manager::{MessageData, ServiceBusCommand, ServiceBusResponse};
 use server::bulk_operations::MessageIdentifier;
-use server::consumer::Consumer;
-use server::producer::ServiceBusClientProducerExt;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+
 use tuirealm::terminal::TerminalAdapter;
 
 impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
-    /// Handle starting message editing
+    /// Handle editing a message at the given index
     pub fn handle_edit_message(&mut self, index: usize) -> Option<Msg> {
-        if let Err(e) = self.remount_messages_with_focus(false) {
-            self.error_reporter
-                .report_simple(e, "MessageEditor", "handle_edit_message");
-            return None;
+        if let Some(current_messages) = &self.queue_state.messages {
+            if index < current_messages.len() {
+                let selected_message = current_messages[index].clone();
+                log::info!("Starting to edit message {}", selected_message.id);
+
+                if let Err(e) = self.remount_message_details(index) {
+                    self.error_reporter
+                        .report_simple(e, "MessageEditor", "handle_edit_message");
+                    return None;
+                }
+
+                self.is_editing_message = true;
+                if let Err(e) = self.update_global_key_watcher_editing_state() {
+                    log::error!("Failed to update global key watcher: {}", e);
+                }
+
+                Some(Msg::ForceRedraw)
+            } else {
+                log::warn!("Index {} out of bounds for messages", index);
+                None
+            }
+        } else {
+            log::warn!("No messages available to edit");
+            None
         }
-
-        self.app_state = AppState::MessageDetails;
-
-        if let Err(e) = self.app.active(&ComponentId::MessageDetails) {
-            log::error!("Failed to activate message details: {}", e);
-        }
-
-        if let Err(e) = self.remount_message_details(index) {
-            self.error_reporter
-                .report_simple(e, "MessageEditor", "handle_edit_message");
-            return None;
-        }
-
-        Some(Msg::ForceRedraw)
     }
 
-    /// Handle canceling message editing
+    /// Handle canceling message edit
     pub fn handle_cancel_edit_message(&mut self) -> Option<Msg> {
         self.is_editing_message = false;
         if let Err(e) = self.update_global_key_watcher_editing_state() {
             log::error!("Failed to update global key watcher: {}", e);
         }
-
-        if let Err(e) = self.remount_messages_with_focus(true) {
-            self.error_reporter
-                .report_simple(e, "MessageEditor", "handle_cancel_edit_message");
-            return None;
-        }
-
-        self.app_state = AppState::MessagePicker;
-
-        if let Err(e) = self.app.active(&ComponentId::Messages) {
-            log::error!("Failed to activate messages: {}", e);
-        }
-
-        if let Err(e) = self.remount_message_details(0) {
-            self.error_reporter
-                .report_simple(e, "MessageEditor", "handle_cancel_edit_message");
-            return None;
-        }
-
-        None
+        log::debug!("Cancelled editing message");
+        Some(Msg::ForceRedraw)
     }
 
-    /// Handle sending edited message content as a new message
+    /// Handle sending edited message content as new message
     pub fn handle_send_edited_message(&self, content: String) -> Option<Msg> {
         let queue_name = match self.get_current_queue() {
             Ok(name) => name,
@@ -85,17 +70,15 @@ where
             format!("Sending message {} times...", repeat_count)
         };
 
-        let service_bus_client = self.service_bus_client.clone();
+        let service_bus_manager = self.service_bus_manager.clone();
         let tx_to_main = self.tx_to_main.clone();
 
         self.task_manager.execute(loading_message, async move {
-            let result = Self::send_message_multiple_times(
-                service_bus_client,
-                queue_name,
-                content,
-                repeat_count,
-            )
-            .await;
+            let result = if repeat_count == 1 {
+                Self::send_single_message(service_bus_manager, queue_name, content).await
+            } else {
+                Self::send_multiple_messages(service_bus_manager, queue_name, content, repeat_count).await
+            };
 
             let success_message = if repeat_count == 1 {
                 "✅ Message sent successfully!".to_string()
@@ -127,34 +110,54 @@ where
 
         log::info!(
             "Replacing message {} with edited content in queue: {}",
-            message_id.id,
+            message_id,
             queue_name
         );
 
-        let consumer = self.queue_state.consumer.clone();
-        let service_bus_client = self.service_bus_client.clone();
+        let service_bus_manager = self.service_bus_manager.clone();
         let tx_to_main = self.tx_to_main.clone();
 
         self.task_manager
             .execute("Replacing message...", async move {
                 let result = async {
                     // Step 1: Send new message with edited content
-                    Self::send_message_to_queue(service_bus_client, queue_name.clone(), content)
+                    Self::send_single_message(service_bus_manager.clone(), queue_name.clone(), content)
                         .await?;
 
-                    // Step 2: Delete original message
-                    match consumer {
-                        Some(consumer) => Self::delete_message(consumer, &message_id).await?,
-                        None => {
-                            return Err(AppError::ServiceBus(
-                                "No consumer available for message deletion".to_string(),
-                            ));
+                    // Step 2: Delete original message using service bus manager
+                    let delete_command = ServiceBusCommand::BulkDelete {
+                        message_ids: vec![message_id.clone()],
+                    };
+
+                    let delete_response = service_bus_manager.lock().await.execute_command(delete_command).await;
+
+                    match delete_response {
+                        ServiceBusResponse::BulkOperationCompleted { result } => {
+                            if result.successful > 0 {
+                                log::info!(
+                                    "Successfully deleted original message {} in queue: {}",
+                                    message_id,
+                                    queue_name
+                                );
+                            } else {
+                                log::warn!(
+                                    "Message {} was not found or could not be deleted (may have been already processed)",
+                                    message_id
+                                );
+                            }
+                        }
+                        ServiceBusResponse::Error { error } => {
+                            log::error!("Failed to delete original message: {}", error);
+                            return Err(AppError::ServiceBus(format!("Failed to delete original message: {}", error)));
+                        }
+                        _ => {
+                            return Err(AppError::ServiceBus("Unexpected response for bulk delete".to_string()));
                         }
                     }
 
                     log::info!(
                         "Successfully replaced message {} in queue: {}",
-                        message_id.id,
+                        message_id,
                         queue_name
                     );
                     Ok::<(), AppError>(())
@@ -163,7 +166,7 @@ where
 
                 if result.is_ok() {
                     let _ = tx_to_main.send(Msg::MessageActivity(
-                        MessageActivityMsg::BulkRemoveMessagesFromState(vec![message_id]),
+                        MessageActivityMsg::BulkRemoveMessagesFromState(vec![message_id.to_string()]),
                     ));
                 }
 
@@ -178,92 +181,79 @@ where
         None
     }
 
-    /// Helper function to delete a message by completing it
-    async fn delete_message(
-        consumer: Arc<Mutex<Consumer>>,
-        message_id: &MessageIdentifier,
+    /// Send a single message to a queue using the service bus manager
+    async fn send_single_message(
+        service_bus_manager: std::sync::Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>>,
+        queue_name: String,
+        content: String,
     ) -> Result<(), AppError> {
-        use crate::app::updates::messages::utils::find_target_message;
+        log::info!(
+            "Sending message to queue: {} (content: {} bytes)",
+            queue_name,
+            content.len()
+        );
 
-        let mut consumer_guard = consumer.lock().await;
-        match find_target_message(&mut consumer_guard, &message_id.id, message_id.sequence).await {
-            Ok(target_msg) => {
-                consumer_guard
-                    .complete_message(&target_msg)
-                    .await
-                    .map_err(|e| {
-                        AppError::ServiceBus(format!("Failed to delete message: {}", e))
-                    })?;
-                log::info!("Successfully deleted message: {}", message_id.id);
+        let message = MessageData::new(content);
+        let command = ServiceBusCommand::SendMessage {
+            queue_name: queue_name.clone(),
+            message,
+        };
+
+        let response = service_bus_manager.lock().await.execute_command(command).await;
+
+        match response {
+            ServiceBusResponse::MessageSent { .. } => {
+                log::info!("Successfully sent message to queue: {}", queue_name);
                 Ok(())
             }
-            Err(e) => {
-                log::warn!(
-                    "Message {} not found (may have been already processed): {}",
-                    message_id.id,
-                    e
-                );
-                Ok(())
+            ServiceBusResponse::Error { error } => {
+                log::error!("Failed to send message to queue {}: {}", queue_name, error);
+                Err(AppError::ServiceBus(error.to_string()))
+            }
+            _ => {
+                Err(AppError::ServiceBus("Unexpected response for send message".to_string()))
             }
         }
     }
 
-    /// Send a message to a queue
-    async fn send_message_to_queue(
-        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
-        queue_name: String,
-        content: String,
-    ) -> Result<(), AppError> {
-        let mut client = service_bus_client.lock().await;
-        let mut producer = client
-            .create_producer_for_queue(
-                &queue_name,
-                azservicebus::ServiceBusSenderOptions::default(),
-            )
-            .await
-            .map_err(|e| AppError::ServiceBus(format!("Failed to create producer: {}", e)))?;
-
-        let message = azservicebus::ServiceBusMessage::new(content.as_bytes().to_vec());
-
-        producer
-            .send_message(message)
-            .await
-            .map_err(|e| AppError::ServiceBus(format!("Failed to send message: {}", e)))?;
-
-        producer
-            .dispose()
-            .await
-            .map_err(|e| AppError::ServiceBus(format!("Failed to dispose producer: {}", e)))?;
-
-        log::info!("Successfully sent message to queue: {}", queue_name);
-        Ok(())
-    }
-
-    /// Send a message multiple times to a queue
-    async fn send_message_multiple_times(
-        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+    /// Send multiple messages to a queue using the service bus manager
+    async fn send_multiple_messages(
+        service_bus_manager: std::sync::Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>>,
         queue_name: String,
         content: String,
         count: usize,
     ) -> Result<(), AppError> {
         log::info!("Sending message {} times to queue: {}", count, queue_name);
 
-        // Send messages sequentially to avoid overwhelming the service
-        for i in 1..=count {
-            log::debug!("Sending message {}/{} to queue: {}", i, count, queue_name);
-            Self::send_message_to_queue(
-                service_bus_client.clone(),
-                queue_name.clone(),
-                content.clone(),
-            )
-            .await?;
-        }
+        let messages: Vec<MessageData> = (0..count).map(|_| MessageData::new(content.clone())).collect();
+        let command = ServiceBusCommand::SendMessages {
+            queue_name: queue_name.clone(),
+            messages,
+        };
 
-        log::info!(
-            "Successfully sent {} messages to queue: {}",
-            count,
-            queue_name
-        );
-        Ok(())
+        let response = service_bus_manager.lock().await.execute_command(command).await;
+
+        match response {
+            ServiceBusResponse::MessagesSent { stats, .. } => {
+                if stats.successful >= count {
+                    log::info!("Successfully sent {} messages to queue: {}", stats.successful, queue_name);
+                    Ok(())
+                } else {
+                    let error_msg = format!(
+                        "Failed to send all messages: {} successful, {} failed out of {} requested",
+                        stats.successful, stats.failed, count
+                    );
+                    log::error!("{}", error_msg);
+                    Err(AppError::ServiceBus(error_msg))
+                }
+            }
+            ServiceBusResponse::Error { error } => {
+                log::error!("Failed to send messages to queue {}: {}", queue_name, error);
+                Err(AppError::ServiceBus(error.to_string()))
+            }
+            _ => {
+                Err(AppError::ServiceBus("Unexpected response for send messages".to_string()))
+            }
+        }
     }
 }

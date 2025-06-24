@@ -27,6 +27,18 @@ pub mod limits {
     /// Hard limits for bulk operations
     pub const BULK_OPERATION_MIN_COUNT: usize = 1;
     pub const BULK_OPERATION_MAX_COUNT: usize = 1000;
+
+    /// Maximum threshold for triggering auto-reload after bulk operations
+    pub const MAX_AUTO_RELOAD_THRESHOLD: usize = 100;
+
+    /// Maximum small deletion threshold for backfill operations
+    pub const MAX_SMALL_DELETION_THRESHOLD: usize = 20;
+
+    /// Maximum chunk size for bulk processing
+    pub const MAX_BULK_CHUNK_SIZE: usize = 500;
+
+    /// Maximum processing time for bulk operations (seconds)
+    pub const MAX_BULK_PROCESSING_TIME_SECS: u64 = 120;
 }
 
 /// Configuration validation errors
@@ -38,6 +50,10 @@ pub enum ConfigValidationError {
     BufferPercentage { configured: f64, limit: f64 },
     MinBufferSize { configured: usize, limit: usize },
     BulkOperationMaxCount { configured: usize, limit: usize },
+    AutoReloadThreshold { configured: usize, limit: usize },
+    SmallDeletionThreshold { configured: usize, limit: usize },
+    BulkChunkSize { configured: usize, limit: usize },
+    BulkProcessingTime { configured: u64, limit: u64 },
 }
 
 impl ConfigValidationError {
@@ -96,6 +112,42 @@ impl ConfigValidationError {
                     Hard limit: {}\n\n\
                     Please update bulk_operation_max_count in config.toml to {} or less.",
                     configured, limit, limit
+                )
+            }
+            ConfigValidationError::AutoReloadThreshold { configured, limit } => {
+                format!(
+                    "Auto-reload threshold too high!\n\n\
+                    Your configured value: {}\n\
+                    Recommended maximum: {}\n\n\
+                    Please update auto_reload_threshold in config.toml.",
+                    configured, limit
+                )
+            }
+            ConfigValidationError::SmallDeletionThreshold { configured, limit } => {
+                format!(
+                    "Small deletion threshold too high!\n\n\
+                    Your configured value: {}\n\
+                    Recommended maximum: {}\n\n\
+                    Please update small_deletion_threshold in config.toml.",
+                    configured, limit
+                )
+            }
+            ConfigValidationError::BulkChunkSize { configured, limit } => {
+                format!(
+                    "Bulk chunk size too high!\n\n\
+                    Your configured value: {}\n\
+                    Recommended maximum: {}\n\n\
+                    Please update bulk_chunk_size in config.toml.",
+                    configured, limit
+                )
+            }
+            ConfigValidationError::BulkProcessingTime { configured, limit } => {
+                format!(
+                    "Bulk processing time too high!\n\n\
+                    Your configured value: {} seconds\n\
+                    Recommended maximum: {} seconds\n\n\
+                    Please update bulk_processing_time_secs in config.toml.",
+                    configured, limit
                 )
             }
         }
@@ -158,14 +210,6 @@ pub struct UIConfig {
 /// Configuration for Dead Letter Queue (DLQ) operations
 #[derive(Debug, Clone, Deserialize)]
 pub struct DLQConfig {
-    /// Timeout for receiving messages from DLQ (default: 10 seconds)
-    dlq_receive_timeout_secs: Option<u64>,
-    /// Maximum attempts to find a message in DLQ (default: 10)
-    dlq_max_attempts: Option<usize>,
-    /// Hard cap for receive timeouts (default: 10 seconds)
-    dlq_receive_timeout_cap_secs: Option<u64>,
-    /// Delay between retry attempts when no messages found (default: 500ms)
-    dlq_retry_delay_ms: Option<u64>,
     /// Batch size for receiving messages in DLQ operations (default: 10)
     dlq_batch_size: Option<u32>,
 }
@@ -175,6 +219,14 @@ pub struct DLQConfig {
 pub struct BulkOperationsConfig {
     /// Maximum number of messages that can be processed in a single bulk operation (default: 100)
     bulk_operation_max_count: Option<usize>,
+    /// Threshold for triggering auto-reload after bulk operations (default: 10)
+    auto_reload_threshold: Option<usize>,
+    /// Small deletion threshold for backfill operations (default: 5)
+    small_deletion_threshold: Option<usize>,
+    /// Chunk size for bulk processing operations (default: 100)
+    bulk_chunk_size: Option<usize>,
+    /// Processing time limit for bulk operations in seconds (default: 30)
+    bulk_processing_time_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -319,6 +371,57 @@ impl AppConfig {
             });
         }
 
+        log::debug!(
+            "  auto_reload_threshold: {} (limit: {})",
+            self.bulk_operations().auto_reload_threshold(),
+            limits::MAX_AUTO_RELOAD_THRESHOLD
+        );
+        if self.bulk_operations().auto_reload_threshold() > limits::MAX_AUTO_RELOAD_THRESHOLD {
+            errors.push(ConfigValidationError::AutoReloadThreshold {
+                configured: self.bulk_operations().auto_reload_threshold(),
+                limit: limits::MAX_AUTO_RELOAD_THRESHOLD,
+            });
+        }
+
+        log::debug!(
+            "  small_deletion_threshold: {} (limit: {})",
+            self.bulk_operations().small_deletion_threshold(),
+            limits::MAX_SMALL_DELETION_THRESHOLD
+        );
+        if self.bulk_operations().small_deletion_threshold() > limits::MAX_SMALL_DELETION_THRESHOLD
+        {
+            errors.push(ConfigValidationError::SmallDeletionThreshold {
+                configured: self.bulk_operations().small_deletion_threshold(),
+                limit: limits::MAX_SMALL_DELETION_THRESHOLD,
+            });
+        }
+
+        log::debug!(
+            "  bulk_chunk_size: {} (limit: {})",
+            self.bulk_operations().bulk_chunk_size(),
+            limits::MAX_BULK_CHUNK_SIZE
+        );
+        if self.bulk_operations().bulk_chunk_size() > limits::MAX_BULK_CHUNK_SIZE {
+            errors.push(ConfigValidationError::BulkChunkSize {
+                configured: self.bulk_operations().bulk_chunk_size(),
+                limit: limits::MAX_BULK_CHUNK_SIZE,
+            });
+        }
+
+        log::debug!(
+            "  bulk_processing_time_secs: {} (limit: {})",
+            self.bulk_operations().bulk_processing_time_secs(),
+            limits::MAX_BULK_PROCESSING_TIME_SECS
+        );
+        if self.bulk_operations().bulk_processing_time_secs()
+            > limits::MAX_BULK_PROCESSING_TIME_SECS
+        {
+            errors.push(ConfigValidationError::BulkProcessingTime {
+                configured: self.bulk_operations().bulk_processing_time_secs(),
+                limit: limits::MAX_BULK_PROCESSING_TIME_SECS,
+            });
+        }
+
         if errors.is_empty() {
             Ok(())
         } else {
@@ -379,26 +482,6 @@ impl ServicebusConfig {
 }
 
 impl DLQConfig {
-    /// Get the timeout for receiving messages from DLQ
-    pub fn receive_timeout_secs(&self) -> u64 {
-        self.dlq_receive_timeout_secs.unwrap_or(10)
-    }
-
-    /// Get the maximum attempts to find a message in DLQ
-    pub fn max_attempts(&self) -> usize {
-        self.dlq_max_attempts.unwrap_or(10)
-    }
-
-    /// Get the hard cap for receive timeouts
-    pub fn receive_timeout_cap_secs(&self) -> u64 {
-        self.dlq_receive_timeout_cap_secs.unwrap_or(10)
-    }
-
-    /// Get the delay between retry attempts when no messages found
-    pub fn retry_delay_ms(&self) -> u64 {
-        self.dlq_retry_delay_ms.unwrap_or(500)
-    }
-
     /// Get the batch size for receiving messages in DLQ operations
     pub fn batch_size(&self) -> u32 {
         self.dlq_batch_size.unwrap_or(10)
@@ -421,6 +504,26 @@ impl BulkOperationsConfig {
     /// Get the minimum number of messages for bulk operations (always 1)
     pub fn min_count(&self) -> usize {
         limits::BULK_OPERATION_MIN_COUNT
+    }
+
+    /// Get the threshold for triggering auto-reload after bulk operations (default: 10)
+    pub fn auto_reload_threshold(&self) -> usize {
+        self.auto_reload_threshold.unwrap_or(10)
+    }
+
+    /// Get the small deletion threshold for backfill operations (default: 5)
+    pub fn small_deletion_threshold(&self) -> usize {
+        self.small_deletion_threshold.unwrap_or(5)
+    }
+
+    /// Get the chunk size for bulk processing operations (default: 100)
+    pub fn bulk_chunk_size(&self) -> usize {
+        self.bulk_chunk_size.unwrap_or(100)
+    }
+
+    /// Get the processing time limit for bulk operations in seconds (default: 30)
+    pub fn bulk_processing_time_secs(&self) -> u64 {
+        self.bulk_processing_time_secs.unwrap_or(30)
     }
 }
 

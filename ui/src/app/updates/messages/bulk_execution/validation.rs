@@ -1,7 +1,9 @@
 use crate::app::model::Model;
-use crate::components::common::QueueType;
+
+use crate::config::CONFIG;
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
+use server::service_bus_manager::QueueType;
 use tuirealm::terminal::TerminalAdapter;
 
 /// Common validation trait for bulk operations
@@ -20,8 +22,6 @@ where
 {
     /// Validates that message IDs are not empty and within limits
     fn validate_message_ids(&self, message_ids: &[MessageIdentifier]) -> Result<(), bool> {
-        use crate::config::CONFIG;
-
         let count = message_ids.len();
         let min_count = CONFIG.bulk_operations().min_count();
         let max_count = CONFIG.bulk_operations().max_count();
@@ -93,7 +93,7 @@ where
         message_ids: &[MessageIdentifier],
     ) -> Result<(), AppError> {
         // Use the configured maximum batch size
-        let max_batch_size = crate::config::CONFIG.batch().max_batch_size() as usize;
+        let max_batch_size = CONFIG.batch().max_batch_size() as usize;
         if message_ids.len() > max_batch_size {
             return Err(AppError::State(format!(
                 "Batch size {} exceeds maximum allowed size of {}",

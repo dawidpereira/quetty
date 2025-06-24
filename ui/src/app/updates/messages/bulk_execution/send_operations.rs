@@ -1,5 +1,5 @@
 use super::task_manager::{
-    BulkSendData, BulkSendOperationParams, BulkSendTaskParams, BulkTaskManager, DLQ_DISPLAY_NAME,
+    BulkSendData, BulkSendParams, BulkSendTaskParams, BulkTaskManager, DLQ_DISPLAY_NAME,
     MAIN_QUEUE_DISPLAY_NAME,
 };
 use super::validation::{validate_bulk_resend_request, validate_bulk_send_to_dlq_request};
@@ -24,11 +24,6 @@ pub fn handle_bulk_resend_from_dlq_execution<T: TerminalAdapter>(
         return None;
     }
 
-    let consumer = match get_consumer_for_bulk_operation(model) {
-        Ok(consumer) => consumer,
-        Err(_) => return None,
-    };
-
     // Get the main queue name for DLQ to Main operation
     let target_queue = match get_main_queue_name_from_current_dlq(model) {
         Ok(name) => name,
@@ -41,16 +36,19 @@ pub fn handle_bulk_resend_from_dlq_execution<T: TerminalAdapter>(
         }
     };
 
-    let params = BulkSendOperationParams::new(
-        consumer,
-        target_queue,
-        true, // should_delete = true for DLQ to Main
-        "Bulk resending {} messages from DLQ to main queue...",
-        DLQ_DISPLAY_NAME,
-        MAIN_QUEUE_DISPLAY_NAME,
-    );
-
-    start_bulk_send_operation(model, message_ids, params)
+    // For resend WITH DELETE, we need to use message retrieval approach
+    // so the server can actually receive and complete/delete the messages from DLQ
+    start_bulk_send_operation(
+        model,
+        message_ids,
+        BulkSendParams::new(
+            target_queue,
+            true, // should_delete = true for DLQ to Main (delete from DLQ after successful resend)
+            "Bulk resending {} messages from DLQ to main queue...",
+            DLQ_DISPLAY_NAME,
+            MAIN_QUEUE_DISPLAY_NAME,
+        ),
+    )
 }
 
 /// Execute bulk resend-only from DLQ operation (without deleting from DLQ)
@@ -68,7 +66,7 @@ pub fn handle_bulk_resend_from_dlq_only_execution<T: TerminalAdapter>(
     }
 
     // For resend-only, we get message data from the current state (peeked messages)
-    let messages_data = match extract_message_data_for_resend_only(model, &message_ids) {
+    let messages_data = match extract_message_data_from_current_state(model, &message_ids) {
         Ok(data) => data,
         Err(_) => return None,
     };
@@ -85,16 +83,10 @@ pub fn handle_bulk_resend_from_dlq_only_execution<T: TerminalAdapter>(
         }
     };
 
-    let consumer = match get_consumer_for_bulk_operation(model) {
-        Ok(consumer) => consumer,
-        Err(_) => return None,
-    };
-
     start_bulk_send_with_data_operation(
         model,
         messages_data,
-        BulkSendOperationParams::new(
-            consumer,
+        BulkSendParams::new(
             target_queue,
             false, // should_delete = false for resend-only
             "Bulk copying {} messages from DLQ to main queue (keeping in DLQ)...",
@@ -104,24 +96,19 @@ pub fn handle_bulk_resend_from_dlq_only_execution<T: TerminalAdapter>(
     )
 }
 
-/// Execute bulk send to DLQ operation
-pub fn handle_bulk_send_to_dlq_execution<T: TerminalAdapter>(
+/// Execute bulk send to DLQ operation with deletion (move to DLQ)
+pub fn handle_bulk_send_to_dlq_with_delete_execution<T: TerminalAdapter>(
     model: &mut Model<T>,
     message_ids: Vec<MessageIdentifier>,
 ) -> Option<Msg> {
     if message_ids.is_empty() {
-        log::warn!("No messages provided for bulk send to DLQ operation");
+        log::warn!("No messages provided for bulk send to DLQ with delete operation");
         return None;
     }
 
     if validate_bulk_send_to_dlq_request(model, &message_ids).is_err() {
         return None;
     }
-
-    let consumer = match get_consumer_for_bulk_operation(model) {
-        Ok(consumer) => consumer,
-        Err(_) => return None,
-    };
 
     // Get the DLQ name for Main to DLQ operation
     let target_queue = format!(
@@ -133,11 +120,10 @@ pub fn handle_bulk_send_to_dlq_execution<T: TerminalAdapter>(
             .unwrap_or(&"unknown".to_string())
     );
 
-    let params = BulkSendOperationParams::new(
-        consumer,
+    let params = BulkSendParams::new(
         target_queue,
-        true, // should_delete = true for Main to DLQ
-        "Bulk sending {} messages from main queue to DLQ...",
+        true, // should_delete = true for move to DLQ (delete from main)
+        "Bulk moving {} messages from main queue to DLQ...",
         MAIN_QUEUE_DISPLAY_NAME,
         DLQ_DISPLAY_NAME,
     );
@@ -145,8 +131,8 @@ pub fn handle_bulk_send_to_dlq_execution<T: TerminalAdapter>(
     start_bulk_send_operation(model, message_ids, params)
 }
 
-/// Extract message data from current state for resend-only operation
-fn extract_message_data_for_resend_only<T: TerminalAdapter>(
+/// Extract message data from current state (works for any queue)
+fn extract_message_data_from_current_state<T: TerminalAdapter>(
     model: &Model<T>,
     message_ids: &[MessageIdentifier],
 ) -> Result<Vec<(MessageIdentifier, Vec<u8>)>, bool> {
@@ -157,22 +143,19 @@ fn extract_message_data_for_resend_only<T: TerminalAdapter>(
 
     for message_id in message_ids {
         // Find the message in our loaded state
-        if let Some(message) = all_messages
-            .iter()
-            .find(|m| m.id == message_id.id && m.sequence == message_id.sequence)
-        {
+        if let Some(message) = all_messages.iter().find(|m| m.id == *message_id) {
             // Extract the message body as bytes
             let body = match &message.body {
                 BodyData::ValidJson(json) => serde_json::to_vec(json).unwrap_or_default(),
                 BodyData::RawString(s) => s.as_bytes().to_vec(),
             };
             messages_data.push((message_id.clone(), body));
-            log::debug!("Extracted message data for {}", message_id.id);
+            log::debug!("Extracted message data for {}", message_id);
         } else {
-            log::error!("Message {} not found in current state", message_id.id);
+            log::error!("Message {} not found in current state", message_id);
             let error = AppError::State(format!(
-                "Message {} not found in current state for resend-only operation",
-                message_id.id
+                "Message {} not found in current state for send operation",
+                message_id
             ));
             model
                 .error_reporter
@@ -182,28 +165,11 @@ fn extract_message_data_for_resend_only<T: TerminalAdapter>(
     }
 
     log::info!(
-        "Extracted data for {} messages for resend-only operation",
+        "Extracted data for {} messages for send operation",
         messages_data.len()
     );
 
     Ok(messages_data)
-}
-
-/// Gets the consumer for bulk operations
-fn get_consumer_for_bulk_operation<T: TerminalAdapter>(
-    model: &Model<T>,
-) -> Result<std::sync::Arc<tokio::sync::Mutex<server::consumer::Consumer>>, bool> {
-    match model.queue_state.consumer.clone() {
-        Some(consumer) => Ok(consumer),
-        None => {
-            log::error!("No consumer available for bulk operation");
-            let error = AppError::State("No consumer available for bulk operation".to_string());
-            model
-                .error_reporter
-                .report_simple(error, "BulkSend", "get_consumer");
-            Err(true)
-        }
-    }
 }
 
 /// Get the main queue name for DLQ to Main operation
@@ -234,7 +200,7 @@ fn get_main_queue_name_from_current_dlq<T: TerminalAdapter>(
 fn start_bulk_send_generic<T: TerminalAdapter>(
     model: &Model<T>,
     bulk_data: BulkSendData,
-    operation_params: BulkSendOperationParams,
+    operation_params: BulkSendParams,
 ) -> Option<Msg> {
     let task_manager = BulkTaskManager::new(model.taskpool.clone(), model.tx_to_main.clone());
 
@@ -242,8 +208,9 @@ fn start_bulk_send_generic<T: TerminalAdapter>(
     let task_params = BulkSendTaskParams::new(
         bulk_data,
         operation_params,
-        model.service_bus_client.clone(),
+        model.service_bus_manager.clone(),
         model.tx_to_main.clone(),
+        model.queue_state.message_repeat_count,
     );
 
     // Execute the task
@@ -255,16 +222,30 @@ fn start_bulk_send_generic<T: TerminalAdapter>(
 fn start_bulk_send_operation<T: TerminalAdapter>(
     model: &Model<T>,
     message_ids: Vec<MessageIdentifier>,
-    params: BulkSendOperationParams,
+    params: BulkSendParams,
 ) -> Option<Msg> {
-    start_bulk_send_generic(model, BulkSendData::MessageIds(message_ids), params)
+    // Use message IDs for retrieval-based operations (allows deletion)
+    start_bulk_send_generic(
+        model,
+        BulkSendData::MessageIds(message_ids.iter().map(|id| id.to_string()).collect()),
+        params,
+    )
 }
 
 /// Method to start bulk send operation with pre-fetched message data
 fn start_bulk_send_with_data_operation<T: TerminalAdapter>(
     model: &Model<T>,
     messages_data: Vec<(MessageIdentifier, Vec<u8>)>,
-    params: BulkSendOperationParams,
+    params: BulkSendParams,
 ) -> Option<Msg> {
-    start_bulk_send_generic(model, BulkSendData::MessageData(messages_data), params)
+    start_bulk_send_generic(
+        model,
+        BulkSendData::MessageData(
+            messages_data
+                .iter()
+                .map(|(id, data)| (id.to_string(), data.clone()))
+                .collect(),
+        ),
+        params,
+    )
 }

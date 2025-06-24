@@ -12,7 +12,6 @@ where
             PopupActivityMsg::ShowError(error) => self.handle_show_error(error),
             PopupActivityMsg::CloseError => self.handle_close_error(),
             PopupActivityMsg::ShowWarning(message) => self.handle_show_warning(message),
-            PopupActivityMsg::CloseWarning => self.handle_close_warning(),
             PopupActivityMsg::ShowSuccess(message) => self.handle_show_success(message),
             PopupActivityMsg::CloseSuccess => self.handle_close_success(),
             PopupActivityMsg::ShowConfirmation {
@@ -65,16 +64,7 @@ where
         None
     }
 
-    fn handle_close_warning(&mut self) -> Option<Msg> {
-        // Warnings use the same popup component as errors
-        if let Err(e) = self.unmount_error_popup() {
-            log::error!("Failed to unmount warning popup: {}", e);
-            self.error_reporter
-                .report_simple(e, "PopupHandler", "handle_close_warning");
-            return None;
-        }
-        None
-    }
+
 
     fn handle_show_success(&mut self, message: String) -> Option<Msg> {
         if let Err(e) = self.mount_success_popup(&message) {

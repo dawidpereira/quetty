@@ -1,5 +1,5 @@
 use claims::*;
-use quetty::app::task_manager::{TaskBuilder, TaskManager};
+use quetty::app::task_manager::TaskManager;
 use quetty::components::common::{LoadingActivityMsg, PopupActivityMsg};
 use quetty::error::ErrorReporter;
 use quetty::{AppError, Msg};
@@ -70,16 +70,7 @@ mod helpers {
         assert_matches!(msg, Msg::LoadingActivity(LoadingActivityMsg::Stop));
     }
 
-    pub fn assert_success_popup(msg: &Msg, expected_text: &str) {
-        assert_matches!(msg,
-            Msg::PopupActivity(PopupActivityMsg::ShowSuccess(text))
-            if text == expected_text
-        );
-    }
 
-    pub fn assert_error_popup(msg: &Msg) {
-        assert_matches!(msg, Msg::PopupActivity(PopupActivityMsg::ShowError(_)));
-    }
 }
 
 // Integration tests - testing complete workflows through public API
@@ -134,27 +125,7 @@ async fn test_execute_error_complete_flow() {
     );
 }
 
-#[tokio::test]
-async fn test_task_builder_success_complete_flow() {
-    let (task_manager, rx) = create_test_setup();
 
-    TaskBuilder::new(&task_manager)
-        .loading_message("Builder test")
-        .success_message("Builder success!")
-        .execute(async move { Ok::<(), AppError>(()) });
-
-    sleep(Duration::from_millis(100)).await;
-    let messages = collect_messages_with_timeout(&rx, 3, 2000);
-
-    assert_eq!(
-        messages.len(),
-        3,
-        "Expected complete builder success workflow"
-    );
-    assert_start_message(&messages[0], "Builder test");
-    assert_stop_message(&messages[1]);
-    assert_success_popup(&messages[2], "Builder success!");
-}
 
 #[tokio::test]
 async fn test_multiple_concurrent_operations_complete_flow() {
@@ -195,46 +166,4 @@ async fn test_multiple_concurrent_operations_complete_flow() {
     assert_eq!(stop_count, 3, "Should have 3 stop messages");
 }
 
-#[tokio::test]
-async fn test_task_builder_error_complete_flow() {
-    let (task_manager, rx) = create_test_setup();
 
-    let test_error = AppError::Config("Builder error".to_string());
-    TaskBuilder::new(&task_manager)
-        .loading_message("Builder error test")
-        .error_message("Builder failed!")
-        .execute(async move { Err::<(), AppError>(test_error) });
-
-    sleep(Duration::from_millis(100)).await;
-    let messages = collect_messages_with_timeout(&rx, 3, 2000);
-
-    assert_eq!(
-        messages.len(),
-        3,
-        "Expected complete builder error workflow"
-    );
-    assert_start_message(&messages[0], "Builder error test");
-    assert_stop_message(&messages[1]);
-    assert_error_popup(&messages[2]);
-}
-
-#[tokio::test]
-async fn test_execute_with_updates_complete_flow() {
-    let (task_manager, rx) = create_test_setup();
-
-    // Since LoadingActivityMsg::Update is removed, just test Start and Stop
-    task_manager.execute_with_updates("Testing progress updates", |_tx| {
-        Box::new(Box::pin(async move {
-            // Simulate some work
-            sleep(Duration::from_millis(10)).await;
-            Ok::<(), AppError>(())
-        }))
-    });
-
-    sleep(Duration::from_millis(150)).await;
-    let messages = collect_messages_with_timeout(&rx, 2, 2000);
-
-    assert_eq!(messages.len(), 2, "Expected start and stop workflow");
-    assert_start_message(&messages[0], "Testing progress updates");
-    assert_stop_message(&messages[1]);
-}

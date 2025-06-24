@@ -2,11 +2,12 @@ use super::component::{
     CMD_RESULT_MESSAGE_PREVIEW, CMD_RESULT_MESSAGE_SELECTED, CMD_RESULT_QUEUE_UNSELECTED, Messages,
 };
 use super::selection::create_toggle_message_selection;
-use crate::components::common::{MessageActivityMsg, Msg, QueueActivityMsg, QueueType};
+use crate::components::common::{MessageActivityMsg, Msg, QueueActivityMsg};
 use crate::config;
 use tuirealm::command::CmdResult;
 use tuirealm::event::{Key, KeyEvent, KeyModifiers};
 use tuirealm::{Event, MockComponent, NoUserEvent, State, StateValue};
+use server::service_bus_manager::QueueType;
 
 pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<Msg> {
     let cmd_result = match ev {
@@ -50,79 +51,6 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
             return Some(Msg::MessageActivity(MessageActivityMsg::ClearAllSelections));
         }
 
-        // Enhanced existing operations for bulk mode - context-aware send/resend
-        Event::Keyboard(KeyEvent {
-            code: Key::Char(c),
-            modifiers: KeyModifiers::CONTROL,
-        }) if c == config::CONFIG.keys().send_to_dlq() => {
-            // Context-aware operation based on current queue type
-            if let Some(pagination_info) = messages.pagination_info() {
-                match pagination_info.queue_type {
-                    QueueType::Main => {
-                        // In main queue: send to DLQ
-                        return Some(Msg::MessageActivity(
-                            MessageActivityMsg::BulkSendSelectedToDLQ,
-                        ));
-                    }
-                    QueueType::DeadLetter => {
-                        // In DLQ: resend to main queue (keep in DLQ)
-                        return Some(Msg::MessageActivity(
-                            MessageActivityMsg::BulkResendSelectedFromDLQ(false),
-                        ));
-                    }
-                }
-            } else {
-                // Fallback to send to DLQ if no pagination info available
-                return Some(Msg::MessageActivity(
-                    MessageActivityMsg::BulkSendSelectedToDLQ,
-                ));
-            }
-        }
-        Event::Keyboard(KeyEvent {
-            code: Key::Char(c),
-            modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().send_to_dlq() => {
-            // Context-aware operation based on current queue type
-            if let Some(pagination_info) = messages.pagination_info() {
-                match pagination_info.queue_type {
-                    QueueType::Main => {
-                        // In main queue: send to DLQ
-                        return Some(Msg::MessageActivity(
-                            MessageActivityMsg::BulkSendSelectedToDLQ,
-                        ));
-                    }
-                    QueueType::DeadLetter => {
-                        // In DLQ: resend to main queue (keep in DLQ)
-                        return Some(Msg::MessageActivity(
-                            MessageActivityMsg::BulkResendSelectedFromDLQ(false),
-                        ));
-                    }
-                }
-            } else {
-                // Fallback to send to DLQ if no pagination info available
-                return Some(Msg::MessageActivity(
-                    MessageActivityMsg::BulkSendSelectedToDLQ,
-                ));
-            }
-        }
-        Event::Keyboard(KeyEvent {
-            code: Key::Char(c),
-            modifiers: KeyModifiers::NONE,
-        }) if c == config::CONFIG.keys().resend_from_dlq() => {
-            // Resend only (without deleting from DLQ)
-            return Some(Msg::MessageActivity(
-                MessageActivityMsg::BulkResendSelectedFromDLQ(false),
-            ));
-        }
-        Event::Keyboard(KeyEvent {
-            code: Key::Char(c),
-            modifiers: KeyModifiers::SHIFT,
-        }) if c == config::CONFIG.keys().resend_and_delete_from_dlq() => {
-            // Resend and delete from DLQ
-            return Some(Msg::MessageActivity(
-                MessageActivityMsg::BulkResendSelectedFromDLQ(true),
-            ));
-        }
         Event::Keyboard(KeyEvent {
             code: Key::Delete,
             modifiers: KeyModifiers::NONE,
@@ -241,15 +169,88 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
             code: Key::Char(c),
             modifiers: KeyModifiers::NONE,
         }) if c == config::CONFIG.keys().compose_multiple() => {
-            return Some(Msg::MessageActivity(
-                MessageActivityMsg::SetMessageRepeatCount,
-            ));
+            // Check if we're in DLQ - composition not allowed
+            if let Some(pagination_info) = messages.pagination_info() {
+                match pagination_info.queue_type {
+                    QueueType::DeadLetter => {
+                        return Some(Msg::ShowError("❌ Cannot compose new messages from Dead Letter Queue.\n\n💡 Switch to Main queue first using 'D' key.\n📖 Composition is only available in Main queues.".to_string()));
+                    }
+                    QueueType::Main => {
+                        return Some(Msg::MessageActivity(
+                            MessageActivityMsg::SetMessageRepeatCount,
+                        ));
+                    }
+                }
+            } else {
+                return Some(Msg::ShowError("❌ Unable to determine queue type. Please try switching queues.".to_string()));
+            }
         }
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::CONTROL,
         }) if c == config::CONFIG.keys().compose_single() => {
-            return Some(Msg::MessageActivity(MessageActivityMsg::ComposeNewMessage));
+            // Check if we're in DLQ - composition not allowed
+            if let Some(pagination_info) = messages.pagination_info() {
+                match pagination_info.queue_type {
+                    QueueType::DeadLetter => {
+                        return Some(Msg::ShowError("❌ Cannot compose new messages from Dead Letter Queue.\n\n💡 Switch to Main queue first using 'D' key.\n📖 Composition is only available in Main queues.".to_string()));
+                    }
+                    QueueType::Main => {
+                        return Some(Msg::MessageActivity(MessageActivityMsg::ComposeNewMessage));
+                    }
+                }
+            } else {
+                return Some(Msg::ShowError("❌ Unable to determine queue type. Please try switching queues.".to_string()));
+            }
+        }
+
+        // Context-aware bulk send operations
+        Event::Keyboard(KeyEvent {
+            code: Key::Char('s'),
+            modifiers: KeyModifiers::NONE,
+        }) => {
+            // Get pagination info to determine queue type
+            if let Some(pagination_info) = messages.pagination_info() {
+                                  match pagination_info.queue_type {
+                     QueueType::Main => {
+                         // Main queue: 's' key is not supported (no copy to DLQ)
+                         return Some(Msg::ShowError("❌ Copy to DLQ is not supported by Azure Service Bus.\n\n💡 Use 'S' (Shift+s) to move messages to DLQ instead.\n📖 In Main Queue: 'S' = Move to DLQ".to_string()));
+                     }
+                     QueueType::DeadLetter => {
+                        // DLQ: 's' = resend to main without deleting from DLQ
+                        return Some(Msg::MessageActivity(
+                            MessageActivityMsg::BulkResendSelectedFromDLQ(false),
+                        ));
+                    }
+                }
+            } else {
+                return Some(Msg::ShowError("❌ Unable to determine queue type. Please try switching queues.".to_string()));
+            }
+        }
+
+        Event::Keyboard(KeyEvent {
+            code: Key::Char('S'),
+            modifiers: KeyModifiers::SHIFT,
+        }) => {
+            // Get pagination info to determine queue type
+            if let Some(pagination_info) = messages.pagination_info() {
+                                  match pagination_info.queue_type {
+                     QueueType::Main => {
+                         // Main queue: 'S' = move to DLQ (with deletion)
+                         return Some(Msg::MessageActivity(
+                             MessageActivityMsg::BulkSendSelectedToDLQWithDelete,
+                         ));
+                     }
+                     QueueType::DeadLetter => {
+                        // DLQ: 'S' = resend to main with deletion from DLQ
+                        return Some(Msg::MessageActivity(
+                            MessageActivityMsg::BulkResendSelectedFromDLQ(true),
+                        ));
+                    }
+                }
+            } else {
+                return Some(Msg::ShowError("❌ Unable to determine queue type. Please try switching queues.".to_string()));
+            }
         }
 
         _ => CmdResult::None,

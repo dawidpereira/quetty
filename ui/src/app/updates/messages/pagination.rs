@@ -3,8 +3,7 @@ use crate::components::common::{ComponentId, MessageActivityMsg, Msg};
 use crate::config::CONFIG;
 use crate::error::{AppError, AppResult};
 use server::model::MessageModel;
-use std::sync::Arc;
-use std::sync::mpsc::Sender;
+
 use tuirealm::terminal::TerminalAdapter;
 
 /// Dedicated type for managing message pagination state
@@ -191,6 +190,11 @@ where
     // Pagination utility methods
     pub fn reset_pagination_state(&mut self) {
         self.queue_state.message_pagination.reset();
+        
+        // Also clear bulk selection state during pagination reset (e.g., during force reload)
+        // This prevents old message IDs from persisting after bulk operations
+        log::debug!("Clearing bulk selection state during pagination reset");
+        self.queue_state.bulk_selection.clear_all();
     }
 
     fn switch_to_loaded_page(&mut self, page: usize) {
@@ -366,11 +370,7 @@ where
         );
 
         let tx_to_main = self.tx_to_main.clone();
-
-        let consumer = self.queue_state.consumer.clone().ok_or_else(|| {
-            log::error!("No consumer available");
-            AppError::State("No consumer available".to_string())
-        })?;
+        let service_bus_manager = self.service_bus_manager.clone();
 
         let from_sequence = self
             .queue_state
@@ -380,62 +380,53 @@ where
 
         self.task_manager
             .execute("Loading more messages...", async move {
-                let result = Self::load_messages_for_backfill_from_consumer(
-                    tx_to_main.clone(),
-                    consumer,
+                use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
+
+                let command = ServiceBusCommand::PeekMessages {
+                    max_count: message_count,
                     from_sequence,
-                    message_count,
-                )
-                .await;
+                };
 
-                if let Err(e) = &result {
-                    log::error!("Error in backfill loading task: {}", e);
+                let response = service_bus_manager.lock().await.execute_command(command).await;
+
+                let messages = match response {
+                    ServiceBusResponse::MessagesReceived { messages } => {
+                        log::info!(
+                            "Loaded {} messages for backfill (requested {})",
+                            messages.len(),
+                            message_count
+                        );
+                        messages
+                    }
+                    ServiceBusResponse::Error { error } => {
+                        log::error!("Failed to peek messages for backfill: {}", error);
+                        return Err(AppError::ServiceBus(format!("Failed to peek messages for backfill: {}", error)));
+                    }
+                    _ => {
+                        return Err(AppError::ServiceBus("Unexpected response for peek messages".to_string()));
+                    }
+                };
+
+                // Send backfill messages (different from NewMessagesLoaded)
+                if !messages.is_empty() {
+                    if let Err(e) = tx_to_main.send(Msg::MessageActivity(
+                        crate::components::common::MessageActivityMsg::BackfillMessagesLoaded(messages),
+                    )) {
+                        log::error!("Failed to send backfill messages: {}", e);
+                        return Err(AppError::Component(e.to_string()));
+                    }
+                } else {
+                    // No messages loaded, trigger page changed to update view
+                    if let Err(e) = tx_to_main.send(Msg::MessageActivity(
+                        crate::components::common::MessageActivityMsg::PageChanged,
+                    )) {
+                        log::error!("Failed to send page changed message: {}", e);
+                        return Err(AppError::Component(e.to_string()));
+                    }
                 }
-                result
+
+                Ok(())
             });
-
-        Ok(())
-    }
-
-    async fn load_messages_for_backfill_from_consumer(
-        tx_to_main: Sender<Msg>,
-        consumer: Arc<tokio::sync::Mutex<server::consumer::Consumer>>,
-        from_sequence: Option<i64>,
-        message_count: u32,
-    ) -> Result<(), AppError> {
-        let mut consumer = consumer.lock().await;
-
-        let messages = consumer
-            .peek_messages(message_count, from_sequence)
-            .await
-            .map_err(|e| {
-                log::error!("Failed to peek messages for backfill: {}", e);
-                AppError::ServiceBus(e.to_string())
-            })?;
-
-        log::info!(
-            "Loaded {} messages for backfill (requested {})",
-            messages.len(),
-            message_count
-        );
-
-        // Send backfill messages (different from NewMessagesLoaded)
-        if !messages.is_empty() {
-            if let Err(e) = tx_to_main.send(Msg::MessageActivity(
-                crate::components::common::MessageActivityMsg::BackfillMessagesLoaded(messages),
-            )) {
-                log::error!("Failed to send backfill messages: {}", e);
-                return Err(AppError::Component(e.to_string()));
-            }
-        } else {
-            // No messages loaded, trigger page changed to update view
-            if let Err(e) = tx_to_main.send(Msg::MessageActivity(
-                crate::components::common::MessageActivityMsg::PageChanged,
-            )) {
-                log::error!("Failed to send page changed message: {}", e);
-                return Err(AppError::Component(e.to_string()));
-            }
-        }
 
         Ok(())
     }

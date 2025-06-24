@@ -4,8 +4,8 @@ use crate::components::messages::rendering::{
     get_state_color, get_state_display,
 };
 use crate::components::messages::selection::{format_pagination_status, format_queue_display};
-use crate::theme::ThemeManager;
 use server::bulk_operations::MessageIdentifier;
+use crate::theme::ThemeManager;
 use server::model::MessageModel;
 use tui_realm_stdlib::Table;
 use tuirealm::command::{Cmd, CmdResult};

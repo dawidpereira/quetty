@@ -1,7 +1,7 @@
 // Rendering logic for messages table - consolidated from separate modules
 use crate::components::messages::PaginationInfo;
-use crate::theme::ThemeManager;
 use server::bulk_operations::MessageIdentifier;
+use crate::theme::ThemeManager;
 use server::model::{MessageModel, MessageState};
 use tuirealm::props::{TableBuilder, TextSpan};
 use tuirealm::ratatui::style::Color;

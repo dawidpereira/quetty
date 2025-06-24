@@ -107,9 +107,54 @@ impl Consumer {
         let mut guard = self.receiver.lock().await;
         if let Some(receiver) = guard.as_mut() {
             // Complete messages one by one since batch completion may not be available
+            let mut completed_count = 0;
+            let mut failed_count = 0;
+
             for message in messages {
-                receiver.complete_message(message).await?;
+                let message_id = message
+                    .message_id()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+                let sequence = message.sequence_number();
+
+                match receiver.complete_message(message).await {
+                    Ok(()) => {
+                        completed_count += 1;
+                        log::debug!(
+                            "Successfully completed message {} (sequence: {})",
+                            message_id,
+                            sequence
+                        );
+                    }
+                    Err(e) => {
+                        failed_count += 1;
+                        log::error!(
+                            "Failed to complete message {} (sequence: {}): {}",
+                            message_id,
+                            sequence,
+                            e
+                        );
+                        // Don't return early - try to complete as many as possible
+                    }
+                }
             }
+
+            log::info!(
+                "Batch completion result: {} successful, {} failed out of {} messages",
+                completed_count,
+                failed_count,
+                messages.len()
+            );
+
+            if failed_count > 0 {
+                return Err(format!(
+                    "Failed to complete {} out of {} messages",
+                    failed_count,
+                    messages.len()
+                )
+                .into());
+            }
+
             Ok(())
         } else {
             Err("Receiver already disposed".into())

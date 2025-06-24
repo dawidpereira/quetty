@@ -1,11 +1,8 @@
 use crate::app::updates::messages::MessagePaginationState;
-use crate::components::common::QueueType;
 use server::bulk_operations::MessageIdentifier;
-use server::consumer::Consumer;
 use server::model::MessageModel;
+use server::service_bus_manager::QueueType;
 use std::collections::HashSet;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 /// Unique identifier for a message combining ID and sequence
 /// State for managing bulk selection of messages
@@ -95,8 +92,6 @@ pub struct QueueState {
     pub current_queue_name: Option<String>,
     /// Current queue type (Main or DeadLetter)
     pub current_queue_type: QueueType,
-    /// Active consumer for the current queue
-    pub consumer: Option<Arc<Mutex<Consumer>>>,
     /// Currently loaded messages
     pub messages: Option<Vec<MessageModel>>,
     /// Message pagination state
@@ -113,7 +108,6 @@ impl Default for QueueState {
             pending_queue: None,
             current_queue_name: None,
             current_queue_type: QueueType::Main,
-            consumer: None,
             messages: None,
             message_pagination: MessagePaginationState::default(),
             bulk_selection: BulkSelectionState::default(),

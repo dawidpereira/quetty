@@ -2,10 +2,7 @@ use crate::app::model::{AppState, Model};
 use crate::components::common::{ComponentId, MessageActivityMsg, Msg, PopupActivityMsg};
 use crate::config::CONFIG;
 use crate::error::AppError;
-use server::consumer::Consumer;
-use std::sync::Arc;
 use std::sync::mpsc::Sender;
-use tokio::sync::Mutex;
 use tuirealm::terminal::TerminalAdapter;
 
 // Bulk send configuration is now handled via the config system
@@ -89,15 +86,12 @@ where
     /// Load messages from the beginning (fresh start), similar to initial queue load
     pub fn load_messages_from_beginning(&self) -> Result<(), AppError> {
         let tx_to_main = self.tx_to_main.clone();
-
-        let consumer = self.queue_state.consumer.clone().ok_or_else(|| {
-            log::error!("No consumer available");
-            AppError::State("No consumer available".to_string())
-        })?;
+        let service_bus_manager = self.service_bus_manager.clone();
 
         self.task_manager
             .execute("Loading messages...", async move {
-                let result = Self::execute_fresh_message_load(tx_to_main.clone(), consumer).await;
+                let result =
+                    Self::execute_fresh_message_load(tx_to_main.clone(), service_bus_manager).await;
                 if let Err(e) = &result {
                     log::error!("Error loading messages from beginning: {e}");
                 }
@@ -110,17 +104,27 @@ where
     /// Execute fresh message loading from the beginning
     async fn execute_fresh_message_load(
         tx_to_main: Sender<Msg>,
-        consumer: Arc<Mutex<Consumer>>,
+        service_bus_manager: std::sync::Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>>,
     ) -> Result<(), AppError> {
-        let mut consumer = consumer.lock().await;
+        use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 
-        let messages = consumer
-            .peek_messages(CONFIG.max_messages(), None)
-            .await
-            .map_err(|e| {
-                log::error!("Failed to peek messages from beginning: {e}");
-                AppError::ServiceBus(e.to_string())
-            })?;
+        let command = ServiceBusCommand::PeekMessages {
+            max_count: CONFIG.max_messages(),
+            from_sequence: None,
+        };
+
+        let response = service_bus_manager.lock().await.execute_command(command).await;
+
+        let messages = match response {
+            ServiceBusResponse::MessagesReceived { messages } => messages,
+            ServiceBusResponse::Error { error } => {
+                log::error!("Failed to peek messages from beginning: {}", error);
+                return Err(AppError::ServiceBus(format!("Failed to peek messages from beginning: {}", error)));
+            }
+            _ => {
+                return Err(AppError::ServiceBus("Unexpected response for peek messages".to_string()));
+            }
+        };
 
         log::info!("Loaded {} messages from beginning", messages.len());
 

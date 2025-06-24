@@ -12,7 +12,8 @@ use crate::components::state::ComponentStateMount;
 use crate::components::text_label::TextLabel;
 use crate::config;
 use crate::error::{AppError, AppResult, ErrorReporter};
-use azservicebus::{ServiceBusClient, ServiceBusClientOptions};
+use azservicebus::{ServiceBusClient as AzureServiceBusClient, ServiceBusClientOptions};
+use server::service_bus_manager::ServiceBusManager;
 use server::taskpool::TaskPool;
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -88,12 +89,16 @@ where
 
 impl Model<CrosstermTerminalAdapter> {
     pub async fn new() -> AppResult<Self> {
-        let service_bus_client = ServiceBusClient::new_from_connection_string(
+        // Create the underlying Azure Service Bus client
+        let azure_service_bus_client = AzureServiceBusClient::new_from_connection_string(
             config::CONFIG.servicebus().connection_string(),
             ServiceBusClientOptions::default(),
         )
         .await
         .map_err(|e| AppError::ServiceBus(e.to_string()))?;
+
+        // Create the service bus manager directly
+        let service_bus_manager = Arc::new(Mutex::new(ServiceBusManager::new(Arc::new(Mutex::new(azure_service_bus_client)))));
 
         let (tx_to_main, rx_to_main) = mpsc::channel();
         let taskpool = TaskPool::new(10);
@@ -116,7 +121,7 @@ impl Model<CrosstermTerminalAdapter> {
             tx_to_main,
             rx_to_main,
             taskpool,
-            service_bus_client: Arc::new(Mutex::new(service_bus_client)),
+            service_bus_manager, // Use ServiceBusManager directly
             selected_namespace: None,
             loading_message: None,
             previous_state: None,

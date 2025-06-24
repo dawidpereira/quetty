@@ -42,7 +42,12 @@ impl BulkOperationResult {
 
     pub fn add_successful_message(&mut self, message_id: MessageIdentifier) {
         self.successful += 1;
-        self.successful_message_ids.push(message_id);
+        self.successful_message_ids.push(message_id.clone());
+        log::debug!(
+            "SUCCESS COUNT: Incremented to {} (added message: {})",
+            self.successful,
+            message_id.id
+        );
     }
 
     pub fn add_not_found(&mut self) {
@@ -61,6 +66,12 @@ pub struct MessageIdentifier {
     pub sequence: i64,
 }
 
+impl std::fmt::Display for MessageIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.id)
+    }
+}
+
 impl MessageIdentifier {
     pub fn new(id: String, sequence: i64) -> Self {
         Self { id, sequence }
@@ -71,6 +82,40 @@ impl MessageIdentifier {
             id: message.id.clone(),
             sequence: message.sequence,
         }
+    }
+
+    pub fn from_string(id: String) -> Self {
+        Self { id, sequence: 0 }
+    }
+}
+
+impl From<String> for MessageIdentifier {
+    fn from(id: String) -> Self {
+        Self::from_string(id)
+    }
+}
+
+impl From<&str> for MessageIdentifier {
+    fn from(id: &str) -> Self {
+        Self::from_string(id.to_string())
+    }
+}
+
+impl From<MessageIdentifier> for String {
+    fn from(val: MessageIdentifier) -> Self {
+        val.id
+    }
+}
+
+impl PartialEq<String> for MessageIdentifier {
+    fn eq(&self, other: &String) -> bool {
+        &self.id == other
+    }
+}
+
+impl PartialEq<MessageIdentifier> for String {
+    fn eq(&self, other: &MessageIdentifier) -> bool {
+        self == &other.id
     }
 }
 
@@ -85,6 +130,10 @@ pub struct BatchConfig {
     buffer_percentage: Option<f64>,
     /// Minimum buffer size (default: 30)
     min_buffer_size: Option<usize>,
+    /// Chunk size for bulk processing operations (default: 100)
+    bulk_chunk_size: Option<usize>,
+    /// Processing time limit for bulk operations in seconds (default: 30)
+    bulk_processing_time_secs: Option<u64>,
 }
 
 impl BatchConfig {
@@ -95,6 +144,8 @@ impl BatchConfig {
             operation_timeout_secs: Some(operation_timeout_secs),
             buffer_percentage: None,
             min_buffer_size: None,
+            bulk_chunk_size: None,
+            bulk_processing_time_secs: None,
         }
     }
 
@@ -118,6 +169,16 @@ impl BatchConfig {
     /// Get the minimum buffer size
     pub fn min_buffer_size(&self) -> usize {
         self.min_buffer_size.unwrap_or(30)
+    }
+
+    /// Get the chunk size for bulk processing operations
+    pub fn bulk_chunk_size(&self) -> usize {
+        self.bulk_chunk_size.unwrap_or(100)
+    }
+
+    /// Get the processing time limit for bulk operations in seconds
+    pub fn bulk_processing_time_secs(&self) -> u64 {
+        self.bulk_processing_time_secs.unwrap_or(30)
     }
 }
 
@@ -171,7 +232,7 @@ impl BulkOperationHandler {
         &self,
         context: BulkOperationContext,
         params: BulkSendParams,
-    ) -> Result<BulkOperationResult, Box<dyn Error>> {
+    ) -> Result<BulkOperationResult, Box<dyn Error + Send + Sync>> {
         let total_requested = params.message_identifiers.len();
         let mut result = BulkOperationResult::new(total_requested);
 
@@ -205,7 +266,7 @@ impl BulkOperationHandler {
         context: BulkOperationContext,
         params: &BulkSendParams,
         result: &mut BulkOperationResult,
-    ) -> Result<BulkOperationResult, Box<dyn Error>> {
+    ) -> Result<BulkOperationResult, Box<dyn Error + Send + Sync>> {
         match &params.messages_data {
             Some(messages_data) => {
                 self.execute_bulk_send_with_data(context, params, messages_data.clone(), result)
@@ -225,7 +286,7 @@ impl BulkOperationHandler {
         params: &BulkSendParams,
         messages_data: Vec<(MessageIdentifier, Vec<u8>)>,
         result: &mut BulkOperationResult,
-    ) -> Result<BulkOperationResult, Box<dyn std::error::Error>> {
+    ) -> Result<BulkOperationResult, Box<dyn Error + Send + Sync>> {
         log::info!(
             "Processing bulk send for {} messages with pre-fetched data",
             messages_data.len()
@@ -234,7 +295,10 @@ impl BulkOperationHandler {
         match context.operation_type {
             QueueOperationType::SendToQueue => {
                 // Convert peeked message data to ServiceBusMessage objects
-                let new_messages = self.convert_peeked_messages_for_sending(&messages_data)?;
+                let new_messages: Vec<ServiceBusMessage> = messages_data
+                    .iter()
+                    .map(|(_, data)| ServiceBusMessage::new(data.clone()))
+                    .collect();
 
                 // Send messages to target queue
                 self.send_messages_to_queue(
@@ -274,7 +338,7 @@ impl BulkOperationHandler {
         context: BulkOperationContext,
         params: &BulkSendParams,
         result: &mut BulkOperationResult,
-    ) -> Result<BulkOperationResult, Box<dyn std::error::Error>> {
+    ) -> Result<BulkOperationResult, Box<dyn Error + Send + Sync>> {
         let target_count = params.message_identifiers.len();
 
         // Calculate buffer size (percentage of targets or minimum)
@@ -350,7 +414,7 @@ impl BulkOperationHandler {
     async fn process_target_messages(
         &self,
         process_params: ProcessTargetMessagesParams<'_>,
-    ) -> Result<usize, Box<dyn std::error::Error>> {
+    ) -> Result<usize, Box<dyn Error + Send + Sync>> {
         if process_params.messages.is_empty() {
             return Ok(0);
         }
@@ -363,7 +427,17 @@ impl BulkOperationHandler {
         match process_params.context.operation_type {
             QueueOperationType::SendToQueue => {
                 // Convert messages to new ServiceBusMessage objects for sending
-                let new_messages = self.convert_messages_for_sending(&process_params.messages)?;
+                let new_messages: Vec<ServiceBusMessage> = process_params
+                    .messages
+                    .iter()
+                    .filter_map(|msg| match msg.body() {
+                        Ok(body) => Some(ServiceBusMessage::new(body.to_vec())),
+                        Err(e) => {
+                            log::error!("Failed to get message body: {}", e);
+                            None
+                        }
+                    })
+                    .collect();
 
                 // Send messages to target queue
                 self.send_messages_to_queue(
@@ -374,26 +448,54 @@ impl BulkOperationHandler {
                 .await?;
             }
             QueueOperationType::SendToDLQ => {
-                // Use dead_letter_message operation for each message
-                self.dead_letter_messages(
-                    &process_params.messages,
-                    process_params.context.consumer.clone(),
-                )
-                .await?;
+                if process_params.params.should_delete {
+                    // Move operation: Use dead_letter_message operation (deletes from source)
+                    log::debug!(
+                        "Using dead_letter_message for move operation (should_delete=true)"
+                    );
+                    self.dead_letter_messages(
+                        &process_params.messages,
+                        process_params.context.consumer.clone(),
+                    )
+                    .await?;
+                } else {
+                    // Copy operation to DLQ: Azure Service Bus limitation
+                    log::warn!("Copy operation to DLQ is not supported by Azure Service Bus");
+
+                    return Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Unsupported,
+                        "Copy operation to Dead Letter Queue is not supported by Azure Service Bus. \
+                         DLQ can only be written to via dead_letter_message operation, which always \
+                         removes messages from the source queue. Use move operation (S key) instead, \
+                         or consider using a regular queue as copy destination.",
+                    )));
+                }
             }
         }
 
-        // Complete/delete messages from source if requested
-        if process_params.params.should_delete {
-            self.complete_processed_messages(&process_params.messages, process_params.context)
-                .await?;
-        } else {
-            // Abandon messages to make them available again in source queue
-            self.abandon_processed_messages(
-                &process_params.messages,
-                process_params.context.consumer.clone(),
-            )
-            .await?;
+        // Handle source message cleanup based on should_delete and operation type
+        match process_params.context.operation_type {
+            QueueOperationType::SendToDLQ if process_params.params.should_delete => {
+                // For move operations with dead_letter_message, messages are already deleted
+                log::debug!("Messages already deleted by dead_letter_message operation");
+            }
+            _ => {
+                // For all other cases, handle based on should_delete parameter
+                if process_params.params.should_delete {
+                    self.complete_processed_messages(
+                        &process_params.messages,
+                        process_params.context,
+                    )
+                    .await?;
+                } else {
+                    // Abandon messages to make them available again in source queue
+                    self.abandon_processed_messages(
+                        &process_params.messages,
+                        process_params.context.consumer.clone(),
+                    )
+                    .await?;
+                }
+            }
         }
 
         // Track successful message processing
@@ -415,7 +517,7 @@ impl BulkOperationHandler {
         &self,
         messages: &[azservicebus::ServiceBusReceivedMessage],
         consumer: Arc<Mutex<Consumer>>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         log::debug!("Dead lettering {} messages", messages.len());
 
         let mut consumer_guard = consumer.lock().await;
@@ -435,9 +537,12 @@ impl BulkOperationHandler {
                     Some("Message sent to DLQ via bulk operation".to_string()),
                 )
                 .await
-                .map_err(|e| {
+                .map_err(|e| -> Box<dyn Error + Send + Sync> {
                     log::error!("Failed to dead letter message {}: {}", message_id, e);
-                    format!("Failed to dead letter message {}: {}", message_id, e)
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to dead letter message {}: {}", message_id, e),
+                    ))
                 })?;
         }
 
@@ -451,10 +556,17 @@ impl BulkOperationHandler {
         &self,
         messages: &[azservicebus::ServiceBusReceivedMessage],
         consumer: Arc<Mutex<Consumer>>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         log::debug!("Abandoning {} processed messages", messages.len());
         let mut consumer_guard = consumer.lock().await;
-        consumer_guard.abandon_messages(messages).await?;
+        consumer_guard.abandon_messages(messages).await.map_err(
+            |e| -> Box<dyn Error + Send + Sync> {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to abandon messages: {}", e),
+                ))
+            },
+        )?;
         drop(consumer_guard);
         Ok(())
     }
@@ -465,7 +577,7 @@ impl BulkOperationHandler {
         queue_name: &str,
         messages: Vec<ServiceBusMessage>,
         service_bus_client: Arc<Mutex<ServiceBusClient<azservicebus::core::BasicRetryPolicy>>>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         if messages.is_empty() {
             return Ok(());
         }
@@ -476,26 +588,31 @@ impl BulkOperationHandler {
         let mut producer = client
             .create_producer_for_queue(queue_name, ServiceBusSenderOptions::default())
             .await
-            .map_err(|e| format!("Failed to create producer for queue {}: {}", queue_name, e))?;
+            .map_err(|e| -> Box<dyn Error + Send + Sync> {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to create producer for queue {}: {}", queue_name, e),
+                ))
+            })?;
 
         // For large batches, chunk into smaller groups to prevent Azure Service Bus timeouts
-        const MAX_CHUNK_SIZE: usize = 100; // Conservative limit to prevent timeouts
+        let max_chunk_size = self.config.bulk_chunk_size(); // Use configurable chunk size
         let total_messages = messages.len();
 
-        if total_messages > MAX_CHUNK_SIZE {
+        if total_messages > max_chunk_size {
             log::info!(
                 "Splitting {} messages into chunks of {} for queue: {}",
                 total_messages,
-                MAX_CHUNK_SIZE,
+                max_chunk_size,
                 queue_name
             );
 
             // Send messages in chunks
-            for (chunk_idx, chunk) in messages.chunks(MAX_CHUNK_SIZE).enumerate() {
+            for (chunk_idx, chunk) in messages.chunks(max_chunk_size).enumerate() {
                 log::debug!(
                     "Sending chunk {}/{} ({} messages) to queue: {}",
                     chunk_idx + 1,
-                    total_messages.div_ceil(MAX_CHUNK_SIZE),
+                    total_messages.div_ceil(max_chunk_size),
                     chunk.len(),
                     queue_name
                 );
@@ -542,46 +659,22 @@ impl BulkOperationHandler {
         &self,
         messages: &[azservicebus::ServiceBusReceivedMessage],
         context: &BulkOperationContext,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         log::debug!("Completing {} messages in source queue", messages.len());
         let mut consumer_guard = context.consumer.lock().await;
-        consumer_guard.complete_messages(messages).await?;
+        consumer_guard.complete_messages(messages).await.map_err(
+            |e| -> Box<dyn Error + Send + Sync> {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to complete messages: {}", e),
+                ))
+            },
+        )?;
         drop(consumer_guard);
         Ok(())
     }
 
-    /// Convert peeked message data to ServiceBusMessage objects for sending
-    fn convert_peeked_messages_for_sending(
-        &self,
-        messages_data: &[(MessageIdentifier, Vec<u8>)],
-    ) -> Result<Vec<ServiceBusMessage>, Box<dyn std::error::Error>> {
-        let mut converted_messages = Vec::new();
-
-        for (identifier, body) in messages_data {
-            log::debug!("Converting peeked message {} for sending", identifier.id);
-
-            // Create a new ServiceBusMessage with the body data
-            let mut message = ServiceBusMessage::new(body.clone());
-
-            // Set message ID for tracking (optional, but useful for debugging)
-            if let Err(e) = message.set_message_id(&identifier.id) {
-                log::warn!(
-                    "Failed to set message ID for message {}: {}",
-                    identifier.id,
-                    e
-                );
-                // Continue anyway - this is not critical
-            }
-
-            converted_messages.push(message);
-        }
-
-        log::debug!(
-            "Converted {} peeked messages for sending",
-            converted_messages.len()
-        );
-        Ok(converted_messages)
-    }
+    // Removed unused convert_peeked_messages_for_sending method
 
     /// Collect target messages from the queue, separating them from non-target messages
     async fn collect_target_messages(
@@ -594,7 +687,7 @@ impl BulkOperationHandler {
             Vec<azservicebus::ServiceBusReceivedMessage>,
             Vec<azservicebus::ServiceBusReceivedMessage>,
         ),
-        Box<dyn std::error::Error>,
+        Box<dyn Error + Send + Sync>,
     > {
         let mut target_messages = Vec::new();
         let mut non_target_messages = Vec::new();
@@ -693,7 +786,7 @@ impl BulkOperationHandler {
     async fn process_single_batch(
         &self,
         ctx: BatchProcessingContext<'_>,
-    ) -> Result<Option<usize>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<usize>, Box<dyn Error + Send + Sync>> {
         match self
             .receive_message_batch(
                 ctx.consumer,
@@ -725,7 +818,7 @@ impl BulkOperationHandler {
         target_messages_found: usize,
         target_map: &HashMap<String, MessageIdentifier>,
         messages_processed: usize,
-    ) -> Result<Option<Vec<azservicebus::ServiceBusReceivedMessage>>, Box<dyn std::error::Error>>
+    ) -> Result<Option<Vec<azservicebus::ServiceBusReceivedMessage>>, Box<dyn Error + Send + Sync>>
     {
         log::debug!(
             "Receiving batch of {} messages (found {}/{} targets so far, {} messages processed total)",
@@ -736,7 +829,15 @@ impl BulkOperationHandler {
         );
 
         let mut consumer_guard = consumer.lock().await;
-        let received_messages = consumer_guard.receive_messages(batch_size as u32).await?;
+        let received_messages = consumer_guard
+            .receive_messages(batch_size as u32)
+            .await
+            .map_err(|e| -> Box<dyn Error + Send + Sync> {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to receive messages: {}", e),
+                ))
+            })?;
         drop(consumer_guard); // Release the lock early
 
         if received_messages.is_empty() {
@@ -791,8 +892,8 @@ impl BulkOperationHandler {
         &self,
         consumer: Arc<Mutex<Consumer>>,
         non_target_messages: Vec<azservicebus::ServiceBusReceivedMessage>,
-        result: &mut BulkOperationResult,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+        _result: &mut BulkOperationResult,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         if non_target_messages.is_empty() {
             return Ok(());
         }
@@ -803,34 +904,21 @@ impl BulkOperationHandler {
         );
 
         let mut consumer_guard = consumer.lock().await;
-        match consumer_guard.abandon_messages(&non_target_messages).await {
-            Ok(()) => {
-                log::info!("Successfully abandoned all non-target messages");
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to abandon non-target messages: {}", e);
-                log::error!("{}", error_msg);
-                result.add_failure(error_msg);
-            }
-        }
+        consumer_guard
+            .abandon_messages(&non_target_messages)
+            .await
+            .map_err(|e| -> Box<dyn Error + Send + Sync> {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to abandon messages: {}", e),
+                ))
+            })?;
         drop(consumer_guard);
 
         Ok(())
     }
 
-    /// Convert DLQ messages to new ServiceBusMessage objects for sending
-    fn convert_messages_for_sending(
-        &self,
-        messages: &[azservicebus::ServiceBusReceivedMessage],
-    ) -> Result<Vec<ServiceBusMessage>, Box<dyn std::error::Error>> {
-        let mut new_messages = Vec::new();
-        for message in messages {
-            let body = message.body()?;
-            let new_message = ServiceBusMessage::new(body.to_vec());
-            new_messages.push(new_message);
-        }
-        Ok(new_messages)
-    }
+    // Removed unused convert_messages_for_sending method
 
     /// Track which specific messages were successfully processed
     fn track_successful_messages(
@@ -839,6 +927,11 @@ impl BulkOperationHandler {
         target_map: &HashMap<String, MessageIdentifier>,
         result: &mut BulkOperationResult,
     ) {
+        log::debug!(
+            "TRACKING: Starting to track {} successful messages (current count: {})",
+            messages.len(),
+            result.successful
+        );
         for message in messages {
             let message_id = message
                 .message_id()
@@ -855,6 +948,330 @@ impl BulkOperationHandler {
                 );
             }
         }
+    }
+
+    /// Main entry point for bulk delete operations
+    pub async fn bulk_delete(
+        &self,
+        context: BulkOperationContext,
+        params: &BulkSendParams,
+    ) -> Result<BulkOperationResult, Box<dyn Error + Send + Sync>> {
+        let total_requested = params.message_identifiers.len();
+        let mut result = BulkOperationResult::new(total_requested);
+
+        log::info!(
+            "Starting bulk delete operation for {} messages",
+            total_requested
+        );
+
+        if total_requested == 0 {
+            log::warn!("No messages provided for bulk delete operation");
+            return Ok(result);
+        }
+
+        // Create a lookup map for quick message identification
+        let target_map: HashMap<String, MessageIdentifier> = params
+            .message_identifiers
+            .iter()
+            .map(|m| (m.id.clone(), m.clone()))
+            .collect();
+
+        // Log target message IDs and sequences for debugging
+        log::info!("Target messages for deletion:");
+        for (i, msg_id) in params.message_identifiers.iter().take(10).enumerate() {
+            log::info!(
+                "  [{}] ID: {}, Sequence: {}",
+                i + 1,
+                msg_id.id,
+                msg_id.sequence
+            );
+        }
+        if params.message_identifiers.len() > 10 {
+            log::info!(
+                "  ... and {} more messages",
+                params.message_identifiers.len() - 10
+            );
+        }
+
+        // Use a very small batch size to minimize lock expiration issues
+        // Azure Service Bus message locks expire after 60 seconds, so we need to process quickly
+        let batch_size = std::cmp::min(10, total_requested);
+
+        // Limit maximum messages to process to prevent runaway operations
+        // Process at most 5x the number of target messages, with a minimum of 500
+        // This accounts for Azure Service Bus message ordering differences
+        let max_messages_to_process = (total_requested * 5).max(500);
+
+        log::info!(
+            "Processing bulk delete for {} selected messages using batch size {} (max {} messages to process)",
+            total_requested,
+            batch_size,
+            max_messages_to_process
+        );
+
+        log::info!(
+            "Target sequence number range: {} to {}",
+            target_map.values().map(|m| m.sequence).min().unwrap_or(0),
+            target_map.values().map(|m| m.sequence).max().unwrap_or(0)
+        );
+
+        // Process messages in smaller batches to avoid lock expiration
+        let mut remaining_targets = target_map.clone();
+        let mut total_processed = 0;
+        let start_time = std::time::Instant::now();
+        let max_processing_time_secs = self.config.bulk_processing_time_secs(); // Stay well under 60-second lock timeout to prevent expiration
+
+        while !remaining_targets.is_empty()
+            && total_processed < max_messages_to_process
+            && start_time.elapsed().as_secs() < max_processing_time_secs
+        {
+            let elapsed_time = start_time.elapsed().as_secs();
+            log::debug!(
+                "Processing batch - {} targets remaining, {} messages processed so far, elapsed time: {}s",
+                remaining_targets.len(),
+                total_processed,
+                elapsed_time
+            );
+
+            // Check if we're approaching the timeout limit before starting a new batch
+            if elapsed_time > (max_processing_time_secs - 10) {
+                log::warn!(
+                    "Approaching timeout limit ({}s), stopping processing to avoid lock expiration. {} targets remaining.",
+                    elapsed_time,
+                    remaining_targets.len()
+                );
+                break;
+            }
+
+            // Receive a small batch of messages
+            let batch_start_time = std::time::Instant::now();
+            let received_messages = {
+                let mut consumer_guard = context.consumer.lock().await;
+                consumer_guard
+                    .receive_messages(batch_size as u32)
+                    .await
+                    .map_err(|e| -> Box<dyn Error + Send + Sync> {
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("Failed to receive messages: {}", e),
+                        ))
+                    })?
+            };
+
+            let receive_time = batch_start_time.elapsed().as_millis();
+            log::debug!(
+                "Received {} messages in {}ms",
+                received_messages.len(),
+                receive_time
+            );
+
+            // Log sequence number range of received messages for debugging
+            if !received_messages.is_empty() {
+                let min_seq = received_messages
+                    .iter()
+                    .map(|m| m.sequence_number())
+                    .min()
+                    .unwrap_or(0);
+                let max_seq = received_messages
+                    .iter()
+                    .map(|m| m.sequence_number())
+                    .max()
+                    .unwrap_or(0);
+                log::debug!(
+                    "Received messages sequence range: {} to {} (batch size: {})",
+                    min_seq,
+                    max_seq,
+                    received_messages.len()
+                );
+            }
+
+            if received_messages.is_empty() {
+                log::info!("No more messages available in queue");
+                break;
+            }
+
+            // Immediately process this batch to avoid lock expiration
+            let mut target_messages = Vec::new();
+            let mut non_target_messages = Vec::new();
+
+            for message in received_messages {
+                let message_id = message
+                    .message_id()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+                let message_sequence = message.sequence_number();
+
+                // Check if this message matches our targets (ID-only matching)
+                if remaining_targets.contains_key(&message_id) {
+                    log::info!(
+                        "✓ Found target message: {} (sequence: {})",
+                        message_id,
+                        message_sequence
+                    );
+                    remaining_targets.remove(&message_id);
+                    target_messages.push(message);
+                } else {
+                    log::debug!(
+                        "Non-target message: {} (sequence: {})",
+                        message_id,
+                        message_sequence
+                    );
+                    non_target_messages.push(message);
+                }
+                total_processed += 1;
+            }
+
+            // Immediately complete target messages while locks are still valid
+            if !target_messages.is_empty() {
+                let complete_start_time = std::time::Instant::now();
+                log::debug!(
+                    "Immediately completing {} target messages",
+                    target_messages.len()
+                );
+
+                match self
+                    .complete_processed_messages(&target_messages, &context)
+                    .await
+                {
+                    Ok(()) => {
+                        let complete_time = complete_start_time.elapsed().as_millis();
+                        self.track_successful_messages(&target_messages, &target_map, &mut result);
+                        log::debug!(
+                            "Successfully deleted {} messages in this batch (took {}ms)",
+                            target_messages.len(),
+                            complete_time
+                        );
+                    }
+                    Err(e) => {
+                        let complete_time = complete_start_time.elapsed().as_millis();
+                        let error_msg = format!(
+                            "Failed to delete target messages in batch (after {}ms): {}",
+                            complete_time, e
+                        );
+                        log::error!("{}", error_msg);
+
+                        // Check if this looks like a lock expiration error
+                        let error_str = e.to_string().to_lowercase();
+                        if error_str.contains("lock")
+                            || error_str.contains("timeout")
+                            || error_str.contains("expired")
+                        {
+                            log::error!(
+                                "CRITICAL: Lock expiration detected! {} target messages may not be deleted",
+                                target_messages.len()
+                            );
+                        }
+
+                        result.add_failure(error_msg);
+
+                        // Don't track these as successful since they failed
+                        for msg in &target_messages {
+                            let msg_id = msg
+                                .message_id()
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(|| "unknown".to_string());
+                            remaining_targets.insert(
+                                msg_id.clone(),
+                                target_map
+                                    .get(&msg_id)
+                                    .cloned()
+                                    .unwrap_or_else(|| MessageIdentifier::from_string(msg_id)),
+                            );
+                        }
+                    }
+                }
+            }
+
+            // Abandon non-target messages immediately with detailed error handling
+            if !non_target_messages.is_empty() {
+                let abandon_start_time = std::time::Instant::now();
+                log::debug!(
+                    "Abandoning {} non-target messages",
+                    non_target_messages.len()
+                );
+                let mut consumer_guard = context.consumer.lock().await;
+                match consumer_guard.abandon_messages(&non_target_messages).await {
+                    Ok(()) => {
+                        let abandon_time = abandon_start_time.elapsed().as_millis();
+                        log::debug!(
+                            "Successfully abandoned {} non-target messages (took {}ms)",
+                            non_target_messages.len(),
+                            abandon_time
+                        );
+                    }
+                    Err(e) => {
+                        let abandon_time = abandon_start_time.elapsed().as_millis();
+                        log::error!(
+                            "CRITICAL: Failed to abandon {} non-target messages after {}ms: {}. These messages may be accidentally completed!",
+                            non_target_messages.len(),
+                            abandon_time,
+                            e
+                        );
+
+                        // Check if this looks like a lock expiration error
+                        let error_str = e.to_string().to_lowercase();
+                        if error_str.contains("lock")
+                            || error_str.contains("timeout")
+                            || error_str.contains("expired")
+                        {
+                            log::error!(
+                                "CRITICAL: Lock expiration detected during abandon! {} non-target messages may be accidentally deleted!",
+                                non_target_messages.len()
+                            );
+                        }
+
+                        // This is a critical error - non-target messages might get completed instead of abandoned
+                        result.add_failure(format!(
+                            "Failed to abandon {} non-target messages: {}",
+                            non_target_messages.len(),
+                            e
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Calculate not found messages correctly - use remaining targets count
+        result.not_found = remaining_targets.len();
+
+        // Debug logging to track the calculation
+        log::debug!(
+            "Final calculation: successful={}, failed={}, remaining_targets={}, total_requested={}",
+            result.successful,
+            result.failed,
+            remaining_targets.len(),
+            total_requested
+        );
+
+        let processing_time = start_time.elapsed().as_secs();
+
+        if total_processed >= max_messages_to_process && !remaining_targets.is_empty() {
+            log::warn!(
+                "Reached maximum message processing limit ({}). {} targets not found after processing {} messages in {} seconds.",
+                max_messages_to_process,
+                remaining_targets.len(),
+                total_processed,
+                processing_time
+            );
+        } else if processing_time >= max_processing_time_secs && !remaining_targets.is_empty() {
+            log::warn!(
+                "Reached maximum processing time ({}s). {} targets not found after processing {} messages.",
+                max_processing_time_secs,
+                remaining_targets.len(),
+                total_processed
+            );
+        }
+
+        log::info!(
+            "Bulk delete operation completed: {} successful, {} failed, {} not found out of {} requested (processed {} messages total)",
+            result.successful,
+            result.failed,
+            result.not_found,
+            total_requested,
+            total_processed
+        );
+
+        Ok(result)
     }
 }
 
