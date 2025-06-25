@@ -43,13 +43,15 @@ where
                     self.update_popup(PopupActivityMsg::ShowError(e))
                 }
                 Msg::ClipboardError(error_msg) => {
-                    self.error_reporter.report_clipboard_error("copy_to_clipboard", &error_msg);
+                    self.error_reporter
+                        .report_clipboard_error("copy_to_clipboard", &error_msg);
                     None
                 }
                 Msg::ToggleHelpScreen => self.update_help(),
                 Msg::ToggleThemePicker => {
                     if let Err(e) = self.mount_theme_picker() {
-                        self.error_reporter.report_mount_error("ThemePicker", "mount", e);
+                        self.error_reporter
+                            .report_mount_error("ThemePicker", "mount", e);
                         None
                     } else {
                         None
@@ -61,9 +63,11 @@ where
             if let Some(Msg::Error(e)) = result {
                 log::error!("Error from message processing: {}", e);
                 if let Err(err) = self.mount_error_popup(&e) {
-                    self.error_reporter.report_mount_error("ErrorPopup", "mount", err);
+                    self.error_reporter
+                        .report_mount_error("ErrorPopup", "mount", err);
                     // Since we can't show the error popup, report the original error through ErrorReporter
-                    self.error_reporter.report_simple(e, "MessageProcessing", "handle_update");
+                    self.error_reporter
+                        .report_simple(e, "MessageProcessing", "handle_update");
                 }
                 None
             } else {

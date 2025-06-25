@@ -169,7 +169,11 @@ where
                 // No auto-loading needed, continue with normal flow
             }
             Err(e) => {
-                self.error_reporter.report_loading_error("MessageState", "auto_load_after_removal", &e);
+                self.error_reporter.report_loading_error(
+                    "MessageState",
+                    "auto_load_after_removal",
+                    &e,
+                );
                 // Continue with normal flow even if loading fails
             }
         }
@@ -217,7 +221,8 @@ where
                     .total_pages_loaded,
             },
         )) {
-            self.error_reporter.report_send_error("pagination state update", &e);
+            self.error_reporter
+                .report_send_error("pagination state update", &e);
             return None;
         }
 

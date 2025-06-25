@@ -316,9 +316,13 @@ async fn main() -> Result<(), Box<dyn StdError>> {
                 error!("Error during view rendering: {}", e);
                 // Show error in popup
                 if let Err(popup_err) = model.mount_error_popup(&e) {
-                    model.error_reporter.report_mount_error("ErrorPopup", "mount", popup_err);
+                    model
+                        .error_reporter
+                        .report_mount_error("ErrorPopup", "mount", popup_err);
                     // Since we can't show the error popup, report the original error through ErrorReporter
-                    model.error_reporter.report_simple(e, "ViewRendering", "main_loop");
+                    model
+                        .error_reporter
+                        .report_simple(e, "ViewRendering", "main_loop");
                 }
             }
             model.state_manager.redraw_complete();

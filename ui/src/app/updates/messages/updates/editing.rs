@@ -34,7 +34,8 @@ where
 
                 // Activate the MessageDetails component - with proper error recovery
                 if let Err(e) = self.app.active(&ComponentId::MessageDetails) {
-                    self.error_reporter.report_activation_error("MessageDetails", &e);
+                    self.error_reporter
+                        .report_activation_error("MessageDetails", &e);
                     // Recovery: go back to message picker state
                     self.set_app_state(AppState::MessagePicker);
                     return Some(Msg::ShowError(
@@ -87,13 +88,15 @@ where
 
         // Re-focus the messages component with focus
         if let Err(e) = self.remount_messages_with_focus(true) {
-            self.error_reporter.report_mount_error("Messages", "remount_with_focus", &e);
+            self.error_reporter
+                .report_mount_error("Messages", "remount_with_focus", &e);
         }
 
         // Remount message details without focus to remove focus styling
         // (now that Messages is active, MessageDetails will be remounted without focus)
         if let Err(e) = self.remount_message_details(0) {
-            self.error_reporter.report_mount_error("MessageDetails", "remount_without_focus", &e);
+            self.error_reporter
+                .report_mount_error("MessageDetails", "remount_without_focus", &e);
         }
 
         log::debug!("Cancelled editing message and returned to message list");
