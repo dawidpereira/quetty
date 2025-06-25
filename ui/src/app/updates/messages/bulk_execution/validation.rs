@@ -64,8 +64,8 @@ where
 
     /// Validates the current queue type matches the expected type
     fn validate_queue_type(&self, expected_queue_type: QueueType) -> Result<(), bool> {
-        if self.queue_state.current_queue_type != expected_queue_type {
-            let current_type = match self.queue_state.current_queue_type {
+        if self.queue_manager.queue_state.current_queue_type != expected_queue_type {
+            let current_type = match self.queue_manager.queue_state.current_queue_type {
                 QueueType::Main => "main queue",
                 QueueType::DeadLetter => "dead letter queue",
             };
@@ -186,7 +186,7 @@ pub fn validate_bulk_delete_request<T: TerminalAdapter>(
     log::info!(
         "Validated bulk delete request for {} messages from {:?}",
         message_ids.len(),
-        model.queue_state.current_queue_type
+        model.queue_state().current_queue_type
     );
 
     Ok(())

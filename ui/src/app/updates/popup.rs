@@ -92,7 +92,7 @@ where
     ) -> Option<Msg> {
         // Store the action to perform on confirmation
         log::debug!("Storing confirmation action: {:?}", on_confirm);
-        self.pending_confirmation_action = Some(on_confirm);
+        self.set_pending_confirmation_action(Some(on_confirm));
 
         if let Err(e) = self.mount_confirmation_popup(&title, &message) {
             log::error!("Failed to mount confirmation popup: {}", e);
@@ -113,7 +113,7 @@ where
 
         if confirmed {
             // Execute the stored action if user confirmed
-            if let Some(action) = self.pending_confirmation_action.take() {
+            if let Some(action) = self.take_pending_confirmation_action() {
                 log::debug!("Executing stored confirmation action: {:?}", action);
                 Some(*action)
             } else {
@@ -123,7 +123,7 @@ where
         } else {
             // User cancelled, just clear the pending action
             log::debug!("User cancelled confirmation, clearing pending action");
-            self.pending_confirmation_action = None;
+            self.set_pending_confirmation_action(None);
             None
         }
     }

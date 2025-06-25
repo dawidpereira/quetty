@@ -1,4 +1,6 @@
-use crate::app::queue_state::QueueState;
+use crate::app::managers::{MessageManager, QueueManager, StateManager};
+// Re-export AppState for other modules
+pub use crate::app::managers::state_manager::AppState;
 use crate::app::task_manager::TaskManager;
 use crate::components::common::{ComponentId, Msg};
 use crate::error::AppError;
@@ -7,7 +9,7 @@ use server::service_bus_manager::ServiceBusManager;
 use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 use server::taskpool::TaskPool;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::Receiver;
 use tokio::sync::Mutex;
 use tuirealm::event::NoUserEvent;
 use tuirealm::terminal::{TerminalAdapter, TerminalBridge};
@@ -20,60 +22,32 @@ mod popup_management;
 mod state_management;
 mod update_handler;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum AppState {
-    NamespacePicker,
-    QueuePicker,
-    MessagePicker,
-    MessageDetails,
-    Loading,
-    HelpScreen,
-    ThemePicker,
-}
-
-/// Application model
+/// Application model using composition with managers
 pub struct Model<T>
 where
     T: TerminalAdapter,
 {
     /// Application
     pub app: Application<ComponentId, Msg, NoUserEvent>,
-    pub app_state: AppState,
-    /// Indicates that the application must quit
-    pub quit: bool,
-    /// Tells whether to redraw interface
-    pub redraw: bool,
     /// Used to draw to terminal
     pub terminal: TerminalBridge<T>,
 
-    pub selected_namespace: Option<String>,
-    // Store both the loading message and the previous state to return to
-    pub loading_message: Option<(String, AppState)>,
-    // Store the previous state when showing help screen
-    pub previous_state: Option<AppState>,
-
     pub taskpool: TaskPool,
-    pub tx_to_main: Sender<Msg>,
     pub rx_to_main: Receiver<Msg>,
 
     /// Service bus manager - direct access to server-side manager
     pub service_bus_manager: Arc<Mutex<ServiceBusManager>>,
-    pub active_component: ComponentId,
-
-    // All queue-related state
-    pub queue_state: QueueState,
-
-    // Pending confirmation action (message to execute on confirmation)
-    pub pending_confirmation_action: Option<Box<Msg>>,
-
-    // Track if we're currently in message editing mode
-    pub is_editing_message: bool,
 
     // Enhanced error reporting system
     pub error_reporter: ErrorReporter,
 
     // Task manager for consistent async operations
     pub task_manager: TaskManager,
+
+    // Managers for different concerns
+    pub state_manager: StateManager,
+    pub queue_manager: QueueManager,
+    pub message_manager: MessageManager,
 }
 
 impl<T> Model<T>
@@ -100,8 +74,8 @@ where
         // Close the semaphore to prevent new tasks
         self.taskpool.close();
 
-        // Set quit flag
-        self.quit = true;
+        // Set quit flag through state manager
+        self.state_manager.shutdown();
 
         // Dispose service bus resources
         let service_bus_manager = self.service_bus_manager.clone();
@@ -121,6 +95,69 @@ where
                     _ => Err(AppError::ServiceBus("Unexpected response".to_string())),
                 }
             });
+    }
+
+    // Essential accessor methods
+    
+    /// Get immutable reference to queue state
+    pub fn queue_state(&self) -> &crate::app::queue_state::QueueState {
+        &self.queue_manager.queue_state
+    }
+
+    /// Get mutable reference to queue state
+    pub fn queue_state_mut(&mut self) -> &mut crate::app::queue_state::QueueState {
+        &mut self.queue_manager.queue_state
+    }
+
+    /// Set app state
+    pub fn set_app_state(&mut self, state: AppState) {
+        self.state_manager.set_app_state(state);
+    }
+
+    /// Set editing message mode
+    pub fn set_editing_message(&mut self, editing: bool) {
+        self.state_manager.set_editing_message(editing);
+    }
+
+    /// Set redraw flag
+    pub fn set_redraw(&mut self, redraw: bool) {
+        if redraw {
+            self.state_manager.redraw = true;
+        } else {
+            self.state_manager.redraw = false;
+        }
+    }
+
+    /// Set quit flag
+    pub fn set_quit(&mut self, quit: bool) {
+        if quit {
+            self.state_manager.quit = true;
+        }
+    }
+
+    /// Get tx_to_main sender
+    pub fn tx_to_main(&self) -> &std::sync::mpsc::Sender<Msg> {
+        &self.state_manager.tx_to_main
+    }
+
+    /// Set selected namespace
+    pub fn set_selected_namespace(&mut self, namespace: Option<String>) {
+        self.state_manager.selected_namespace = namespace;
+    }
+
+    /// Set pending confirmation action
+    pub fn set_pending_confirmation_action(&mut self, action: Option<Box<Msg>>) {
+        self.state_manager.pending_confirmation_action = action;
+    }
+
+    /// Take pending confirmation action
+    pub fn take_pending_confirmation_action(&mut self) -> Option<Box<Msg>> {
+        self.state_manager.take_pending_confirmation()
+    }
+
+    /// Set active component
+    pub fn set_active_component(&mut self, component: ComponentId) {
+        self.state_manager.set_active_component(component);
     }
 }
 

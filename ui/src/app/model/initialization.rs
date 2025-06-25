@@ -1,4 +1,6 @@
-use super::{AppState, Model};
+use super::Model;
+use crate::app::managers::{MessageManager, QueueManager, StateManager};
+
 use crate::app::queue_state::QueueState;
 use crate::app::task_manager::TaskManager;
 use crate::components::common::{ComponentId, Msg};
@@ -122,27 +124,32 @@ impl Model<CrosstermTerminalAdapter> {
         let task_manager =
             TaskManager::new(taskpool.clone(), tx_to_main.clone(), error_reporter.clone());
 
+        // Create managers
+        let state_manager = StateManager::new(tx_to_main.clone());
+        let queue_manager = QueueManager::new(
+            service_bus_manager.clone(),
+            task_manager.clone(),
+            tx_to_main.clone(),
+        );
+        let message_manager = MessageManager::new(
+            service_bus_manager.clone(),
+            task_manager.clone(),
+            tx_to_main.clone(),
+        );
+
         let queue_state = QueueState::new();
         let mut app = Self {
             app: Self::init_app(&queue_state)?,
-            quit: false,
-            redraw: true,
             terminal: TerminalBridge::init_crossterm()
                 .map_err(|e| AppError::Component(e.to_string()))?,
-            app_state: AppState::NamespacePicker,
-            tx_to_main,
             rx_to_main,
             taskpool,
-            service_bus_manager, // Use ServiceBusManager directly
-            selected_namespace: None,
-            loading_message: None,
-            previous_state: None,
-            active_component: ComponentId::NamespacePicker,
-            queue_state,
-            pending_confirmation_action: None,
-            is_editing_message: false,
+            service_bus_manager,
             error_reporter,
             task_manager,
+            state_manager,
+            queue_manager,
+            message_manager,
         };
 
         // Initialize loading indicator with ComponentState pattern using extension trait
@@ -152,8 +159,8 @@ impl Model<CrosstermTerminalAdapter> {
             Vec::default(),
         )?;
 
-        // Use task manager for loading namespaces instead of direct error handling
-        app.load_namespaces();
+        // Use queue manager for loading namespaces instead of direct error handling
+        app.queue_manager.load_namespaces();
 
         Ok(app)
     }

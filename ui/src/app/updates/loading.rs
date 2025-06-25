@@ -12,18 +12,18 @@ where
                 log::debug!("Starting loading: {}", message);
 
                 // Store current state to return to later
-                let previous_state = self.app_state.clone();
+                let previous_state = self.state_manager.app_state.clone();
 
                 // Store loading message and previous state
-                self.loading_message = Some((message.clone(), previous_state));
+                self.state_manager.loading_message = Some((message.clone(), previous_state));
 
                 // Mount loading indicator with proper subscriptions
                 if let Err(e) = self.mount_loading_indicator(&message) {
                     log::error!("Failed to mount loading indicator: {}", e);
                 }
 
-                self.app_state = AppState::Loading;
-                self.redraw = true;
+                self.set_app_state(AppState::Loading);
+                self.set_redraw(true);
                 None
             }
             LoadingActivityMsg::Stop => {
@@ -31,21 +31,21 @@ where
 
                 // Only revert to previous state if we're still in Loading state
                 // This prevents overriding state changes that happened during loading
-                if self.app_state == AppState::Loading {
-                    if let Some((_, previous_state)) = self.loading_message.take() {
+                if self.state_manager.app_state == AppState::Loading {
+                    if let Some((_, previous_state)) = self.state_manager.loading_message.take() {
                         if previous_state != AppState::Loading {
-                            self.app_state = previous_state;
+                            self.set_app_state(previous_state);
                         } else {
                             // If previous state was also loading, go to NamespacePicker
-                            self.app_state = AppState::NamespacePicker;
+                            self.set_app_state(AppState::NamespacePicker);
                         }
                     }
                 } else {
                     // App state has changed during loading, keep the current state
-                    self.loading_message.take();
+                    self.state_manager.loading_message.take();
                     log::debug!(
                         "Loading stopped but app state has changed to {:?}, keeping current state",
-                        self.app_state
+                        self.state_manager.app_state
                     );
                 }
 
@@ -58,7 +58,7 @@ where
                     }
                 }
 
-                self.redraw = true;
+                self.set_redraw(true);
                 None
             }
         }

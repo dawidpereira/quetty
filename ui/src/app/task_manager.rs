@@ -7,6 +7,7 @@ use std::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 
 /// Task manager for executing async operations with loading indicators and error handling
+#[derive(Clone)]
 pub struct TaskManager {
     taskpool: TaskPool,
     tx_to_main: Sender<Msg>,

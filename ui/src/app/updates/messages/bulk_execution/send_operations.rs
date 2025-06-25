@@ -114,7 +114,7 @@ pub fn handle_bulk_send_to_dlq_with_delete_execution<T: TerminalAdapter>(
     let target_queue = format!(
         "{}/$deadletterqueue",
         model
-            .queue_state
+            .queue_state()
             .current_queue_name
             .as_ref()
             .unwrap_or(&"unknown".to_string())
@@ -139,7 +139,7 @@ fn extract_message_data_from_current_state<T: TerminalAdapter>(
     let mut messages_data = Vec::new();
 
     // Get messages from pagination state (these are peeked messages)
-    let all_messages = &model.queue_state.message_pagination.all_loaded_messages;
+    let all_messages = &model.queue_state().message_pagination.all_loaded_messages;
 
     for message_id in message_ids {
         // Find the message in our loaded state
@@ -177,7 +177,7 @@ fn get_main_queue_name_from_current_dlq<T: TerminalAdapter>(
     model: &Model<T>,
 ) -> Result<String, AppError> {
     let current_queue_name = model
-        .queue_state
+        .queue_state()
         .current_queue_name
         .as_ref()
         .ok_or_else(|| AppError::State("No current queue name available".to_string()))?;
@@ -202,15 +202,15 @@ fn start_bulk_send_generic<T: TerminalAdapter>(
     bulk_data: BulkSendData,
     operation_params: BulkSendParams,
 ) -> Option<Msg> {
-    let task_manager = BulkTaskManager::new(model.taskpool.clone(), model.tx_to_main.clone());
+    let task_manager = BulkTaskManager::new(model.taskpool.clone(), model.tx_to_main().clone());
 
     // Create task parameters
     let task_params = BulkSendTaskParams::new(
         bulk_data,
         operation_params,
         model.service_bus_manager.clone(),
-        model.tx_to_main.clone(),
-        model.queue_state.message_repeat_count,
+        model.tx_to_main().clone(),
+        model.queue_state().message_repeat_count,
     );
 
     // Execute the task

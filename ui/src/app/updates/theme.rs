@@ -75,7 +75,7 @@ where
         }
 
         // Force a complete redraw to apply the new theme
-        self.redraw = true;
+        self.set_redraw(true);
 
         log::info!(
             "Successfully switched to theme: {} ({})",

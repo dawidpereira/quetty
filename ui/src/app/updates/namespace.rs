@@ -20,7 +20,7 @@ where
             NamespaceActivityMsg::NamespaceSelected => self.handle_namespace_selection(),
             NamespaceActivityMsg::NamespaceUnselected => {
                 // Clear selected namespace
-                self.selected_namespace = None;
+                self.set_selected_namespace(None);
 
                 self.load_namespaces();
                 None
@@ -35,7 +35,7 @@ where
             self.app.state(&ComponentId::NamespacePicker)
         {
             log::info!("Selected namespace: {}", namespace);
-            self.selected_namespace = Some(namespace);
+            self.set_selected_namespace(Some(namespace));
         }
 
         self.load_queues();

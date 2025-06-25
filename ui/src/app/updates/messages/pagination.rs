@@ -104,7 +104,7 @@ where
 {
     // Pagination request handlers
     pub fn handle_next_page_request(&mut self) -> Option<Msg> {
-        if self.queue_state.message_pagination.has_next_page {
+        if self.queue_manager.queue_state.message_pagination.has_next_page {
             if let Err(e) = self.handle_next_page() {
                 self.error_reporter
                     .report_simple(e, "Pagination", "next_page");
@@ -115,7 +115,7 @@ where
     }
 
     pub fn handle_previous_page_request(&mut self) -> Option<Msg> {
-        if self.queue_state.message_pagination.has_previous_page {
+        if self.queue_manager.queue_state.message_pagination.has_previous_page {
             if let Err(e) = self.handle_previous_page() {
                 self.error_reporter
                     .report_simple(e, "Pagination", "prev_page");
@@ -129,14 +129,14 @@ where
     pub fn handle_next_page(&mut self) -> AppResult<()> {
         log::debug!(
             "Handle next page - current: {}, total_loaded: {}",
-            self.queue_state.message_pagination.current_page,
-            self.queue_state.message_pagination.total_pages_loaded
+            self.queue_manager.queue_state.message_pagination.current_page,
+            self.queue_manager.queue_state.message_pagination.total_pages_loaded
         );
 
-        let next_page = self.queue_state.message_pagination.current_page + 1;
+        let next_page = self.queue_manager.queue_state.message_pagination.current_page + 1;
 
         if self
-            .queue_state
+            .queue_state()
             .message_pagination
             .is_page_loaded(next_page)
         {
@@ -152,11 +152,13 @@ where
     pub fn handle_previous_page(&mut self) -> AppResult<()> {
         log::debug!(
             "Handle previous page - current: {}",
-            self.queue_state.message_pagination.current_page
+            self.queue_manager.queue_state.message_pagination.current_page
         );
 
-        if self.queue_state.message_pagination.current_page > 0 {
-            self.queue_state.message_pagination.go_to_previous_page();
+        if self.queue_manager.queue_state.message_pagination.current_page > 0 {
+            self.queue_state_mut()
+                .message_pagination
+                .go_to_previous_page();
             self.update_pagination_state();
             self.send_page_changed_message();
         }
@@ -180,26 +182,28 @@ where
         current_page: usize,
         total_pages_loaded: usize,
     ) -> Option<Msg> {
-        self.queue_state.message_pagination.has_next_page = has_next;
-        self.queue_state.message_pagination.has_previous_page = has_previous;
-        self.queue_state.message_pagination.current_page = current_page;
-        self.queue_state.message_pagination.total_pages_loaded = total_pages_loaded;
+        self.queue_state_mut().message_pagination.has_next_page = has_next;
+        self.queue_state_mut().message_pagination.has_previous_page = has_previous;
+        self.queue_state_mut().message_pagination.current_page = current_page;
+        self.queue_state_mut().message_pagination.total_pages_loaded = total_pages_loaded;
         None
     }
 
     // Pagination utility methods
     pub fn reset_pagination_state(&mut self) {
-        self.queue_state.message_pagination.reset();
+        self.queue_state_mut().message_pagination.reset();
 
         // Also clear bulk selection state during pagination reset (e.g., during force reload)
         // This prevents old message IDs from persisting after bulk operations
         log::debug!("Clearing bulk selection state during pagination reset");
-        self.queue_state.bulk_selection.clear_all();
+        self.queue_state_mut().bulk_selection.clear_all();
     }
 
     fn switch_to_loaded_page(&mut self, page: usize) {
         log::debug!("Page {} already loaded, switching view", page);
-        self.queue_state.message_pagination.set_current_page(page);
+        self.queue_state_mut()
+            .message_pagination
+            .set_current_page(page);
 
         // Check if this page needs backfilling after switching to it
         let backfill_happened = match self.check_and_backfill_current_page() {
@@ -220,7 +224,7 @@ where
 
     fn send_page_changed_message(&self) {
         if let Err(e) = self
-            .tx_to_main
+            .tx_to_main()
             .send(Msg::MessageActivity(MessageActivityMsg::PageChanged))
         {
             log::error!("Failed to send page changed message: {}", e);
@@ -229,51 +233,51 @@ where
 
     fn update_pagination_state(&mut self) {
         let page_size = config::get_config_or_panic().max_messages();
-        self.queue_state.message_pagination.update(page_size);
+        self.queue_state_mut().message_pagination.update(page_size);
 
         log::debug!(
             "Updated pagination state: current={}, total_loaded={}, has_prev={}, has_next={}",
-            self.queue_state.message_pagination.current_page,
-            self.queue_state.message_pagination.total_pages_loaded,
-            self.queue_state.message_pagination.has_previous_page,
-            self.queue_state.message_pagination.has_next_page
+            self.queue_manager.queue_state.message_pagination.current_page,
+            self.queue_manager.queue_state.message_pagination.total_pages_loaded,
+            self.queue_manager.queue_state.message_pagination.has_previous_page,
+            self.queue_manager.queue_state.message_pagination.has_next_page
         );
     }
 
     pub fn update_current_page_view(&mut self) -> AppResult<()> {
         let page_size = config::get_config_or_panic().max_messages();
         let current_page_messages = self
-            .queue_state
+            .queue_state()
             .message_pagination
             .get_current_page_messages(page_size);
         let (start_idx, end_idx) = self
-            .queue_state
+            .queue_state()
             .message_pagination
             .calculate_page_bounds(page_size);
 
         log::debug!(
             "Updating view for page {}: showing messages {}-{} of {}",
-            self.queue_state.message_pagination.current_page,
+            self.queue_manager.queue_state.message_pagination.current_page,
             start_idx,
             end_idx,
-            self.queue_state
+            &self.queue_manager.queue_state
                 .message_pagination
                 .all_loaded_messages
                 .len()
         );
 
-        self.queue_state.messages = Some(current_page_messages);
+        self.queue_state_mut().messages = Some(current_page_messages);
         self.update_pagination_state();
         self.send_pagination_state_update()?;
 
         // Check if this is an initial load (when we should focus messages list)
-        let is_initial_load = self.queue_state.message_pagination.current_page == 0
-            && self.queue_state.message_pagination.total_pages_loaded == 1;
+        let is_initial_load = self.queue_manager.queue_state.message_pagination.current_page == 0
+            && self.queue_manager.queue_state.message_pagination.total_pages_loaded == 1;
 
         if is_initial_load {
             // Initial load: remount with focus and set proper app state
             self.remount_messages_with_focus(true)?;
-            self.app_state = AppState::MessagePicker;
+            self.set_app_state(AppState::MessagePicker);
 
             // Set focus to messages component
             if let Err(e) = self.app.active(&ComponentId::Messages) {
@@ -299,13 +303,13 @@ where
     }
 
     fn send_pagination_state_update(&self) -> AppResult<()> {
-        self.tx_to_main
+        self.state_manager.tx_to_main
             .send(Msg::MessageActivity(
                 MessageActivityMsg::PaginationStateUpdated {
-                    has_next: self.queue_state.message_pagination.has_next_page,
-                    has_previous: self.queue_state.message_pagination.has_previous_page,
-                    current_page: self.queue_state.message_pagination.current_page,
-                    total_pages_loaded: self.queue_state.message_pagination.total_pages_loaded,
+                    has_next: self.queue_manager.queue_state.message_pagination.has_next_page,
+                    has_previous: self.queue_manager.queue_state.message_pagination.has_previous_page,
+                    current_page: self.queue_manager.queue_state.message_pagination.current_page,
+                    total_pages_loaded: self.queue_manager.queue_state.message_pagination.total_pages_loaded,
                 },
             ))
             .map_err(|e| {
@@ -318,9 +322,9 @@ where
     /// Returns Ok(true) if backfilling happened, Ok(false) if no backfilling was needed
     fn check_and_backfill_current_page(&mut self) -> AppResult<bool> {
         let page_size = config::get_config_or_panic().max_messages();
-        let current_page = self.queue_state.message_pagination.current_page;
+        let current_page = self.queue_manager.queue_state.message_pagination.current_page;
         let current_page_messages = self
-            .queue_state
+            .queue_state()
             .message_pagination
             .get_current_page_messages(page_size);
         let current_page_size = current_page_messages.len();
@@ -329,7 +333,7 @@ where
         // Check if this page should be auto-filled
         // We auto-fill if the page is under-filled AND we think there might be more messages available
         let should_auto_fill =
-            page_is_under_filled && self.queue_state.message_pagination.has_next_page;
+            page_is_under_filled && self.queue_manager.queue_state.message_pagination.has_next_page;
 
         if should_auto_fill {
             let messages_needed = page_size as usize - current_page_size;
@@ -366,14 +370,14 @@ where
         log::debug!(
             "Loading {} messages for backfill, last_sequence: {:?}",
             message_count,
-            self.queue_state.message_pagination.last_loaded_sequence
+            self.queue_manager.queue_state.message_pagination.last_loaded_sequence
         );
 
-        let tx_to_main = self.tx_to_main.clone();
+        let tx_to_main = self.state_manager.tx_to_main.clone();
         let service_bus_manager = self.service_bus_manager.clone();
 
         let from_sequence = self
-            .queue_state
+            .queue_state()
             .message_pagination
             .last_loaded_sequence
             .map(|seq| seq + 1);

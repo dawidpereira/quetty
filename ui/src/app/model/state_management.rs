@@ -12,6 +12,34 @@ where
 {
     pub fn view(&mut self) -> AppResult<()> {
         let mut view_result: AppResult<()> = Ok(());
+
+        // Extract values before the closure to avoid borrowing issues
+        let current_app_state = self.state_manager.app_state.clone();
+        let active_component = match current_app_state {
+            AppState::NamespacePicker => ComponentId::NamespacePicker,
+            AppState::QueuePicker => ComponentId::QueuePicker,
+            AppState::MessagePicker => ComponentId::Messages,
+            AppState::MessageDetails => ComponentId::MessageDetails,
+            AppState::Loading => ComponentId::LoadingIndicator,
+            AppState::HelpScreen => ComponentId::HelpScreen,
+            AppState::ThemePicker => ComponentId::ThemePicker,
+        };
+
+        // Update active component before drawing
+        self.set_active_component(active_component.clone());
+
+        // Get queue state data for help bar before closure
+        let queue_state = &self.queue_manager.queue_state;
+        let (queue_type, bulk_mode, selected_count) = if active_component == ComponentId::Messages {
+            (
+                Some(queue_state.current_queue_type.clone()),
+                Some(queue_state.bulk_selection.selection_mode),
+                Some(queue_state.bulk_selection.selection_count()),
+            )
+        } else {
+            (None, None, None)
+        };
+
         let _ = self.terminal.draw(|f| {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -30,19 +58,8 @@ where
 
             self.app.view(&ComponentId::TextLabel, f, chunks[1]);
 
-            // Update active component based on current app state
-            self.active_component = match self.app_state {
-                AppState::NamespacePicker => ComponentId::NamespacePicker,
-                AppState::QueuePicker => ComponentId::QueuePicker,
-                AppState::MessagePicker => ComponentId::Messages,
-                AppState::MessageDetails => ComponentId::MessageDetails,
-                AppState::Loading => ComponentId::LoadingIndicator,
-                AppState::HelpScreen => ComponentId::HelpScreen,
-                AppState::ThemePicker => ComponentId::ThemePicker,
-            };
-
             // Apply the view based on the app state, with error popup handling
-            view_result = match self.app_state {
+            view_result = match current_app_state {
                 AppState::NamespacePicker => {
                     with_popup(&mut self.app, f, &chunks, view_namespace_picker)
                 }
@@ -68,29 +85,11 @@ where
                 // Create a temporary help bar with the active component
                 let mut help_bar = HelpBar::new();
 
-                // Directly render the help bar with the active component and queue type
-                let queue_type = if self.active_component == ComponentId::Messages {
-                    Some(&self.queue_state.current_queue_type)
-                } else {
-                    None
-                };
-
-                // Get bulk mode information for Messages component
-                let (bulk_mode, selected_count) = if self.active_component == ComponentId::Messages
-                {
-                    (
-                        Some(self.queue_state.bulk_selection.selection_mode),
-                        Some(self.queue_state.bulk_selection.selection_count()),
-                    )
-                } else {
-                    (None, None)
-                };
-
                 help_bar.view_with_active_and_queue_type(
                     f,
                     chunks[4],
-                    &self.active_component,
-                    queue_type,
+                    &active_component,
+                    queue_type.as_ref(),
                     bulk_mode,
                     selected_count,
                 );

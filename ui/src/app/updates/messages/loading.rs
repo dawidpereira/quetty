@@ -14,14 +14,14 @@ where
         log::debug!(
             "Loading {} messages from API, last_sequence: {:?}",
             message_count,
-            self.queue_state.message_pagination.last_loaded_sequence
+            self.queue_manager.queue_state.message_pagination.last_loaded_sequence
         );
 
-        let tx_to_main = self.tx_to_main.clone();
+        let tx_to_main = self.state_manager.tx_to_main.clone();
 
         let service_bus_manager = self.get_service_bus_manager();
         let from_sequence = self
-            .queue_state
+            .queue_state()
             .message_pagination
             .last_loaded_sequence
             .map(|seq| seq + 1);

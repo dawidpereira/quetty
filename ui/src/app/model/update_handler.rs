@@ -10,7 +10,7 @@ where
     pub fn handle_update(&mut self, msg: Option<Msg>) -> Option<Msg> {
         if let Some(msg) = msg {
             // Set redraw
-            self.redraw = true;
+            self.set_redraw(true);
 
             // Process the message and handle any resulting errors
             let result = match msg {
@@ -20,14 +20,14 @@ where
                 }
 
                 Msg::MessageActivity(MessageActivityMsg::EditingModeStarted) => {
-                    self.is_editing_message = true;
+                    self.set_editing_message(true);
                     if let Err(e) = self.update_global_key_watcher_editing_state() {
                         log::error!("Failed to update global key watcher: {}", e);
                     }
                     None
                 }
                 Msg::MessageActivity(MessageActivityMsg::EditingModeStopped) => {
-                    self.is_editing_message = false;
+                    self.set_editing_message(false);
                     if let Err(e) = self.update_global_key_watcher_editing_state() {
                         log::error!("Failed to update global key watcher: {}", e);
                     }

@@ -9,10 +9,10 @@ where
 {
     pub fn update_help(&mut self) -> Option<Msg> {
         // Toggle between help screen and previous state
-        if self.app_state == AppState::HelpScreen {
+        if self.state_manager.app_state == AppState::HelpScreen {
             // If we're already showing help screen, go back to previous state
-            if let Some(prev_state) = self.previous_state.take() {
-                self.app_state = prev_state;
+            if let Some(prev_state) = self.state_manager.previous_state.take() {
+                self.set_app_state(prev_state);
 
                 // Unmount the help screen
                 if let Err(e) = self.app.umount(&ComponentId::HelpScreen) {
@@ -20,7 +20,7 @@ where
                 }
 
                 // Return to appropriate component based on state
-                match self.app_state {
+                match self.state_manager.app_state {
                     AppState::NamespacePicker => {
                         if let Err(e) = self.app.active(&ComponentId::NamespacePicker) {
                             log::error!("Failed to activate namespace picker: {}", e);
@@ -50,7 +50,7 @@ where
                 }
             } else {
                 // If we don't have a previous state, default to NamespacePicker
-                self.app_state = AppState::NamespacePicker;
+                self.set_app_state(AppState::NamespacePicker);
 
                 // Unmount the help screen
                 if let Err(e) = self.app.umount(&ComponentId::HelpScreen) {
@@ -63,10 +63,10 @@ where
             }
         } else {
             // Save current state before showing help screen
-            self.previous_state = Some(self.app_state.clone());
+            self.state_manager.previous_state = Some(self.state_manager.app_state.clone());
 
             // Show help screen
-            self.app_state = AppState::HelpScreen;
+            self.set_app_state(AppState::HelpScreen);
 
             // Mount help screen component if not already mounted
             if !self.app.mounted(&ComponentId::HelpScreen) {
@@ -85,7 +85,7 @@ where
             }
         }
 
-        self.redraw = true;
+        self.set_redraw(true);
         None
     }
 }
