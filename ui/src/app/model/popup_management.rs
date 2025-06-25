@@ -51,7 +51,7 @@ where
             .active(&ComponentId::ErrorPopup)
             .map_err(|e| AppError::Component(e.to_string()))?;
 
-        self.redraw = true;
+        self.set_redraw(true);
 
         Ok(())
     }
@@ -68,7 +68,7 @@ where
 
         // Return to appropriate state
         self.activate_component_for_current_state()?;
-        self.redraw = true;
+        self.set_redraw(true);
         Ok(())
     }
 
@@ -86,7 +86,7 @@ where
             .active(&ComponentId::SuccessPopup)
             .map_err(|e| AppError::Component(e.to_string()))?;
 
-        self.redraw = true;
+        self.set_redraw(true);
 
         Ok(())
     }
@@ -99,7 +99,7 @@ where
 
         // Return to appropriate state
         self.activate_component_for_current_state()?;
-        self.redraw = true;
+        self.set_redraw(true);
         Ok(())
     }
 
@@ -144,7 +144,7 @@ where
 
         // Return to appropriate state
         self.activate_component_for_current_state()?;
-        self.redraw = true;
+        self.set_redraw(true);
         Ok(())
     }
 
@@ -155,13 +155,13 @@ where
 
         // Return to appropriate state
         self.activate_component_for_current_state()?;
-        self.redraw = true;
+        self.set_redraw(true);
         Ok(())
     }
 
     pub fn mount_theme_picker(&mut self) -> AppResult<()> {
         // Store the current state so we can return to it
-        self.previous_state = Some(self.app_state.clone());
+        self.state_manager.previous_state = Some(self.state_manager.app_state.clone());
 
         // Mount theme picker with ComponentState pattern using extension trait
         self.app.remount_with_state(
@@ -174,8 +174,8 @@ where
             .active(&ComponentId::ThemePicker)
             .map_err(|e| AppError::Component(e.to_string()))?;
 
-        self.app_state = AppState::ThemePicker;
-        self.redraw = true;
+        self.state_manager.app_state = AppState::ThemePicker;
+        self.set_redraw(true);
 
         Ok(())
     }
@@ -186,15 +186,15 @@ where
             .map_err(|e| AppError::Component(e.to_string()))?;
 
         // Return to previous state
-        if let Some(prev_state) = self.previous_state.take() {
-            self.app_state = prev_state;
+        if let Some(prev_state) = self.state_manager.previous_state.take() {
+            self.state_manager.app_state = prev_state;
         } else {
-            self.app_state = AppState::NamespacePicker;
+            self.state_manager.app_state = AppState::NamespacePicker;
         }
 
         // Return to appropriate component based on state
         self.activate_component_for_current_state()?;
-        self.redraw = true;
+        self.set_redraw(true);
         Ok(())
     }
 
@@ -203,7 +203,7 @@ where
         self.app
             .remount(
                 ComponentId::GlobalKeyWatcher,
-                Box::new(GlobalKeyWatcher::new(self.is_editing_message)),
+                Box::new(GlobalKeyWatcher::new(self.state_manager.is_editing_message)),
                 vec![Sub::new(SubEventClause::Any, SubClause::Always)],
             )
             .map_err(|e| AppError::Component(e.to_string()))?;
@@ -213,7 +213,7 @@ where
 
     /// Helper method to activate the appropriate component for the current state
     fn activate_component_for_current_state(&mut self) -> AppResult<()> {
-        match self.app_state {
+        match self.state_manager.app_state {
             AppState::NamespacePicker => {
                 self.app
                     .active(&ComponentId::NamespacePicker)
@@ -246,7 +246,7 @@ where
             }
             AppState::ThemePicker => {
                 // This shouldn't happen, but just in case
-                self.app_state = AppState::NamespacePicker;
+                self.state_manager.app_state = AppState::NamespacePicker;
                 self.app
                     .active(&ComponentId::NamespacePicker)
                     .map_err(|e| AppError::Component(e.to_string()))?;

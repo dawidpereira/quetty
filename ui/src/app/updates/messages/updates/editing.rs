@@ -1,7 +1,8 @@
 use crate::app::model::Model;
 use crate::app::updates::messages::async_operations;
-use crate::components::common::{MessageActivityMsg, Msg, PopupActivityMsg};
+use crate::components::common::{ComponentId, MessageActivityMsg, Msg, PopupActivityMsg};
 use crate::error::AppError;
+use crate::app::model::AppState;
 use server::bulk_operations::MessageIdentifier;
 use server::service_bus_manager::{MessageData, ServiceBusCommand, ServiceBusResponse};
 
@@ -13,20 +14,42 @@ where
 {
     /// Handle editing a message at the given index
     pub fn handle_edit_message(&mut self, index: usize) -> Option<Msg> {
-        if let Some(current_messages) = &self.queue_state.messages {
+        if let Some(current_messages) = &self.queue_manager.queue_state.messages {
             if index < current_messages.len() {
                 let selected_message = current_messages[index].clone();
                 log::info!("Starting to edit message {}", selected_message.id);
 
+                // First, defocus the messages component
+                if let Err(e) = self.remount_messages_with_focus(false) {
+                    self.error_reporter
+                        .report_simple(e, "MessageEditor", "handle_edit_message");
+                    return Some(Msg::ShowError("Failed to prepare message editing view".to_string()));
+                }
+
+                // Set the app state to MessageDetails
+                self.set_app_state(AppState::MessageDetails);
+
+                // Activate the MessageDetails component - with proper error recovery
+                if let Err(e) = self.app.active(&ComponentId::MessageDetails) {
+                    log::error!("Failed to activate message details component: {}", e);
+                    // Recovery: go back to message picker state
+                    self.set_app_state(AppState::MessagePicker);
+                    return Some(Msg::ShowError("Failed to open message editor. Please try again.".to_string()));
+                }
+
+                // Remount MessageDetails with the selected message
                 if let Err(e) = self.remount_message_details(index) {
                     self.error_reporter
                         .report_simple(e, "MessageEditor", "handle_edit_message");
-                    return None;
+                    // Recovery: go back to message picker state
+                    self.set_app_state(AppState::MessagePicker);
+                    return Some(Msg::ShowError("Failed to load message for editing. Please try again.".to_string()));
                 }
 
-                self.is_editing_message = true;
+                self.set_editing_message(true);
                 if let Err(e) = self.update_global_key_watcher_editing_state() {
                     log::error!("Failed to update global key watcher: {}", e);
+                    // This is not critical - continue anyway
                 }
 
                 Some(Msg::ForceRedraw)
@@ -42,11 +65,31 @@ where
 
     /// Handle canceling message edit
     pub fn handle_cancel_edit_message(&mut self) -> Option<Msg> {
-        self.is_editing_message = false;
+        self.set_editing_message(false);
         if let Err(e) = self.update_global_key_watcher_editing_state() {
             log::error!("Failed to update global key watcher: {}", e);
         }
-        log::debug!("Cancelled editing message");
+
+        // Transition back to message picker view
+        self.set_app_state(AppState::MessagePicker);
+
+        // Activate the Messages component first
+        if let Err(e) = self.app.active(&ComponentId::Messages) {
+            log::error!("Failed to activate messages component: {}", e);
+        }
+
+        // Re-focus the messages component with focus
+        if let Err(e) = self.remount_messages_with_focus(true) {
+            log::error!("Failed to remount messages with focus: {}", e);
+        }
+
+        // Remount message details without focus to remove focus styling
+        // (now that Messages is active, MessageDetails will be remounted without focus)
+        if let Err(e) = self.remount_message_details(0) {
+            log::error!("Failed to remount message details without focus: {}", e);
+        }
+
+        log::debug!("Cancelled editing message and returned to message list");
         Some(Msg::ForceRedraw)
     }
 
@@ -57,7 +100,7 @@ where
             Err(e) => return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(e))),
         };
 
-        let repeat_count = self.queue_state.message_repeat_count;
+        let repeat_count = self.queue_manager.queue_state.message_repeat_count;
         log::info!(
             "Sending edited message content to queue: {} ({} times)",
             queue_name,
@@ -71,7 +114,7 @@ where
         };
 
         let service_bus_manager = self.service_bus_manager.clone();
-        let tx_to_main = self.tx_to_main.clone();
+        let tx_to_main = self.state_manager.tx_to_main.clone();
 
         self.task_manager.execute(loading_message, async move {
             let result = if repeat_count == 1 {
@@ -116,7 +159,7 @@ where
         );
 
         let service_bus_manager = self.service_bus_manager.clone();
-        let tx_to_main = self.tx_to_main.clone();
+        let tx_to_main = self.state_manager.tx_to_main.clone();
 
         self.task_manager
             .execute("Replacing message...", async move {

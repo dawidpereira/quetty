@@ -8,7 +8,7 @@ use crate::components::state::ComponentStateMount;
 use crate::error::{AppError, AppResult};
 use tuirealm::terminal::TerminalAdapter;
 
-use super::model::AppState;
+use crate::app::managers::state_manager::AppState;
 
 impl<T> Model<T>
 where
@@ -21,7 +21,7 @@ where
             None => false, // Default to unfocused if no component is focused
         };
 
-        let message = if let Some(messages) = &self.queue_state.messages {
+        let message = if let Some(messages) = &self.queue_manager.queue_state.messages {
             messages.get(index).cloned()
         } else {
             None
@@ -45,7 +45,7 @@ where
         let message = None;
 
         // Get the current repeat count from queue state
-        let repeat_count = self.queue_state.message_repeat_count;
+        let repeat_count = self.queue_manager.queue_state.message_repeat_count;
 
         // Use ComponentState extension trait for single-call remounting
         self.app.remount_with_state(
@@ -91,13 +91,13 @@ where
         let pagination_info = self.create_pagination_info();
 
         // Get current selections for display
-        let selected_messages = self.queue_state.bulk_selection.get_selected_messages();
+        let selected_messages = self.queue_manager.queue_state.bulk_selection.get_selected_messages();
 
         self.app
             .remount(
                 ComponentId::Messages,
                 Box::new(Messages::new_with_pagination_and_selections(
-                    self.queue_state.messages.as_ref(),
+                    self.queue_manager.queue_state.messages.as_ref(),
                     Some(pagination_info),
                     selected_messages,
                 )),
@@ -119,7 +119,7 @@ where
             }
         }
 
-        self.redraw = true;
+        self.set_redraw(true);
         Ok(())
     }
 
@@ -162,13 +162,13 @@ where
         let pagination_info = self.create_pagination_info();
 
         // Get current selections for display
-        let selected_messages = self.queue_state.bulk_selection.get_selected_messages();
+        let selected_messages = self.queue_manager.queue_state.bulk_selection.get_selected_messages();
 
         self.app
             .remount(
                 ComponentId::Messages,
                 Box::new(Messages::new_with_pagination_selections_and_focus(
-                    self.queue_state.messages.as_ref(),
+                    self.queue_manager.queue_state.messages.as_ref(),
                     Some(pagination_info),
                     selected_messages,
                     is_focused,
@@ -191,7 +191,7 @@ where
             }
         }
 
-        self.redraw = true;
+        self.set_redraw(true);
         Ok(())
     }
 
@@ -199,26 +199,26 @@ where
         // Get current page size directly from pagination state to avoid timing issues
         let page_size = crate::config::get_config_or_panic().max_messages();
         let current_page_messages = self
-            .queue_state
+            .queue_state()
             .message_pagination
             .get_current_page_messages(page_size);
         let current_page_size = current_page_messages.len();
 
         PaginationInfo {
-            current_page: self.queue_state.message_pagination.current_page,
-            total_pages_loaded: self.queue_state.message_pagination.total_pages_loaded,
+            current_page: self.queue_manager.queue_state.message_pagination.current_page,
+            total_pages_loaded: self.queue_manager.queue_state.message_pagination.total_pages_loaded,
             total_messages_loaded: self
-                .queue_state
+                .queue_state()
                 .message_pagination
                 .all_loaded_messages
                 .len(),
             current_page_size,
-            has_next_page: self.queue_state.message_pagination.has_next_page,
-            has_previous_page: self.queue_state.message_pagination.has_previous_page,
-            queue_name: self.queue_state.current_queue_name.clone(),
-            queue_type: self.queue_state.current_queue_type.clone(),
-            bulk_mode: self.queue_state.bulk_selection.selection_mode,
-            selected_count: self.queue_state.bulk_selection.selection_count(),
+            has_next_page: self.queue_manager.queue_state.message_pagination.has_next_page,
+            has_previous_page: self.queue_manager.queue_state.message_pagination.has_previous_page,
+            queue_name: self.queue_manager.queue_state.current_queue_name.clone(),
+            queue_type: self.queue_manager.queue_state.current_queue_type.clone(),
+            bulk_mode: self.queue_manager.queue_state.bulk_selection.selection_mode,
+            selected_count: self.queue_manager.queue_state.bulk_selection.selection_count(),
         }
     }
 
@@ -237,7 +237,7 @@ where
             .map_err(|e| AppError::Component(e.to_string()))?;
 
         // Set the app state to QueuePicker
-        self.app_state = AppState::QueuePicker;
+        self.set_app_state(AppState::QueuePicker);
 
         Ok(())
     }
@@ -257,7 +257,7 @@ where
             .map_err(|e| AppError::Component(e.to_string()))?;
 
         // Set the app state to NamespacePicker
-        self.app_state = AppState::NamespacePicker;
+        self.set_app_state(AppState::NamespacePicker);
 
         Ok(())
     }

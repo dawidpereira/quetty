@@ -9,7 +9,7 @@ where
     pub fn update_queue(&mut self, msg: QueueActivityMsg) -> Option<Msg> {
         match msg {
             QueueActivityMsg::QueueSelected(queue) => {
-                self.queue_state.set_selected_queue(queue);
+                self.queue_state_mut().set_selected_queue(queue);
                 self.new_consumer_for_queue();
                 None
             }
@@ -22,11 +22,11 @@ where
                 None
             }
             QueueActivityMsg::QueueUnselected => {
-                self.app_state = AppState::QueuePicker;
+                self.set_app_state(AppState::QueuePicker);
                 None
             }
             QueueActivityMsg::ToggleDeadLetterQueue => {
-                if self.queue_state.toggle_queue_type().is_some() {
+                if self.queue_state_mut().toggle_queue_type().is_some() {
                     self.new_consumer_for_queue();
                 }
                 None

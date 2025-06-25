@@ -70,7 +70,7 @@ impl ConfigErrorDisplay {
         }
 
         // Main loop to handle the error popup until user closes it
-        while !self.model.quit {
+        while !self.model.state_manager.should_quit() {
             self.model.update_outside_msg();
 
             match self.model.app.tick(PollStrategy::Once) {
@@ -90,7 +90,7 @@ impl ConfigErrorDisplay {
                     // Check if error popup was closed - if so, quit the app
                     if !self.model.app.mounted(&ComponentId::ErrorPopup) {
                         info!("Configuration error popup closed by user, terminating application");
-                        self.model.quit = true;
+                        self.model.set_quit(true);
                         break;
                     }
 
@@ -247,7 +247,7 @@ async fn main() -> Result<(), Box<dyn StdError>> {
 
     info!("Entering main application loop");
     // Main loop
-    while !model.quit {
+    while !model.state_manager.should_quit() {
         model.update_outside_msg();
         // Tick
         match model.app.tick(PollStrategy::Once) {
@@ -270,11 +270,11 @@ async fn main() -> Result<(), Box<dyn StdError>> {
                             .is_ok()
                     );
                 }
-                model.redraw = true;
+                model.state_manager.set_redraw(true);
             }
             Ok(messages) if !messages.is_empty() => {
                 // Process all received messages and trigger redraw if any were handled
-                model.redraw = true;
+                model.state_manager.set_redraw(true);
                 for msg in messages.into_iter() {
                     let mut msg = Some(msg);
                     while msg.is_some() {
@@ -285,7 +285,7 @@ async fn main() -> Result<(), Box<dyn StdError>> {
             _ => {}
         }
         // Redraw
-        if model.redraw {
+        if model.state_manager.needs_redraw() {
             if let Err(e) = model.view() {
                 error!("Error during view rendering: {}", e);
                 // Show error in popup
@@ -295,7 +295,7 @@ async fn main() -> Result<(), Box<dyn StdError>> {
                     error::handle_error(e);
                 }
             }
-            model.redraw = false;
+            model.state_manager.redraw_complete();
         }
     }
 

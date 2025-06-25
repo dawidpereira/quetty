@@ -15,7 +15,7 @@ where
 
         // Always use pagination state as the source of truth for current page messages
         let current_messages = self
-            .queue_state
+            .queue_state()
             .message_pagination
             .get_current_page_messages(config::get_config_or_panic().max_messages());
 
@@ -26,15 +26,18 @@ where
         }
 
         // Update the messages field to ensure UI consistency
-        self.queue_state.messages = Some(current_messages.clone());
+        self.queue_state_mut().messages = Some(current_messages.clone());
 
         let message = &current_messages[index];
         let message_id = MessageIdentifier::from_message(message);
 
         log::debug!("Toggling selection for message: {:?}", message_id);
 
-        let was_in_bulk_mode = self.queue_state.bulk_selection.selection_mode;
-        let was_selected = self.queue_state.bulk_selection.toggle_selection(message_id);
+        let was_in_bulk_mode = self.queue_manager.queue_state.bulk_selection.selection_mode;
+        let was_selected = self
+            .queue_state_mut()
+            .bulk_selection
+            .toggle_selection(message_id);
 
         if was_selected {
             log::debug!("Selected message: {}", message.id);
@@ -42,13 +45,13 @@ where
             log::debug!("Deselected message: {}", message.id);
         }
 
-        if !was_in_bulk_mode && self.queue_state.bulk_selection.has_selections() {
-            self.queue_state.bulk_selection.enter_selection_mode();
+        if !was_in_bulk_mode && self.queue_manager.queue_state.bulk_selection.has_selections() {
+            self.queue_state_mut().bulk_selection.enter_selection_mode();
             log::debug!("Entered bulk selection mode");
         }
         // Exit bulk mode if no selections remain
-        else if was_in_bulk_mode && !self.queue_state.bulk_selection.has_selections() {
-            self.queue_state.bulk_selection.exit_selection_mode();
+        else if was_in_bulk_mode && !self.queue_manager.queue_state.bulk_selection.has_selections() {
+            self.queue_state_mut().bulk_selection.exit_selection_mode();
             log::debug!("Exited bulk selection mode - no selections remaining");
         }
 
@@ -60,7 +63,7 @@ where
 
         log::debug!(
             "Selection count: {}",
-            self.queue_state.bulk_selection.selection_count()
+            self.queue_manager.queue_state.bulk_selection.selection_count()
         );
 
         None
@@ -73,7 +76,7 @@ where
         // Always use pagination state as the source of truth for current page messages
         // This ensures we get the most up-to-date messages, including any backfill
         let current_messages = self
-            .queue_state
+            .queue_state()
             .message_pagination
             .get_current_page_messages(config::get_config_or_panic().max_messages());
 
@@ -85,12 +88,12 @@ where
 
         let message_count = current_messages.len();
 
-        self.queue_state
+        self.queue_state_mut()
             .bulk_selection
             .select_all(&current_messages);
 
         // Also update the messages field to ensure UI consistency
-        self.queue_state.messages = Some(current_messages.clone());
+        self.queue_state_mut().messages = Some(current_messages.clone());
 
         log::info!("Selected all {} messages on current page", message_count);
 
@@ -107,7 +110,12 @@ where
     pub fn handle_select_all_loaded_messages(&mut self) -> Option<Msg> {
         use crate::components::common::PopupActivityMsg;
 
-        let all_messages = &self.queue_state.message_pagination.all_loaded_messages;
+        // Clone the messages to avoid borrowing issues
+        let all_messages = self
+            .queue_state()
+            .message_pagination
+            .all_loaded_messages
+            .clone();
         let all_messages_count = all_messages.len();
 
         if all_messages_count == 0 {
@@ -116,7 +124,9 @@ where
             )));
         }
 
-        self.queue_state.bulk_selection.select_all(all_messages);
+        self.queue_state_mut()
+            .bulk_selection
+            .select_all(&all_messages);
 
         log::info!("Selected all {} loaded messages", all_messages_count);
 
@@ -131,13 +141,13 @@ where
 
     /// Clear all message selections
     pub fn handle_clear_all_selections(&mut self) -> Option<Msg> {
-        let selection_count = self.queue_state.bulk_selection.selection_count();
+        let selection_count = self.queue_manager.queue_state.bulk_selection.selection_count();
 
         if selection_count == 0 {
             return None;
         }
 
-        self.queue_state.bulk_selection.clear_all();
+        self.queue_state_mut().bulk_selection.clear_all();
         log::info!("Cleared {} message selections", selection_count);
 
         if let Err(e) = self.remount_messages_with_focus(true) {

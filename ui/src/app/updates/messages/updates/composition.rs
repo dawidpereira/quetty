@@ -18,7 +18,7 @@ where
             return None;
         }
 
-        self.app_state = AppState::MessageDetails;
+        self.set_app_state(AppState::MessageDetails);
 
         if let Err(e) = self.app.active(&ComponentId::MessageDetails) {
             log::error!("Failed to activate message details: {}", e);
@@ -30,7 +30,7 @@ where
             return None;
         }
 
-        self.is_editing_message = true;
+        self.set_editing_message(true);
         if let Err(e) = self.update_global_key_watcher_editing_state() {
             log::error!("Failed to update global key watcher: {}", e);
         }
@@ -56,14 +56,14 @@ where
 
     /// Handle updating the repeat count (internal message)
     pub fn handle_update_repeat_count(&mut self, count: usize) -> Option<Msg> {
-        self.queue_state.message_repeat_count = count;
+        self.queue_state_mut().message_repeat_count = count;
         self.handle_compose_new_message()
     }
 
     /// Handle successful message sending by auto-reload only for empty queues
     pub fn handle_messages_sent_successfully(&mut self) -> Option<Msg> {
         let current_messages = self
-            .queue_state
+            .queue_state()
             .message_pagination
             .get_current_page_messages(config::get_config_or_panic().max_messages());
 
@@ -85,7 +85,7 @@ where
 
     /// Load messages from the beginning (fresh start), similar to initial queue load
     pub fn load_messages_from_beginning(&self) -> Result<(), AppError> {
-        let tx_to_main = self.tx_to_main.clone();
+        let tx_to_main = self.state_manager.tx_to_main.clone();
         let service_bus_manager = self.service_bus_manager.clone();
 
         self.task_manager
