@@ -8,6 +8,7 @@ use crate::components::common::Msg;
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
 use server::model::BodyData;
+use std::sync::Arc;
 use tuirealm::terminal::TerminalAdapter;
 
 /// Execute bulk resend from DLQ operation
@@ -190,7 +191,7 @@ fn get_main_queue_name_from_current_dlq<T: TerminalAdapter>(
             .to_string()
     } else {
         // If it doesn't end with DLQ suffix, assume it's already the main queue name
-        current_queue_name.clone()
+        current_queue_name.to_string()
     };
 
     Ok(main_queue_name)
@@ -208,7 +209,7 @@ fn start_bulk_send_generic<T: TerminalAdapter>(
     let task_params = BulkSendTaskParams::new(
         bulk_data,
         operation_params,
-        model.service_bus_manager.clone(),
+        Arc::clone(&model.service_bus_manager),
         model.tx_to_main().clone(),
         model.queue_state().message_repeat_count,
     );
@@ -243,7 +244,7 @@ fn start_bulk_send_with_data_operation<T: TerminalAdapter>(
         BulkSendData::MessageData(
             messages_data
                 .iter()
-                .map(|(id, data)| (id.to_string(), data.clone()))
+                .map(|(id, data)| (id.to_string(), data.to_vec()))
                 .collect(),
         ),
         params,

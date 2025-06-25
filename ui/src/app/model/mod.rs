@@ -98,7 +98,7 @@ where
     }
 
     // Essential accessor methods
-    
+
     /// Get immutable reference to queue state
     pub fn queue_state(&self) -> &crate::app::queue_state::QueueState {
         &self.queue_manager.queue_state

@@ -126,7 +126,11 @@ where
 
     /// Handle bulk delete for currently selected messages or current message
     pub fn handle_bulk_delete_selected(&mut self) -> Option<Msg> {
-        let selected_messages = self.queue_manager.queue_state.bulk_selection.get_selected_messages();
+        let selected_messages = self
+            .queue_manager
+            .queue_state
+            .bulk_selection
+            .get_selected_messages();
         if !selected_messages.is_empty() {
             // Use bulk selected messages
             return self.handle_bulk_delete_messages(selected_messages);
@@ -144,7 +148,11 @@ where
 
     /// Handle bulk send to DLQ with delete for currently selected messages or current message
     pub fn handle_bulk_send_selected_to_dlq_with_delete(&mut self) -> Option<Msg> {
-        let selected_messages = self.queue_manager.queue_state.bulk_selection.get_selected_messages();
+        let selected_messages = self
+            .queue_manager
+            .queue_state
+            .bulk_selection
+            .get_selected_messages();
         if !selected_messages.is_empty() {
             // Use bulk selected messages
             return self.handle_bulk_send_to_dlq_with_delete(selected_messages);
@@ -162,7 +170,11 @@ where
 
     /// Handle bulk resend from DLQ for currently selected messages or current message
     pub fn handle_bulk_resend_selected_from_dlq(&mut self, delete_from_dlq: bool) -> Option<Msg> {
-        let selected_messages = self.queue_manager.queue_state.bulk_selection.get_selected_messages();
+        let selected_messages = self
+            .queue_manager
+            .queue_state
+            .bulk_selection
+            .get_selected_messages();
         if !selected_messages.is_empty() {
             // Use bulk selected messages
             return self.handle_bulk_resend_from_dlq_messages(selected_messages, delete_from_dlq);

@@ -45,12 +45,24 @@ where
             log::debug!("Deselected message: {}", message.id);
         }
 
-        if !was_in_bulk_mode && self.queue_manager.queue_state.bulk_selection.has_selections() {
+        if !was_in_bulk_mode
+            && self
+                .queue_manager
+                .queue_state
+                .bulk_selection
+                .has_selections()
+        {
             self.queue_state_mut().bulk_selection.enter_selection_mode();
             log::debug!("Entered bulk selection mode");
         }
         // Exit bulk mode if no selections remain
-        else if was_in_bulk_mode && !self.queue_manager.queue_state.bulk_selection.has_selections() {
+        else if was_in_bulk_mode
+            && !self
+                .queue_manager
+                .queue_state
+                .bulk_selection
+                .has_selections()
+        {
             self.queue_state_mut().bulk_selection.exit_selection_mode();
             log::debug!("Exited bulk selection mode - no selections remaining");
         }
@@ -63,7 +75,10 @@ where
 
         log::debug!(
             "Selection count: {}",
-            self.queue_manager.queue_state.bulk_selection.selection_count()
+            self.queue_manager
+                .queue_state
+                .bulk_selection
+                .selection_count()
         );
 
         None
@@ -141,7 +156,11 @@ where
 
     /// Clear all message selections
     pub fn handle_clear_all_selections(&mut self) -> Option<Msg> {
-        let selection_count = self.queue_manager.queue_state.bulk_selection.selection_count();
+        let selection_count = self
+            .queue_manager
+            .queue_state
+            .bulk_selection
+            .selection_count();
 
         if selection_count == 0 {
             return None;
