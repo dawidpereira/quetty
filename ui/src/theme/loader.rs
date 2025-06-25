@@ -200,12 +200,12 @@ mod tests {
 
         match result {
             Ok(theme) => {
-                println!("Successfully loaded default theme: {}", theme.metadata.name);
+                log::info!("Successfully loaded default theme: {}", theme.metadata.name);
                 assert_eq!(theme.metadata.theme_name, Some("quetty".to_string()));
                 assert_eq!(theme.metadata.flavor_name, Some("dark".to_string()));
             }
             Err(e) => {
-                println!("Failed to load default theme: {}", e);
+                log::error!("Failed to load default theme: {}", e);
                 // This will show us what the exact error is
                 panic!("Default theme should be loadable: {}", e);
             }

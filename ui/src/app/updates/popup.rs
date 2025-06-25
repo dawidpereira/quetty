@@ -64,8 +64,6 @@ where
         None
     }
 
-
-
     fn handle_show_success(&mut self, message: String) -> Option<Msg> {
         if let Err(e) = self.mount_success_popup(&message) {
             log::error!("Failed to mount success popup: {}", e);

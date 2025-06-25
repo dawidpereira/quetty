@@ -2,8 +2,8 @@ use crate::app::model::Model;
 use crate::app::updates::messages::async_operations;
 use crate::components::common::{MessageActivityMsg, Msg, PopupActivityMsg};
 use crate::error::AppError;
-use server::service_bus_manager::{MessageData, ServiceBusCommand, ServiceBusResponse};
 use server::bulk_operations::MessageIdentifier;
+use server::service_bus_manager::{MessageData, ServiceBusCommand, ServiceBusResponse};
 
 use tuirealm::terminal::TerminalAdapter;
 
@@ -77,7 +77,8 @@ where
             let result = if repeat_count == 1 {
                 Self::send_single_message(service_bus_manager, queue_name, content).await
             } else {
-                Self::send_multiple_messages(service_bus_manager, queue_name, content, repeat_count).await
+                Self::send_multiple_messages(service_bus_manager, queue_name, content, repeat_count)
+                    .await
             };
 
             let success_message = if repeat_count == 1 {
@@ -183,7 +184,9 @@ where
 
     /// Send a single message to a queue using the service bus manager
     async fn send_single_message(
-        service_bus_manager: std::sync::Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>>,
+        service_bus_manager: std::sync::Arc<
+            tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>,
+        >,
         queue_name: String,
         content: String,
     ) -> Result<(), AppError> {
@@ -199,7 +202,11 @@ where
             message,
         };
 
-        let response = service_bus_manager.lock().await.execute_command(command).await;
+        let response = service_bus_manager
+            .lock()
+            .await
+            .execute_command(command)
+            .await;
 
         match response {
             ServiceBusResponse::MessageSent { .. } => {
@@ -210,33 +217,45 @@ where
                 log::error!("Failed to send message to queue {}: {}", queue_name, error);
                 Err(AppError::ServiceBus(error.to_string()))
             }
-            _ => {
-                Err(AppError::ServiceBus("Unexpected response for send message".to_string()))
-            }
+            _ => Err(AppError::ServiceBus(
+                "Unexpected response for send message".to_string(),
+            )),
         }
     }
 
     /// Send multiple messages to a queue using the service bus manager
     async fn send_multiple_messages(
-        service_bus_manager: std::sync::Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>>,
+        service_bus_manager: std::sync::Arc<
+            tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>,
+        >,
         queue_name: String,
         content: String,
         count: usize,
     ) -> Result<(), AppError> {
         log::info!("Sending message {} times to queue: {}", count, queue_name);
 
-        let messages: Vec<MessageData> = (0..count).map(|_| MessageData::new(content.clone())).collect();
+        let messages: Vec<MessageData> = (0..count)
+            .map(|_| MessageData::new(content.clone()))
+            .collect();
         let command = ServiceBusCommand::SendMessages {
             queue_name: queue_name.clone(),
             messages,
         };
 
-        let response = service_bus_manager.lock().await.execute_command(command).await;
+        let response = service_bus_manager
+            .lock()
+            .await
+            .execute_command(command)
+            .await;
 
         match response {
             ServiceBusResponse::MessagesSent { stats, .. } => {
                 if stats.successful >= count {
-                    log::info!("Successfully sent {} messages to queue: {}", stats.successful, queue_name);
+                    log::info!(
+                        "Successfully sent {} messages to queue: {}",
+                        stats.successful,
+                        queue_name
+                    );
                     Ok(())
                 } else {
                     let error_msg = format!(
@@ -251,9 +270,9 @@ where
                 log::error!("Failed to send messages to queue {}: {}", queue_name, error);
                 Err(AppError::ServiceBus(error.to_string()))
             }
-            _ => {
-                Err(AppError::ServiceBus("Unexpected response for send messages".to_string()))
-            }
+            _ => Err(AppError::ServiceBus(
+                "Unexpected response for send messages".to_string(),
+            )),
         }
     }
 }

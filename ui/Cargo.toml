@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 server = { path = "../server" }
 tokio = { version = "1.45.0", features = ["rt-multi-thread", "macros"] }
+tokio-util = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 time = { version = "0.3", features = ["serde"] }

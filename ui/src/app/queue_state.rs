@@ -146,7 +146,10 @@ impl QueueState {
                     .strip_suffix("/$deadletterqueue")
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| {
-                        log::warn!("Failed to strip DLQ suffix from queue name: {}", current_queue_name);
+                        log::warn!(
+                            "Failed to strip DLQ suffix from queue name: {}",
+                            current_queue_name
+                        );
                         current_queue_name.clone()
                     })
             } else {

@@ -1,6 +1,5 @@
 use super::component::MessageDetails;
 use crate::components::common::{MessageActivityMsg, Msg, PopupActivityMsg};
-// use crate::components::message_details::navigation::NextPrevAction; // Not needed
 use crate::config;
 use crate::error::AppError;
 use tuirealm::{
@@ -52,7 +51,11 @@ pub fn handle_event(details: &mut MessageDetails, ev: Event<NoUserEvent>) -> Opt
         Event::Keyboard(KeyEvent {
             code: Key::Char(c),
             modifiers: KeyModifiers::CONTROL,
-        }) if c == config::get_config_or_panic().keys().replace_edited_message() => {
+        }) if c
+            == config::get_config_or_panic()
+                .keys()
+                .replace_edited_message() =>
+        {
             if details.is_editing && details.is_dirty {
                 if let Some(message) = &details.current_message {
                     // Validate content before replacing

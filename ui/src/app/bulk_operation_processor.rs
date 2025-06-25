@@ -46,18 +46,28 @@ impl BulkOperationPostProcessor {
     /// Determine the appropriate reload strategy for a bulk operation
     pub fn determine_reload_strategy(context: &BulkOperationContext) -> ReloadStrategy {
         let large_operation = context.successful_count >= context.reload_threshold;
-        
+
         match &context.operation_type {
             BulkOperationType::Delete => {
-                let all_current_deleted = context.selected_from_current_page >= context.current_message_count;
-                
+                let all_current_deleted =
+                    context.selected_from_current_page >= context.current_message_count;
+
                 if large_operation || all_current_deleted {
                     let reason = if large_operation && all_current_deleted {
-                        format!("Large deletion ({} messages) and all current messages deleted", context.successful_count)
+                        format!(
+                            "Large deletion ({} messages) and all current messages deleted",
+                            context.successful_count
+                        )
                     } else if large_operation {
-                        format!("Large deletion ({} messages >= threshold {})", context.successful_count, context.reload_threshold)
+                        format!(
+                            "Large deletion ({} messages >= threshold {})",
+                            context.successful_count, context.reload_threshold
+                        )
                     } else {
-                        format!("All current messages deleted ({}/{})", context.selected_from_current_page, context.current_message_count)
+                        format!(
+                            "All current messages deleted ({}/{})",
+                            context.selected_from_current_page, context.current_message_count
+                        )
                     };
                     ReloadStrategy::ForceReload { reason }
                 } else if context.successful_count > 0 {
@@ -69,7 +79,10 @@ impl BulkOperationPostProcessor {
             BulkOperationType::Send { should_delete, .. } => {
                 if *should_delete && context.successful_count > 0 {
                     if large_operation {
-                        let reason = format!("Large bulk send operation ({} messages >= threshold {})", context.successful_count, context.reload_threshold);
+                        let reason = format!(
+                            "Large bulk send operation ({} messages >= threshold {})",
+                            context.successful_count, context.reload_threshold
+                        );
                         ReloadStrategy::ForceReload { reason }
                     } else {
                         ReloadStrategy::LocalRemoval
@@ -87,22 +100,25 @@ impl BulkOperationPostProcessor {
         tx_to_main: &Sender<Msg>,
     ) -> Result<(), AppError> {
         let strategy = Self::determine_reload_strategy(context);
-        
+
         log::info!(
             "Processing bulk operation completion: type={:?}, strategy={:?}",
-            context.operation_type, strategy
+            context.operation_type,
+            strategy
         );
 
         match strategy {
             ReloadStrategy::ForceReload { reason } => {
                 log::info!("Forcing message reload: {}", reason);
-                
+
                 // Send reload first
-                if let Err(e) = tx_to_main.send(Msg::MessageActivity(MessageActivityMsg::ForceReloadMessages)) {
+                if let Err(e) = tx_to_main.send(Msg::MessageActivity(
+                    MessageActivityMsg::ForceReloadMessages,
+                )) {
                     log::error!("Failed to send force reload message: {}", e);
                     return Err(AppError::Component(e.to_string()));
                 }
-                
+
                 // Send completion message after reload
                 Self::send_completion_message(context, tx_to_main)?;
             }
@@ -114,15 +130,17 @@ impl BulkOperationPostProcessor {
                         context.message_ids.len(),
                         context.successful_count
                     );
-                    
+
                     if let Err(e) = tx_to_main.send(Msg::MessageActivity(
-                        MessageActivityMsg::BulkRemoveMessagesFromState(context.message_ids.clone()),
+                        MessageActivityMsg::BulkRemoveMessagesFromState(
+                            context.message_ids.clone(),
+                        ),
                     )) {
                         log::error!("Failed to send remove messages from state: {}", e);
                         return Err(AppError::Component(e.to_string()));
                     }
                 }
-                
+
                 // Send completion message after removal
                 Self::send_completion_message(context, tx_to_main)?;
             }
@@ -153,7 +171,11 @@ impl BulkOperationPostProcessor {
                     return Err(AppError::Component(e.to_string()));
                 }
             }
-            BulkOperationType::Send { from_queue_display, to_queue_display, should_delete } => {
+            BulkOperationType::Send {
+                from_queue_display,
+                to_queue_display,
+                should_delete,
+            } => {
                 let success_message = Self::format_send_success_message(
                     context.successful_count,
                     context.failed_count,
@@ -162,10 +184,10 @@ impl BulkOperationPostProcessor {
                     to_queue_display,
                     *should_delete,
                 );
-                
-                if let Err(e) = tx_to_main.send(Msg::PopupActivity(
-                    PopupActivityMsg::ShowSuccess(success_message),
-                )) {
+
+                if let Err(e) = tx_to_main.send(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
+                    success_message,
+                ))) {
                     log::error!("Failed to send success popup message: {}", e);
                     return Err(AppError::Component(e.to_string()));
                 }
@@ -185,7 +207,7 @@ impl BulkOperationPostProcessor {
         should_delete: bool,
     ) -> String {
         let not_found_count = total_count.saturating_sub(successful_count + failed_count);
-        
+
         if failed_count > 0 || not_found_count > 0 {
             // Partial success case
             format!(
@@ -258,7 +280,7 @@ impl BulkOperationPostProcessor {
             message_ids,
             should_remove_from_state: should_delete,
             reload_threshold,
-            current_message_count: 0, // Not used for send operations
+            current_message_count: 0,      // Not used for send operations
             selected_from_current_page: 0, // Not used for send operations
         }
     }
@@ -269,7 +291,7 @@ impl BulkOperationPostProcessor {
         successful_count: usize,
     ) -> Vec<String> {
         use crate::app::updates::messages::bulk_execution::task_manager::BulkSendData;
-        
+
         match bulk_data {
             BulkSendData::MessageIds(message_ids) => {
                 // Take up to the successful count from the original message IDs
@@ -306,7 +328,7 @@ mod tests {
             current_message_count: 20,
             selected_from_current_page: 5,
         };
-        
+
         match BulkOperationPostProcessor::determine_reload_strategy(&context) {
             ReloadStrategy::ForceReload { reason } => {
                 assert!(reason.contains("Large deletion (50 messages >= threshold 10)"));
@@ -328,7 +350,7 @@ mod tests {
             current_message_count: 5,
             selected_from_current_page: 5,
         };
-        
+
         match BulkOperationPostProcessor::determine_reload_strategy(&context) {
             ReloadStrategy::ForceReload { reason } => {
                 assert!(reason.contains("All current messages deleted (5/5)"));
@@ -350,7 +372,7 @@ mod tests {
             current_message_count: 20,
             selected_from_current_page: 3,
         };
-        
+
         match BulkOperationPostProcessor::determine_reload_strategy(&context) {
             ReloadStrategy::LocalRemoval => {}
             _ => panic!("Expected LocalRemoval strategy for small operation"),
@@ -374,7 +396,7 @@ mod tests {
             current_message_count: 0,
             selected_from_current_page: 0,
         };
-        
+
         match BulkOperationPostProcessor::determine_reload_strategy(&context) {
             ReloadStrategy::ForceReload { reason } => {
                 assert!(reason.contains("Large bulk send operation (50 messages >= threshold 10)"));
@@ -400,7 +422,7 @@ mod tests {
             current_message_count: 0,
             selected_from_current_page: 0,
         };
-        
+
         match BulkOperationPostProcessor::determine_reload_strategy(&context) {
             ReloadStrategy::CompletionOnly => {}
             _ => panic!("Expected CompletionOnly strategy for copy operation"),
@@ -409,10 +431,9 @@ mod tests {
 
     #[test]
     fn test_format_send_success_message_full_success() {
-        let message = BulkOperationPostProcessor::format_send_success_message(
-            10, 0, 10, "Main", "DLQ", true
-        );
-        
+        let message =
+            BulkOperationPostProcessor::format_send_success_message(10, 0, 10, "Main", "DLQ", true);
+
         assert!(message.contains("✅ Bulk move operation completed successfully!"));
         assert!(message.contains("10 messages processed from Main to DLQ"));
         assert!(message.contains("moved successfully"));
@@ -420,14 +441,13 @@ mod tests {
 
     #[test]
     fn test_format_send_success_message_partial_success() {
-        let message = BulkOperationPostProcessor::format_send_success_message(
-            7, 2, 10, "Main", "DLQ", false
-        );
-        
+        let message =
+            BulkOperationPostProcessor::format_send_success_message(7, 2, 10, "Main", "DLQ", false);
+
         assert!(message.contains("Bulk copy operation completed with mixed results"));
         assert!(message.contains("✅ Successfully processed: 7 messages"));
         assert!(message.contains("❌ Failed: 2 messages"));
         assert!(message.contains("⚠️  Not found: 1 messages"));
         assert!(message.contains("Main → DLQ"));
     }
-} 
+}

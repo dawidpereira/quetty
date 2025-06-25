@@ -4,6 +4,7 @@ use server::taskpool::TaskPool;
 use std::fmt::Display;
 use std::future::Future;
 use std::sync::mpsc::Sender;
+use tokio_util::sync::CancellationToken;
 
 /// Task manager for executing async operations with loading indicators and error handling
 pub struct TaskManager {
@@ -21,11 +22,22 @@ impl TaskManager {
         }
     }
 
-
-
     /// Simple execute method with default error handling (most common use case)
     pub fn execute<F, R>(&self, loading_message: impl Display, operation: F)
     where
+        F: Future<Output = Result<R, AppError>> + Send + 'static,
+        R: Send + 'static,
+    {
+        self.execute_with_cancellation(loading_message, operation, None);
+    }
+
+    /// Execute with cancellation support
+    pub fn execute_with_cancellation<F, R>(
+        &self,
+        loading_message: impl Display,
+        operation: F,
+        cancel_token: Option<CancellationToken>,
+    ) where
         F: Future<Output = Result<R, AppError>> + Send + 'static,
         R: Send + 'static,
     {
@@ -40,7 +52,17 @@ impl TaskManager {
         let error_reporter = self.error_reporter.clone();
 
         self.taskpool.execute(async move {
-            let result = operation.await;
+            let result = if let Some(token) = cancel_token {
+                tokio::select! {
+                    result = operation => result,
+                    _ = token.cancelled() => {
+                        log::info!("Task cancelled");
+                        Err(AppError::Component("Operation cancelled".to_string()))
+                    }
+                }
+            } else {
+                operation.await
+            };
 
             // Stop loading indicator
             Self::send_message_or_log_error(
@@ -50,13 +72,13 @@ impl TaskManager {
             );
 
             if let Err(error) = result {
-                // Use the shared error reporter instead of creating a new one
-                error_reporter.report_simple(error, "TaskManager", "async_operation");
+                // Don't report cancellation as an error to the user
+                if !error.to_string().contains("cancelled") {
+                    error_reporter.report_simple(error, "TaskManager", "async_operation");
+                }
             }
         });
     }
-
-
 
     /// Helper method to send a message to the main thread or log an error if it fails
     pub fn send_message_or_log_error(tx: &Sender<Msg>, msg: Msg, context: &str) {
@@ -65,8 +87,6 @@ impl TaskManager {
         }
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -235,8 +255,6 @@ mod tests {
                 "Should contain component info"
             );
         }
-
-
 
         #[test]
         fn test_send_message_or_log_error_success() {

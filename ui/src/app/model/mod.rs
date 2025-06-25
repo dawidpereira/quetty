@@ -1,17 +1,17 @@
 use crate::app::queue_state::QueueState;
 use crate::app::task_manager::TaskManager;
 use crate::components::common::{ComponentId, Msg};
+use crate::error::AppError;
 use crate::error::ErrorReporter;
 use server::service_bus_manager::ServiceBusManager;
+use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 use server::taskpool::TaskPool;
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
 use tuirealm::event::NoUserEvent;
 use tuirealm::terminal::{TerminalAdapter, TerminalBridge};
 use tuirealm::{Application, Update};
-use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
-use crate::error::AppError;
 
 // Submodules
 mod async_operations;
@@ -107,9 +107,12 @@ where
         let service_bus_manager = self.service_bus_manager.clone();
         self.task_manager
             .execute("Disposing service bus resources...", async move {
-                
                 let command = ServiceBusCommand::DisposeAllResources;
-                let response = service_bus_manager.lock().await.execute_command(command).await;
+                let response = service_bus_manager
+                    .lock()
+                    .await
+                    .execute_command(command)
+                    .await;
                 match response {
                     ServiceBusResponse::AllResourcesDisposed => Ok(()),
                     ServiceBusResponse::Error { error } => {

@@ -69,8 +69,6 @@ mod helpers {
     pub fn assert_stop_message(msg: &Msg) {
         assert_matches!(msg, Msg::LoadingActivity(LoadingActivityMsg::Stop));
     }
-
-
 }
 
 // Integration tests - testing complete workflows through public API
@@ -125,8 +123,6 @@ async fn test_execute_error_complete_flow() {
     );
 }
 
-
-
 #[tokio::test]
 async fn test_multiple_concurrent_operations_complete_flow() {
     let (task_manager, rx) = create_test_setup();
@@ -165,5 +161,3 @@ async fn test_multiple_concurrent_operations_complete_flow() {
     assert_eq!(start_count, 3, "Should have 3 start messages");
     assert_eq!(stop_count, 3, "Should have 3 stop messages");
 }
-
-

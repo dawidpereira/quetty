@@ -24,8 +24,7 @@ pub mod limits {
     /// Maximum reasonable minimum buffer size
     pub const MAX_MIN_BUFFER_SIZE: usize = 500;
 
-    /// Hard limits for bulk operations
-    pub const BULK_OPERATION_MIN_COUNT: usize = 1;
+    /// Bulk operation limits (min count is now handled by server's BatchConfig)
     pub const BULK_OPERATION_MAX_COUNT: usize = 1000;
 
     /// Maximum threshold for triggering auto-reload after bulk operations
@@ -39,6 +38,18 @@ pub mod limits {
 
     /// Maximum processing time for bulk operations (seconds)
     pub const MAX_BULK_PROCESSING_TIME_SECS: u64 = 120;
+
+    /// Maximum lock timeout for lock operations
+    pub const MAX_LOCK_TIMEOUT_SECS: u64 = 30;
+
+    /// Maximum multiplier for calculating max messages to process
+    pub const MAX_MESSAGES_MULTIPLIER: usize = 10;
+
+    /// Minimum messages to process in bulk operations
+    pub const MIN_MESSAGES_TO_PROCESS_LIMIT: usize = 10;
+
+    /// Maximum messages to process in bulk operations
+    pub const MAX_MESSAGES_TO_PROCESS_LIMIT: usize = 5000;
 }
 
 /// Configuration validation errors
@@ -54,6 +65,10 @@ pub enum ConfigValidationError {
     SmallDeletionThreshold { configured: usize, limit: usize },
     BulkChunkSize { configured: usize, limit: usize },
     BulkProcessingTime { configured: u64, limit: u64 },
+    LockTimeout { configured: u64, limit: u64 },
+    MessagesMultiplier { configured: usize, limit: usize },
+    MinMessagesToProcess { configured: usize, limit: usize },
+    MaxMessagesToProcess { configured: usize, limit: usize },
 }
 
 impl ConfigValidationError {
@@ -150,6 +165,42 @@ impl ConfigValidationError {
                     configured, limit
                 )
             }
+            ConfigValidationError::LockTimeout { configured, limit } => {
+                format!(
+                    "Lock timeout too high!\n\n\
+                    Your configured value: {} seconds\n\
+                    Recommended maximum: {} seconds\n\n\
+                    Please update lock_timeout_secs in config.toml.",
+                    configured, limit
+                )
+            }
+            ConfigValidationError::MessagesMultiplier { configured, limit } => {
+                format!(
+                    "Messages multiplier too high!\n\n\
+                    Your configured value: {}\n\
+                    Recommended maximum: {}\n\n\
+                    Please update max_messages_multiplier in config.toml.",
+                    configured, limit
+                )
+            }
+            ConfigValidationError::MinMessagesToProcess { configured, limit } => {
+                format!(
+                    "Minimum messages to process too low!\n\n\
+                    Your configured value: {}\n\
+                    Recommended minimum: {}\n\n\
+                    Please update min_messages_to_process in config.toml.",
+                    configured, limit
+                )
+            }
+            ConfigValidationError::MaxMessagesToProcess { configured, limit } => {
+                format!(
+                    "Maximum messages to process too high!\n\n\
+                    Your configured value: {}\n\
+                    Recommended maximum: {}\n\n\
+                    Please update max_messages_to_process in config.toml.",
+                    configured, limit
+                )
+            }
         }
     }
 }
@@ -158,7 +209,7 @@ use std::sync::OnceLock;
 
 /// Configuration loading result for better error handling
 pub enum ConfigLoadResult {
-    Success(AppConfig),
+    Success(Box<AppConfig>),
     LoadError(String),
     DeserializeError(String),
 }
@@ -185,7 +236,7 @@ fn load_config() -> ConfigLoadResult {
     };
 
     match config.try_deserialize::<AppConfig>() {
-        Ok(app_config) => ConfigLoadResult::Success(app_config),
+        Ok(app_config) => ConfigLoadResult::Success(Box::new(app_config)),
         Err(e) => {
             log::error!("Failed to deserialize configuration: {}", e);
             ConfigLoadResult::DeserializeError(format!(
@@ -207,7 +258,7 @@ pub fn get_config() -> &'static ConfigLoadResult {
 /// Used by components that can't handle config errors gracefully
 pub fn get_config_or_panic() -> &'static AppConfig {
     match get_config() {
-        ConfigLoadResult::Success(config) => config,
+        ConfigLoadResult::Success(config) => config.as_ref(),
         ConfigLoadResult::LoadError(error) => {
             panic!("Configuration loading failed: {}", error);
         }
@@ -216,8 +267,6 @@ pub fn get_config_or_panic() -> &'static AppConfig {
         }
     }
 }
-
-
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
@@ -232,8 +281,6 @@ pub struct AppConfig {
     batch: BatchConfig,
     #[serde(flatten)]
     ui: UIConfig,
-    #[serde(flatten)]
-    bulk_operations: BulkOperationsConfig,
     keys: KeyBindingsConfig,
     servicebus: ServicebusConfig,
     azure_ad: AzureAdConfig,
@@ -259,21 +306,6 @@ pub struct UIConfig {
 pub struct DLQConfig {
     /// Batch size for receiving messages in DLQ operations (default: 10)
     dlq_batch_size: Option<u32>,
-}
-
-/// Configuration for bulk operations
-#[derive(Debug, Clone, Deserialize)]
-pub struct BulkOperationsConfig {
-    /// Maximum number of messages that can be processed in a single bulk operation (default: 100)
-    bulk_operation_max_count: Option<usize>,
-    /// Threshold for triggering auto-reload after bulk operations (default: 10)
-    auto_reload_threshold: Option<usize>,
-    /// Small deletion threshold for backfill operations (default: 5)
-    small_deletion_threshold: Option<usize>,
-    /// Chunk size for bulk processing operations (default: 100)
-    bulk_chunk_size: Option<usize>,
-    /// Processing time limit for bulk operations in seconds (default: 30)
-    bulk_processing_time_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -405,67 +437,112 @@ impl AppConfig {
             });
         }
 
-        // Validate bulk operations configuration
+        // Validate batch configuration (includes bulk operations)
         log::debug!(
             "  bulk_operation_max_count: {} (limit: {})",
-            self.bulk_operations().max_count(),
+            batch_config.bulk_operation_max_count(),
             limits::BULK_OPERATION_MAX_COUNT
         );
-        if self.bulk_operations().max_count() > limits::BULK_OPERATION_MAX_COUNT {
+        if batch_config.bulk_operation_max_count() > limits::BULK_OPERATION_MAX_COUNT {
             errors.push(ConfigValidationError::BulkOperationMaxCount {
-                configured: self.bulk_operations().max_count(),
+                configured: batch_config.bulk_operation_max_count(),
                 limit: limits::BULK_OPERATION_MAX_COUNT,
             });
         }
 
         log::debug!(
             "  auto_reload_threshold: {} (limit: {})",
-            self.bulk_operations().auto_reload_threshold(),
+            batch_config.auto_reload_threshold(),
             limits::MAX_AUTO_RELOAD_THRESHOLD
         );
-        if self.bulk_operations().auto_reload_threshold() > limits::MAX_AUTO_RELOAD_THRESHOLD {
+        if batch_config.auto_reload_threshold() > limits::MAX_AUTO_RELOAD_THRESHOLD {
             errors.push(ConfigValidationError::AutoReloadThreshold {
-                configured: self.bulk_operations().auto_reload_threshold(),
+                configured: batch_config.auto_reload_threshold(),
                 limit: limits::MAX_AUTO_RELOAD_THRESHOLD,
             });
         }
 
         log::debug!(
             "  small_deletion_threshold: {} (limit: {})",
-            self.bulk_operations().small_deletion_threshold(),
+            batch_config.small_deletion_threshold(),
             limits::MAX_SMALL_DELETION_THRESHOLD
         );
-        if self.bulk_operations().small_deletion_threshold() > limits::MAX_SMALL_DELETION_THRESHOLD
-        {
+        if batch_config.small_deletion_threshold() > limits::MAX_SMALL_DELETION_THRESHOLD {
             errors.push(ConfigValidationError::SmallDeletionThreshold {
-                configured: self.bulk_operations().small_deletion_threshold(),
+                configured: batch_config.small_deletion_threshold(),
                 limit: limits::MAX_SMALL_DELETION_THRESHOLD,
             });
         }
 
         log::debug!(
             "  bulk_chunk_size: {} (limit: {})",
-            self.bulk_operations().bulk_chunk_size(),
+            batch_config.bulk_chunk_size(),
             limits::MAX_BULK_CHUNK_SIZE
         );
-        if self.bulk_operations().bulk_chunk_size() > limits::MAX_BULK_CHUNK_SIZE {
+        if batch_config.bulk_chunk_size() > limits::MAX_BULK_CHUNK_SIZE {
             errors.push(ConfigValidationError::BulkChunkSize {
-                configured: self.bulk_operations().bulk_chunk_size(),
+                configured: batch_config.bulk_chunk_size(),
                 limit: limits::MAX_BULK_CHUNK_SIZE,
             });
         }
 
         log::debug!(
             "  bulk_processing_time_secs: {} (limit: {})",
-            self.bulk_operations().bulk_processing_time_secs(),
+            batch_config.bulk_processing_time_secs(),
             limits::MAX_BULK_PROCESSING_TIME_SECS
         );
-        if self.bulk_operations().bulk_processing_time_secs()
-            > limits::MAX_BULK_PROCESSING_TIME_SECS
-        {
+        if batch_config.bulk_processing_time_secs() > limits::MAX_BULK_PROCESSING_TIME_SECS {
             errors.push(ConfigValidationError::BulkProcessingTime {
-                configured: self.bulk_operations().bulk_processing_time_secs(),
+                configured: batch_config.bulk_processing_time_secs(),
                 limit: limits::MAX_BULK_PROCESSING_TIME_SECS,
+            });
+        }
+
+        log::debug!(
+            "  lock_timeout_secs: {} (limit: {})",
+            batch_config.lock_timeout_secs(),
+            limits::MAX_LOCK_TIMEOUT_SECS
+        );
+        if batch_config.lock_timeout_secs() > limits::MAX_LOCK_TIMEOUT_SECS {
+            errors.push(ConfigValidationError::LockTimeout {
+                configured: batch_config.lock_timeout_secs(),
+                limit: limits::MAX_LOCK_TIMEOUT_SECS,
+            });
+        }
+
+        log::debug!(
+            "  max_messages_multiplier: {} (limit: {})",
+            batch_config.max_messages_multiplier(),
+            limits::MAX_MESSAGES_MULTIPLIER
+        );
+        if batch_config.max_messages_multiplier() > limits::MAX_MESSAGES_MULTIPLIER {
+            errors.push(ConfigValidationError::MessagesMultiplier {
+                configured: batch_config.max_messages_multiplier(),
+                limit: limits::MAX_MESSAGES_MULTIPLIER,
+            });
+        }
+
+        log::debug!(
+            "  min_messages_to_process: {} (limit: {})",
+            batch_config.min_messages_to_process(),
+            limits::MIN_MESSAGES_TO_PROCESS_LIMIT
+        );
+        if batch_config.min_messages_to_process() < limits::MIN_MESSAGES_TO_PROCESS_LIMIT {
+            errors.push(ConfigValidationError::MinMessagesToProcess {
+                configured: batch_config.min_messages_to_process(),
+                limit: limits::MIN_MESSAGES_TO_PROCESS_LIMIT,
+            });
+        }
+
+        log::debug!(
+            "  max_messages_to_process: {} (limit: {})",
+            batch_config.max_messages_to_process(),
+            limits::MAX_MESSAGES_TO_PROCESS_LIMIT
+        );
+        if batch_config.max_messages_to_process() > limits::MAX_MESSAGES_TO_PROCESS_LIMIT {
+            errors.push(ConfigValidationError::MaxMessagesToProcess {
+                configured: batch_config.max_messages_to_process(),
+                limit: limits::MAX_MESSAGES_TO_PROCESS_LIMIT,
             });
         }
 
@@ -501,9 +578,6 @@ impl AppConfig {
     pub fn ui(&self) -> &UIConfig {
         &self.ui
     }
-    pub fn bulk_operations(&self) -> &BulkOperationsConfig {
-        &self.bulk_operations
-    }
     pub fn keys(&self) -> &KeyBindingsConfig {
         &self.keys
     }
@@ -528,8 +602,6 @@ impl ServicebusConfig {
                 "SERVICEBUS_CONNECTION_STRING is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
             ))
     }
-
-
 }
 
 impl DLQConfig {
@@ -543,38 +615,6 @@ impl UIConfig {
     /// Get the duration between animation frames for loading indicators
     pub fn loading_frame_duration_ms(&self) -> u64 {
         self.ui_loading_frame_duration_ms.unwrap_or(100)
-    }
-}
-
-impl BulkOperationsConfig {
-    /// Get the maximum number of messages for bulk operations (default: 100)
-    pub fn max_count(&self) -> usize {
-        self.bulk_operation_max_count.unwrap_or(100)
-    }
-
-    /// Get the minimum number of messages for bulk operations (always 1)
-    pub fn min_count(&self) -> usize {
-        limits::BULK_OPERATION_MIN_COUNT
-    }
-
-    /// Get the threshold for triggering auto-reload after bulk operations (default: 10)
-    pub fn auto_reload_threshold(&self) -> usize {
-        self.auto_reload_threshold.unwrap_or(10)
-    }
-
-    /// Get the small deletion threshold for backfill operations (default: 5)
-    pub fn small_deletion_threshold(&self) -> usize {
-        self.small_deletion_threshold.unwrap_or(5)
-    }
-
-    /// Get the chunk size for bulk processing operations (default: 100)
-    pub fn bulk_chunk_size(&self) -> usize {
-        self.bulk_chunk_size.unwrap_or(100)
-    }
-
-    /// Get the processing time limit for bulk operations in seconds (default: 30)
-    pub fn bulk_processing_time_secs(&self) -> u64 {
-        self.bulk_processing_time_secs.unwrap_or(30)
     }
 }
 

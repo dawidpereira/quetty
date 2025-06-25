@@ -4,8 +4,8 @@ use crate::error::AppError;
 use server::bulk_operations::{BulkOperationResult, MessageIdentifier};
 use server::service_bus_manager::{ServiceBusCommand, ServiceBusManager, ServiceBusResponse};
 use server::taskpool::TaskPool;
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
+use std::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
 // Constants for consistent queue display names
@@ -154,7 +154,12 @@ pub async fn execute_bulk_send_task(params: BulkSendTaskParams) {
                 repeat_count: params.repeat_count,
             };
 
-            let response = params.service_bus_manager.lock().await.execute_command(command).await;
+            let response = params
+                .service_bus_manager
+                .lock()
+                .await
+                .execute_command(command)
+                .await;
 
             match response {
                 ServiceBusResponse::MessagesSent { stats, .. } => {
@@ -169,9 +174,9 @@ pub async fn execute_bulk_send_task(params: BulkSendTaskParams) {
                     log::error!("Bulk send with data failed: {}", error);
                     Err(AppError::ServiceBus(error.to_string()))
                 }
-                _ => {
-                    Err(AppError::ServiceBus("Unexpected response for bulk send peeked".to_string()))
-                }
+                _ => Err(AppError::ServiceBus(
+                    "Unexpected response for bulk send peeked".to_string(),
+                )),
             }
         }
         BulkSendData::MessageIds(message_ids) => {
@@ -188,7 +193,12 @@ pub async fn execute_bulk_send_task(params: BulkSendTaskParams) {
                 repeat_count: params.repeat_count,
             };
 
-            let response = params.service_bus_manager.lock().await.execute_command(command).await;
+            let response = params
+                .service_bus_manager
+                .lock()
+                .await
+                .execute_command(command)
+                .await;
 
             match response {
                 ServiceBusResponse::BulkOperationCompleted { result } => {
@@ -199,9 +209,9 @@ pub async fn execute_bulk_send_task(params: BulkSendTaskParams) {
                     log::error!("Bulk send with IDs failed: {}", error);
                     Err(AppError::ServiceBus(error.to_string()))
                 }
-                _ => {
-                    Err(AppError::ServiceBus("Unexpected response for bulk send".to_string()))
-                }
+                _ => Err(AppError::ServiceBus(
+                    "Unexpected response for bulk send".to_string(),
+                )),
             }
         }
     };
@@ -260,14 +270,17 @@ fn handle_bulk_send_success_simple(
 
     // Extract message IDs for centralized processing
     let message_ids = if operation_params.should_delete && result.successful > 0 {
-        BulkOperationPostProcessor::extract_successfully_processed_message_ids(bulk_data, result.successful)
+        BulkOperationPostProcessor::extract_successfully_processed_message_ids(
+            bulk_data,
+            result.successful,
+        )
     } else {
         vec![] // No message IDs needed if not deleting or no successful operations
     };
 
     // Get auto-reload threshold
     let auto_reload_threshold = crate::config::get_config_or_panic()
-        .bulk_operations()
+        .batch()
         .auto_reload_threshold();
 
     // Create context for centralized post-processing
@@ -314,5 +327,3 @@ fn handle_bulk_send_error(
         "error",
     );
 }
-
-

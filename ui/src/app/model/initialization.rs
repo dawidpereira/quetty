@@ -92,9 +92,11 @@ impl Model<CrosstermTerminalAdapter> {
     pub async fn new() -> AppResult<Self> {
         // Create the underlying Azure Service Bus client
         let config = config::get_config_or_panic();
-        let connection_string = config.servicebus().connection_string()
+        let connection_string = config
+            .servicebus()
+            .connection_string()
             .map_err(|e| AppError::Config(format!("Failed to get connection string: {}", e)))?;
-        
+
         let azure_service_bus_client = AzureServiceBusClient::new_from_connection_string(
             connection_string,
             ServiceBusClientOptions::default(),
@@ -102,8 +104,13 @@ impl Model<CrosstermTerminalAdapter> {
         .await
         .map_err(|e| AppError::ServiceBus(e.to_string()))?;
 
-        // Create the service bus manager directly
-        let service_bus_manager = Arc::new(Mutex::new(ServiceBusManager::new(Arc::new(Mutex::new(azure_service_bus_client)))));
+        // Create service bus manager with configuration from UI config
+        // Now using the unified BatchConfig that includes all necessary configuration
+        let batch_config = config.batch().clone();
+        let service_bus_manager = Arc::new(Mutex::new(ServiceBusManager::new(
+            Arc::new(Mutex::new(azure_service_bus_client)),
+            batch_config,
+        )));
 
         let (tx_to_main, rx_to_main) = mpsc::channel();
         let taskpool = TaskPool::new(10);

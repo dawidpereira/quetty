@@ -190,7 +190,7 @@ where
     // Pagination utility methods
     pub fn reset_pagination_state(&mut self) {
         self.queue_state.message_pagination.reset();
-        
+
         // Also clear bulk selection state during pagination reset (e.g., during force reload)
         // This prevents old message IDs from persisting after bulk operations
         log::debug!("Clearing bulk selection state during pagination reset");
@@ -387,7 +387,11 @@ where
                     from_sequence,
                 };
 
-                let response = service_bus_manager.lock().await.execute_command(command).await;
+                let response = service_bus_manager
+                    .lock()
+                    .await
+                    .execute_command(command)
+                    .await;
 
                 let messages = match response {
                     ServiceBusResponse::MessagesReceived { messages } => {
@@ -400,17 +404,24 @@ where
                     }
                     ServiceBusResponse::Error { error } => {
                         log::error!("Failed to peek messages for backfill: {}", error);
-                        return Err(AppError::ServiceBus(format!("Failed to peek messages for backfill: {}", error)));
+                        return Err(AppError::ServiceBus(format!(
+                            "Failed to peek messages for backfill: {}",
+                            error
+                        )));
                     }
                     _ => {
-                        return Err(AppError::ServiceBus("Unexpected response for peek messages".to_string()));
+                        return Err(AppError::ServiceBus(
+                            "Unexpected response for peek messages".to_string(),
+                        ));
                     }
                 };
 
                 // Send backfill messages (different from NewMessagesLoaded)
                 if !messages.is_empty() {
                     if let Err(e) = tx_to_main.send(Msg::MessageActivity(
-                        crate::components::common::MessageActivityMsg::BackfillMessagesLoaded(messages),
+                        crate::components::common::MessageActivityMsg::BackfillMessagesLoaded(
+                            messages,
+                        ),
                     )) {
                         log::error!("Failed to send backfill messages: {}", e);
                         return Err(AppError::Component(e.to_string()));
