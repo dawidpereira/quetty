@@ -1,6 +1,5 @@
 use crate::app::model::Model;
 use crate::components::common::{Msg, ThemeActivityMsg};
-use crate::error::AppError;
 use crate::theme::ThemeManager;
 use crate::theme::types::ThemeConfig;
 use tuirealm::terminal::TerminalAdapter;
@@ -31,46 +30,30 @@ where
         match ThemeManager::global().lock() {
             Ok(mut manager) => {
                 if let Err(e) = manager.switch_theme_from_config(&theme_config) {
-                    log::error!("Failed to switch theme: {}", e);
-
                     // Close the theme picker first so the error popup can be seen
                     if let Err(unmount_err) = self.unmount_theme_picker() {
-                        log::error!(
-                            "Failed to unmount theme picker after theme switch error: {}",
-                            unmount_err
-                        );
+                        self.error_reporter.report_mount_error("ThemePicker", "unmount", unmount_err);
                     }
 
                     // Theme errors are warnings since they don't break core functionality
-                    self.error_reporter
-                        .report_warning(e, "Theme", "switch_theme");
+                    self.error_reporter.report_theme_error("switch", e);
                     return None;
                 }
             }
             Err(e) => {
-                log::error!("Failed to acquire theme manager lock: {}", e);
-
                 // Close the theme picker first so the error popup can be seen
                 if let Err(unmount_err) = self.unmount_theme_picker() {
-                    log::error!(
-                        "Failed to unmount theme picker after lock error: {}",
-                        unmount_err
-                    );
+                    self.error_reporter.report_mount_error("ThemePicker", "unmount", unmount_err);
                 }
 
-                let lock_error =
-                    AppError::Component(format!("Failed to acquire theme manager lock: {}", e));
-                self.error_reporter
-                    .report_simple(lock_error, "Theme", "acquire_lock");
+                self.error_reporter.report_theme_error("acquire_lock", e);
                 return None;
             }
         }
 
         // Close the theme picker
         if let Err(e) = self.unmount_theme_picker() {
-            log::error!("Failed to unmount theme picker: {}", e);
-            self.error_reporter
-                .report_simple(e, "Theme", "unmount_picker");
+            self.error_reporter.report_mount_error("ThemePicker", "unmount", e);
             return None;
         }
 
@@ -89,9 +72,7 @@ where
         log::debug!("Theme picker closed");
 
         if let Err(e) = self.unmount_theme_picker() {
-            log::error!("Failed to unmount theme picker: {}", e);
-            self.error_reporter
-                .report_simple(e, "Theme", "picker_closed");
+            self.error_reporter.report_mount_error("ThemePicker", "unmount", e);
             None
         } else {
             None

@@ -16,34 +16,34 @@ where
 
                 // Unmount the help screen
                 if let Err(e) = self.app.umount(&ComponentId::HelpScreen) {
-                    log::error!("Failed to unmount help screen: {}", e);
+                    self.error_reporter.report_mount_error("HelpScreen", "unmount", &e);
                 }
 
                 // Return to appropriate component based on state
                 match self.state_manager.app_state {
                     AppState::NamespacePicker => {
                         if let Err(e) = self.app.active(&ComponentId::NamespacePicker) {
-                            log::error!("Failed to activate namespace picker: {}", e);
+                            self.error_reporter.report_activation_error("NamespacePicker", &e);
                         }
                     }
                     AppState::QueuePicker => {
                         if let Err(e) = self.app.active(&ComponentId::QueuePicker) {
-                            log::error!("Failed to activate queue picker: {}", e);
+                            self.error_reporter.report_activation_error("QueuePicker", &e);
                         }
                     }
                     AppState::MessagePicker => {
                         if let Err(e) = self.app.active(&ComponentId::Messages) {
-                            log::error!("Failed to activate messages: {}", e);
+                            self.error_reporter.report_activation_error("Messages", &e);
                         }
                     }
                     AppState::MessageDetails => {
                         if let Err(e) = self.app.active(&ComponentId::MessageDetails) {
-                            log::error!("Failed to activate message details: {}", e);
+                            self.error_reporter.report_activation_error("MessageDetails", &e);
                         }
                     }
                     AppState::ThemePicker => {
                         if let Err(e) = self.app.active(&ComponentId::ThemePicker) {
-                            log::error!("Failed to activate theme picker: {}", e);
+                            self.error_reporter.report_activation_error("ThemePicker", &e);
                         }
                     }
                     _ => {}
@@ -54,11 +54,11 @@ where
 
                 // Unmount the help screen
                 if let Err(e) = self.app.umount(&ComponentId::HelpScreen) {
-                    log::error!("Failed to unmount help screen: {}", e);
+                    self.error_reporter.report_mount_error("HelpScreen", "unmount", &e);
                 }
 
                 if let Err(e) = self.app.active(&ComponentId::NamespacePicker) {
-                    log::error!("Failed to activate namespace picker: {}", e);
+                    self.error_reporter.report_activation_error("NamespacePicker", &e);
                 }
             }
         } else {
@@ -75,13 +75,13 @@ where
                     Box::new(HelpScreen::new()),
                     Vec::default(),
                 ) {
-                    log::error!("Failed to mount help screen: {}", e);
+                    self.error_reporter.report_mount_error("HelpScreen", "mount", &e);
                 }
             }
 
             // Activate the help screen
             if let Err(e) = self.app.active(&ComponentId::HelpScreen) {
-                log::error!("Failed to activate help screen: {}", e);
+                self.error_reporter.report_activation_error("HelpScreen", &e);
             }
         }
 

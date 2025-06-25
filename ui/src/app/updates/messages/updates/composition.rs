@@ -21,7 +21,7 @@ where
         self.set_app_state(AppState::MessageDetails);
 
         if let Err(e) = self.app.active(&ComponentId::MessageDetails) {
-            log::error!("Failed to activate message details: {}", e);
+            self.error_reporter.report_activation_error("MessageDetails", &e);
         }
 
         if let Err(e) = self.remount_message_details_for_composition() {
@@ -32,7 +32,7 @@ where
 
         self.set_editing_message(true);
         if let Err(e) = self.update_global_key_watcher_editing_state() {
-            log::error!("Failed to update global key watcher: {}", e);
+            self.error_reporter.report_key_watcher_error(&e);
         }
 
         Some(Msg::ForceRedraw)
@@ -124,7 +124,6 @@ where
         let messages = match response {
             ServiceBusResponse::MessagesReceived { messages } => messages,
             ServiceBusResponse::Error { error } => {
-                log::error!("Failed to peek messages from beginning: {}", error);
                 return Err(AppError::ServiceBus(format!(
                     "Failed to peek messages from beginning: {}",
                     error
@@ -148,7 +147,6 @@ where
         tx_to_main
             .send(Msg::MessageActivity(activity_msg))
             .map_err(|e| {
-                log::error!("Failed to send messages loaded message: {e}");
                 AppError::Component(e.to_string())
             })?;
 

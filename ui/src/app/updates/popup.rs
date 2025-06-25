@@ -34,9 +34,7 @@ where
 
     fn handle_show_error(&mut self, error: AppError) -> Option<Msg> {
         if let Err(e) = self.mount_error_popup(&error) {
-            log::error!("Failed to mount error popup: {}", e);
-            self.error_reporter
-                .report_simple(e, "PopupHandler", "handle_show_error");
+            self.error_reporter.report_mount_error("ErrorPopup", "mount", e);
             return None;
         }
         None
@@ -44,9 +42,7 @@ where
 
     fn handle_close_error(&mut self) -> Option<Msg> {
         if let Err(e) = self.unmount_error_popup() {
-            log::error!("Failed to unmount error popup: {}", e);
-            self.error_reporter
-                .report_simple(e, "PopupHandler", "handle_close_error");
+            self.error_reporter.report_mount_error("ErrorPopup", "unmount", e);
             return None;
         }
         None
@@ -56,9 +52,7 @@ where
         // Create a properly formatted warning error using ErrorReporter's formatting
         let warning_error = self.error_reporter.create_warning_error(message);
         if let Err(e) = self.mount_error_popup(&warning_error) {
-            log::error!("Failed to mount warning popup: {}", e);
-            self.error_reporter
-                .report_simple(e, "PopupHandler", "handle_show_warning");
+            self.error_reporter.report_mount_error("WarningPopup", "mount", e);
             return None;
         }
         None
@@ -66,9 +60,7 @@ where
 
     fn handle_show_success(&mut self, message: String) -> Option<Msg> {
         if let Err(e) = self.mount_success_popup(&message) {
-            log::error!("Failed to mount success popup: {}", e);
-            self.error_reporter
-                .report_simple(e, "PopupHandler", "handle_show_success");
+            self.error_reporter.report_mount_error("SuccessPopup", "mount", e);
             return None;
         }
         None
@@ -76,9 +68,7 @@ where
 
     fn handle_close_success(&mut self) -> Option<Msg> {
         if let Err(e) = self.unmount_success_popup() {
-            log::error!("Failed to unmount success popup: {}", e);
-            self.error_reporter
-                .report_simple(e, "PopupHandler", "handle_close_success");
+            self.error_reporter.report_mount_error("SuccessPopup", "unmount", e);
             return None;
         }
         None
@@ -95,9 +85,7 @@ where
         self.set_pending_confirmation_action(Some(on_confirm));
 
         if let Err(e) = self.mount_confirmation_popup(&title, &message) {
-            log::error!("Failed to mount confirmation popup: {}", e);
-            self.error_reporter
-                .report_simple(e, "PopupHandler", "handle_show_confirmation");
+            self.error_reporter.report_mount_error("ConfirmationPopup", "mount", e);
             return None;
         }
         None
@@ -108,7 +96,7 @@ where
 
         // Close the confirmation popup
         if let Err(e) = self.unmount_confirmation_popup() {
-            log::error!("Failed to unmount confirmation popup: {}", e);
+            self.error_reporter.report_mount_error("ConfirmationPopup", "unmount", e);
         }
 
         if confirmed {
@@ -137,9 +125,7 @@ where
     ) -> Option<Msg> {
         // Use the new NumberInputPopup component
         if let Err(e) = self.mount_number_input_popup(title, message, min_value, max_value) {
-            log::error!("Failed to mount number input popup: {}", e);
-            self.error_reporter
-                .report_simple(e, "PopupHandler", "handle_show_number_input");
+            self.error_reporter.report_mount_error("NumberInputPopup", "mount", e);
             return None;
         }
         None
@@ -150,7 +136,7 @@ where
 
         // Unmount the number input popup
         if let Err(e) = self.unmount_number_input_popup() {
-            log::error!("Failed to unmount number input popup: {}", e);
+            self.error_reporter.report_mount_error("NumberInputPopup", "unmount", e);
         }
 
         // If value is 0, it means cancel
