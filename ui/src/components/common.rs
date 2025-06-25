@@ -57,6 +57,7 @@ pub enum Msg {
     PopupActivity(PopupActivityMsg),
     Error(AppError),
     ShowError(String),
+    ClipboardError(String),
     ToggleHelpScreen,
     ToggleThemePicker,
 }

@@ -98,6 +98,7 @@ impl BulkOperationPostProcessor {
     pub fn handle_completion(
         context: &BulkOperationContext,
         tx_to_main: &Sender<Msg>,
+        error_reporter: &crate::error::ErrorReporter,
     ) -> Result<(), AppError> {
         let strategy = Self::determine_reload_strategy(context);
 
@@ -115,12 +116,12 @@ impl BulkOperationPostProcessor {
                 if let Err(e) = tx_to_main.send(Msg::MessageActivity(
                     MessageActivityMsg::ForceReloadMessages,
                 )) {
-                    log::error!("Failed to send force reload message: {}", e);
+                    error_reporter.report_send_error("force reload message", &e);
                     return Err(AppError::Component(e.to_string()));
                 }
 
                 // Send completion message after reload
-                Self::send_completion_message(context, tx_to_main)?;
+                Self::send_completion_message(context, tx_to_main, error_reporter)?;
             }
             ReloadStrategy::LocalRemoval => {
                 // Remove from local state first
@@ -136,17 +137,17 @@ impl BulkOperationPostProcessor {
                             context.message_ids.clone(),
                         ),
                     )) {
-                        log::error!("Failed to send remove messages from state: {}", e);
+                        error_reporter.report_send_error("remove messages from state", &e);
                         return Err(AppError::Component(e.to_string()));
                     }
                 }
 
                 // Send completion message after removal
-                Self::send_completion_message(context, tx_to_main)?;
+                Self::send_completion_message(context, tx_to_main, error_reporter)?;
             }
             ReloadStrategy::CompletionOnly => {
                 // Only send completion message
-                Self::send_completion_message(context, tx_to_main)?;
+                Self::send_completion_message(context, tx_to_main, error_reporter)?;
             }
         }
 
@@ -157,6 +158,7 @@ impl BulkOperationPostProcessor {
     fn send_completion_message(
         context: &BulkOperationContext,
         tx_to_main: &Sender<Msg>,
+        error_reporter: &crate::error::ErrorReporter,
     ) -> Result<(), AppError> {
         match &context.operation_type {
             BulkOperationType::Delete => {
@@ -167,7 +169,7 @@ impl BulkOperationPostProcessor {
                         total_count: context.total_count,
                     },
                 )) {
-                    log::error!("Failed to send bulk delete completion message: {}", e);
+                    error_reporter.report_send_error("bulk delete completion message", &e);
                     return Err(AppError::Component(e.to_string()));
                 }
             }
@@ -188,7 +190,7 @@ impl BulkOperationPostProcessor {
                 if let Err(e) = tx_to_main.send(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
                     success_message,
                 ))) {
-                    log::error!("Failed to send success popup message: {}", e);
+                    error_reporter.report_send_error("success popup message", &e);
                     return Err(AppError::Component(e.to_string()));
                 }
             }

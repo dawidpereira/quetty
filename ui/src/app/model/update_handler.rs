@@ -1,6 +1,5 @@
 use super::Model;
 use crate::components::common::{MessageActivityMsg, Msg, PopupActivityMsg};
-use crate::error::handle_error;
 use tuirealm::terminal::TerminalAdapter;
 
 impl<T> Model<T>
@@ -22,14 +21,14 @@ where
                 Msg::MessageActivity(MessageActivityMsg::EditingModeStarted) => {
                     self.set_editing_message(true);
                     if let Err(e) = self.update_global_key_watcher_editing_state() {
-                        log::error!("Failed to update global key watcher: {}", e);
+                        self.error_reporter.report_key_watcher_error(e);
                     }
                     None
                 }
                 Msg::MessageActivity(MessageActivityMsg::EditingModeStopped) => {
                     self.set_editing_message(false);
                     if let Err(e) = self.update_global_key_watcher_editing_state() {
-                        log::error!("Failed to update global key watcher: {}", e);
+                        self.error_reporter.report_key_watcher_error(e);
                     }
                     None
                 }
@@ -43,11 +42,14 @@ where
                     log::error!("Error received: {}", e);
                     self.update_popup(PopupActivityMsg::ShowError(e))
                 }
+                Msg::ClipboardError(error_msg) => {
+                    self.error_reporter.report_clipboard_error("copy_to_clipboard", &error_msg);
+                    None
+                }
                 Msg::ToggleHelpScreen => self.update_help(),
                 Msg::ToggleThemePicker => {
                     if let Err(e) = self.mount_theme_picker() {
-                        log::error!("Failed to mount theme picker: {}", e);
-                        self.error_reporter.report_simple(e, "UI", "theme_picker");
+                        self.error_reporter.report_mount_error("ThemePicker", "mount", e);
                         None
                     } else {
                         None
@@ -59,8 +61,9 @@ where
             if let Some(Msg::Error(e)) = result {
                 log::error!("Error from message processing: {}", e);
                 if let Err(err) = self.mount_error_popup(&e) {
-                    log::error!("Failed to mount error popup: {}", err);
-                    handle_error(e);
+                    self.error_reporter.report_mount_error("ErrorPopup", "mount", err);
+                    // Since we can't show the error popup, report the original error through ErrorReporter
+                    self.error_reporter.report_simple(e, "MessageProcessing", "handle_update");
                 }
                 None
             } else {

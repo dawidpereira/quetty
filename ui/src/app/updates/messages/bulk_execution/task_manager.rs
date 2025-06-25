@@ -13,7 +13,7 @@ pub const DLQ_DISPLAY_NAME: &str = "DLQ";
 pub const MAIN_QUEUE_DISPLAY_NAME: &str = "Main";
 
 /// Parameters for bulk send operations
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BulkSendParams {
     pub target_queue: String,
     pub should_delete: bool,
@@ -63,6 +63,7 @@ pub struct BulkSendTaskParams {
     pub tx_to_main: Sender<Msg>,
     pub tx_to_main_err: Sender<Msg>,
     pub repeat_count: usize,
+    pub error_reporter: crate::error::ErrorReporter,
 }
 
 impl BulkSendTaskParams {
@@ -72,14 +73,17 @@ impl BulkSendTaskParams {
         service_bus_manager: Arc<Mutex<ServiceBusManager>>,
         tx_to_main: Sender<Msg>,
         repeat_count: usize,
+        error_reporter: crate::error::ErrorReporter,
     ) -> Self {
+        let tx_to_main_err = tx_to_main.clone();
         Self {
             bulk_data,
             operation_params,
             service_bus_manager,
-            tx_to_main_err: tx_to_main.clone(),
             tx_to_main,
+            tx_to_main_err,
             repeat_count,
+            error_reporter,
         }
     }
 
@@ -238,10 +242,11 @@ pub fn handle_bulk_send_task_result_simple(
                 operation_result,
                 &params.operation_params,
                 &params.bulk_data,
+                &params.error_reporter,
             );
         }
         Err(error) => {
-            log::error!("Bulk send operation failed: {}", error);
+            params.error_reporter.report_bulk_operation_error("send", params.message_count(), &error);
 
             handle_bulk_send_error(
                 &params.tx_to_main,
@@ -260,6 +265,7 @@ fn handle_bulk_send_success_simple(
     result: BulkOperationResult,
     operation_params: &BulkSendParams,
     bulk_data: &BulkSendData,
+    error_reporter: &crate::error::ErrorReporter,
 ) {
     // Stop loading indicator
     BulkTaskManager::send_message_or_log_error(
@@ -294,8 +300,8 @@ fn handle_bulk_send_success_simple(
     );
 
     // Use centralized post-processor to handle completion
-    if let Err(e) = BulkOperationPostProcessor::handle_completion(&context, tx_to_main) {
-        log::error!("Failed to handle bulk send completion: {}", e);
+    if let Err(e) = BulkOperationPostProcessor::handle_completion(&context, tx_to_main, error_reporter) {
+        error_reporter.report_bulk_operation_error("complete", result.successful, &e);
     }
 }
 

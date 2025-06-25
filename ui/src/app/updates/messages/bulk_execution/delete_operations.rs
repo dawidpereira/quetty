@@ -44,6 +44,7 @@ pub fn handle_bulk_delete_execution<T: TerminalAdapter>(
     let auto_reload_threshold = crate::config::get_config_or_panic()
         .batch()
         .auto_reload_threshold();
+    let error_reporter = model.error_reporter.clone();
 
     // Use TaskManager for proper loading management
     model.task_manager.execute(loading_message, async move {
@@ -93,7 +94,7 @@ pub fn handle_bulk_delete_execution<T: TerminalAdapter>(
         );
 
         // Use centralized post-processor to handle completion
-        BulkOperationPostProcessor::handle_completion(&context, &tx_to_main)?;
+        BulkOperationPostProcessor::handle_completion(&context, &tx_to_main, &error_reporter)?;
 
         Ok(())
     });

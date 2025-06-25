@@ -43,10 +43,11 @@ impl TaskManager {
         R: Send + 'static,
     {
         // Start loading indicator
-        Self::send_message_or_log_error(
+        Self::send_message_or_report_error(
             &self.tx_to_main,
             Msg::LoadingActivity(LoadingActivityMsg::Start(loading_message.to_string())),
             "loading start",
+            &self.error_reporter,
         );
 
         let tx_to_main = self.tx_to_main.clone();
@@ -66,10 +67,11 @@ impl TaskManager {
             };
 
             // Stop loading indicator
-            Self::send_message_or_log_error(
+            Self::send_message_or_report_error(
                 &tx_to_main,
                 Msg::LoadingActivity(LoadingActivityMsg::Stop),
                 "loading stop",
+                &error_reporter,
             );
 
             if let Err(error) = result {
@@ -81,12 +83,14 @@ impl TaskManager {
         });
     }
 
-    /// Helper method to send a message to the main thread or log an error if it fails
-    pub fn send_message_or_log_error(tx: &Sender<Msg>, msg: Msg, context: &str) {
+    /// Helper method to send a message to the main thread or report error if it fails
+    pub fn send_message_or_report_error(tx: &Sender<Msg>, msg: Msg, context: &str, error_reporter: &ErrorReporter) {
         if let Err(e) = tx.send(msg) {
-            log::error!("Failed to send {} message: {}", context, e);
+            error_reporter.report_send_error(context, e);
         }
     }
+
+
 }
 
 #[cfg(test)]

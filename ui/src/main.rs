@@ -11,7 +11,7 @@ use crate::theme::{ThemeConfig, ThemeManager};
 use app::model::Model;
 use components::common::ComponentId;
 
-use error::AppError;
+use error::{AppError, ErrorReporter};
 use log::{debug, error, info};
 use std::error::Error as StdError;
 use tuirealm::application::PollStrategy;
@@ -184,15 +184,28 @@ async fn main() -> Result<(), Box<dyn StdError>> {
     let config = match config::get_config() {
         config::ConfigLoadResult::Success(config) => config.as_ref(),
         config::ConfigLoadResult::LoadError(error) => {
-            error!("Configuration loading failed: {}", error);
-            error!("Critical configuration error: {}", error);
-            error!("Please fix your configuration and try again.");
+            // Use ErrorReporter for critical configuration errors
+            // Create a minimal reporter for early initialization errors
+            let (tx, _rx) = std::sync::mpsc::channel();
+            let error_reporter = ErrorReporter::new(tx);
+            error_reporter.report_critical_and_exit(
+                AppError::Config(error.to_string()),
+                "ConfigurationLoader",
+                "load_config",
+                "Configuration loading failed. The application cannot start without a valid configuration.",
+            );
             return Ok(());
         }
         config::ConfigLoadResult::DeserializeError(error) => {
-            error!("Configuration parsing failed: {}", error);
-            error!("Critical configuration error: {}", error);
-            error!("Please fix your configuration and try again.");
+            // Use ErrorReporter for critical configuration errors
+            let (tx, _rx) = std::sync::mpsc::channel();
+            let error_reporter = ErrorReporter::new(tx);
+            error_reporter.report_critical_and_exit(
+                AppError::Config(error.to_string()),
+                "ConfigurationParser",
+                "parse_config",
+                "Configuration parsing failed. Please fix your configuration syntax and try again.",
+            );
             return Ok(());
         }
     };
@@ -203,8 +216,15 @@ async fn main() -> Result<(), Box<dyn StdError>> {
 
     // Handle critical theme failures
     if let ThemeInitializationResult::CriticalFailure { error_message } = &theme_init_result {
-        error!("{}", error_message);
-        error!("Application cannot start due to theme initialization failure");
+        // Use ErrorReporter for critical theme errors
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let error_reporter = ErrorReporter::new(tx);
+        error_reporter.report_critical_and_exit(
+            AppError::Config(error_message.clone()),
+            "ThemeManager",
+            "initialize",
+            "Application cannot start due to theme initialization failure. Please check your theme configuration.",
+        );
         return Ok(());
     }
 
@@ -226,9 +246,15 @@ async fn main() -> Result<(), Box<dyn StdError>> {
             model
         }
         Err(e) => {
-            error!("Failed to initialize application model: {}", e);
-            error!("Critical initialization error: {}", e);
-            error!("The application cannot start. Please check your configuration and try again.");
+            // Use ErrorReporter for critical model initialization errors
+            let (tx, _rx) = std::sync::mpsc::channel();
+            let error_reporter = ErrorReporter::new(tx);
+            error_reporter.report_critical_and_exit(
+                AppError::Component(e.to_string()),
+                "ApplicationModel",
+                "initialize",
+                "Failed to initialize application model. The application cannot start. Please check your configuration and try again.",
+            );
             return Ok(());
         }
     };
@@ -236,7 +262,7 @@ async fn main() -> Result<(), Box<dyn StdError>> {
     // Show theme error popup if there was a theme loading issue
     if let ThemeInitializationResult::FallbackSuccess { error_message } = theme_init_result {
         if let Err(e) = model.mount_error_popup(&AppError::Config(error_message)) {
-            error!("Failed to mount theme error popup: {}", e);
+            model.error_reporter.report_config_error("theme", &e);
         }
     }
 
@@ -290,9 +316,9 @@ async fn main() -> Result<(), Box<dyn StdError>> {
                 error!("Error during view rendering: {}", e);
                 // Show error in popup
                 if let Err(popup_err) = model.mount_error_popup(&e) {
-                    error!("Failed to mount error popup: {}", popup_err);
-                    // Fallback to old error handling
-                    error::handle_error(e);
+                    model.error_reporter.report_mount_error("ErrorPopup", "mount", popup_err);
+                    // Since we can't show the error popup, report the original error through ErrorReporter
+                    model.error_reporter.report_simple(e, "ViewRendering", "main_loop");
                 }
             }
             model.state_manager.redraw_complete();

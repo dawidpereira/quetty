@@ -210,10 +210,7 @@ pub fn handle_event(details: &mut MessageDetails, ev: Event<NoUserEvent>) -> Opt
                     )));
                 }
                 Err(e) => {
-                    log::error!("Failed to copy to clipboard: {}", e);
-                    return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(
-                        AppError::Component("Failed to copy message to clipboard".to_string()),
-                    )));
+                    return Some(Msg::ClipboardError(e.to_string()));
                 }
             }
         }
@@ -230,10 +227,7 @@ pub fn handle_event(details: &mut MessageDetails, ev: Event<NoUserEvent>) -> Opt
                     )));
                 }
                 Err(e) => {
-                    log::error!("Failed to copy to clipboard: {}", e);
-                    return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(
-                        AppError::Component("Failed to yank message to clipboard".to_string()),
-                    )));
+                    return Some(Msg::ClipboardError(e.to_string()));
                 }
             }
         }

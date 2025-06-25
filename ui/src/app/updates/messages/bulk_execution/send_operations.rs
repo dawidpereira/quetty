@@ -29,10 +29,7 @@ pub fn handle_bulk_resend_from_dlq_execution<T: TerminalAdapter>(
     let target_queue = match get_main_queue_name_from_current_dlq(model) {
         Ok(name) => name,
         Err(e) => {
-            log::error!("Failed to get main queue name: {}", e);
-            model
-                .error_reporter
-                .report_simple(e, "BulkSend", "get_queue_name");
+            model.error_reporter.report_service_bus_error("get_main_queue_name", &e, Some("Check your queue configuration"));
             return None;
         }
     };
@@ -76,10 +73,7 @@ pub fn handle_bulk_resend_from_dlq_only_execution<T: TerminalAdapter>(
     let target_queue = match get_main_queue_name_from_current_dlq(model) {
         Ok(name) => name,
         Err(e) => {
-            log::error!("Failed to get main queue name: {}", e);
-            model
-                .error_reporter
-                .report_simple(e, "BulkSend", "get_queue_name");
+            model.error_reporter.report_service_bus_error("get_main_queue_name", &e, Some("Check your queue configuration"));
             return None;
         }
     };
@@ -153,14 +147,11 @@ fn extract_message_data_from_current_state<T: TerminalAdapter>(
             messages_data.push((message_id.clone(), body));
             log::debug!("Extracted message data for {}", message_id);
         } else {
-            log::error!("Message {} not found in current state", message_id);
             let error = AppError::State(format!(
                 "Message {} not found in current state for send operation",
                 message_id
             ));
-            model
-                .error_reporter
-                .report_simple(error, "BulkSend", "extract_data");
+            model.error_reporter.report_loading_error("BulkSend", "extract_message_data", &error);
             return Err(true);
         }
     }
@@ -212,6 +203,7 @@ fn start_bulk_send_generic<T: TerminalAdapter>(
         Arc::clone(&model.service_bus_manager),
         model.tx_to_main().clone(),
         model.queue_state().message_repeat_count,
+        model.error_reporter.clone(),
     );
 
     // Execute the task

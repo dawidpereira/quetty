@@ -34,7 +34,7 @@ where
 
                 // Activate the MessageDetails component - with proper error recovery
                 if let Err(e) = self.app.active(&ComponentId::MessageDetails) {
-                    log::error!("Failed to activate message details component: {}", e);
+                    self.error_reporter.report_activation_error("MessageDetails", &e);
                     // Recovery: go back to message picker state
                     self.set_app_state(AppState::MessagePicker);
                     return Some(Msg::ShowError(
@@ -55,7 +55,7 @@ where
 
                 self.set_editing_message(true);
                 if let Err(e) = self.update_global_key_watcher_editing_state() {
-                    log::error!("Failed to update global key watcher: {}", e);
+                    self.error_reporter.report_key_watcher_error(&e);
                     // This is not critical - continue anyway
                 }
 
@@ -74,7 +74,7 @@ where
     pub fn handle_cancel_edit_message(&mut self) -> Option<Msg> {
         self.set_editing_message(false);
         if let Err(e) = self.update_global_key_watcher_editing_state() {
-            log::error!("Failed to update global key watcher: {}", e);
+            self.error_reporter.report_key_watcher_error(&e);
         }
 
         // Transition back to message picker view
@@ -82,18 +82,18 @@ where
 
         // Activate the Messages component first
         if let Err(e) = self.app.active(&ComponentId::Messages) {
-            log::error!("Failed to activate messages component: {}", e);
+            self.error_reporter.report_activation_error("Messages", &e);
         }
 
         // Re-focus the messages component with focus
         if let Err(e) = self.remount_messages_with_focus(true) {
-            log::error!("Failed to remount messages with focus: {}", e);
+            self.error_reporter.report_mount_error("Messages", "remount_with_focus", &e);
         }
 
         // Remount message details without focus to remove focus styling
         // (now that Messages is active, MessageDetails will be remounted without focus)
         if let Err(e) = self.remount_message_details(0) {
-            log::error!("Failed to remount message details without focus: {}", e);
+            self.error_reporter.report_mount_error("MessageDetails", "remount_without_focus", &e);
         }
 
         log::debug!("Cancelled editing message and returned to message list");

@@ -35,7 +35,7 @@ where
 
         self.set_app_state(AppState::MessagePicker);
         if let Err(e) = self.app.active(&ComponentId::Messages) {
-            log::error!("Failed to activate messages: {}", e);
+            self.error_reporter.report_activation_error("Messages", &e);
         }
 
         if let Err(e) = self.remount_message_details(0) {
@@ -169,7 +169,7 @@ where
                 // No auto-loading needed, continue with normal flow
             }
             Err(e) => {
-                log::error!("Failed to auto-load messages after bulk removal: {}", e);
+                self.error_reporter.report_loading_error("MessageState", "auto_load_after_removal", &e);
                 // Continue with normal flow even if loading fails
             }
         }
@@ -217,12 +217,7 @@ where
                     .total_pages_loaded,
             },
         )) {
-            log::error!("Failed to send pagination state update: {}", e);
-            self.error_reporter.report_simple(
-                AppError::Component(e.to_string()),
-                "MessageState",
-                "pagination_update",
-            );
+            self.error_reporter.report_send_error("pagination state update", &e);
             return None;
         }
 

@@ -142,12 +142,7 @@ impl ErrorReporter {
         self.report(error, context);
     }
 
-    /// Report an informational message (log only, no UI popup)
-    #[allow(dead_code)]
-    pub fn report_info(&self, error: AppError, component: &str, operation: &str) {
-        let context = ErrorContext::new(component, operation).with_severity(ErrorSeverity::Info);
-        self.report(error, context);
-    }
+
 
     /// Report a warning (shows warning popup)
     pub fn report_warning(&self, error: AppError, component: &str, operation: &str) {
@@ -155,18 +150,10 @@ impl ErrorReporter {
         self.report(error, context);
     }
 
-    /// Report a critical error (shows error popup, logs extensively)
-    /// Use this for errors that cause application termination or major system failures
-    #[allow(dead_code)]
-    pub fn report_critical(&self, error: AppError, component: &str, operation: &str) {
-        let context =
-            ErrorContext::new(component, operation).with_severity(ErrorSeverity::Critical);
-        self.report(error, context);
-    }
+
 
     /// Report a critical error that will cause application exit
     /// This method should be used when the error is severe enough to terminate the application
-    #[allow(dead_code)]
     pub fn report_critical_and_exit(
         &self,
         error: AppError,
@@ -181,23 +168,7 @@ impl ErrorReporter {
         self.report(error, context);
     }
 
-    /// Report error with detailed technical information (restored for service bus debugging)
-    #[allow(dead_code)]
-    pub fn report_detailed(
-        &self,
-        error: AppError,
-        component: &str,
-        operation: &str,
-        user_message: &str,
-        technical_details: &str,
-        suggestion: &str,
-    ) {
-        let context = ErrorContext::new(component, operation)
-            .with_message(user_message)
-            .with_technical_details(technical_details)
-            .with_suggestion(suggestion);
-        self.report(error, context);
-    }
+
 
     /// Report error with full context
     pub fn report(&self, error: AppError, context: ErrorContext) {
@@ -355,35 +326,117 @@ impl ErrorReporter {
             AppError::Io(_) => "File System Error".to_string(),
         }
     }
-}
 
-/// Extension trait for Result types to simplify error reporting
-pub trait ResultExt<T> {
-    /// Report error if Result is Err, with basic context
-    #[allow(dead_code)]
-    fn report_on_error(self, reporter: &ErrorReporter, component: &str, operation: &str) -> Self;
-}
+    // ========== Helper Methods for Common Error Patterns ==========
 
-impl<T> ResultExt<T> for Result<T, AppError> {
-    fn report_on_error(self, reporter: &ErrorReporter, component: &str, operation: &str) -> Self {
-        if let Err(ref e) = self {
-            reporter.report_simple(e.clone(), component, operation);
-        }
-        self
+    /// Report component mounting/unmounting errors
+    pub fn report_mount_error(
+        &self,
+        component: &str,
+        operation: &str,
+        error: impl std::fmt::Display,
+    ) {
+        let app_error =
+            AppError::Component(format!("Failed to {} {}: {}", operation, component, error));
+        self.report_simple(app_error, component, operation);
     }
+
+    /// Report message sending errors (mpsc channel errors)
+    pub fn report_send_error(&self, context: &str, error: impl std::fmt::Display) {
+        let app_error = AppError::Component(format!("Failed to send {}: {}", context, error));
+        self.report_simple(app_error, "MessageChannel", "send_message");
+    }
+
+    /// Report activation/focus errors for UI components
+    pub fn report_activation_error(&self, component: &str, error: impl std::fmt::Display) {
+        let app_error = AppError::Component(format!("Failed to activate {}: {}", component, error));
+        self.report_simple(app_error, component, "activate");
+    }
+
+    /// Report global key watcher update errors
+    pub fn report_key_watcher_error(&self, error: impl std::fmt::Display) {
+        let app_error =
+            AppError::Component(format!("Failed to update global key watcher: {}", error));
+        self.report_simple(app_error, "GlobalKeyWatcher", "update_state");
+    }
+
+    /// Report clipboard operation errors (non-critical, use warning)
+    pub fn report_clipboard_error(&self, operation: &str, error: impl std::fmt::Display) {
+        let app_error = AppError::Component(format!("Failed to {}: {}", operation, error));
+        self.report_warning(app_error, "Clipboard", operation);
+    }
+
+    /// Report theme-related errors (non-critical, use warning)
+    pub fn report_theme_error(&self, operation: &str, error: impl std::fmt::Display) {
+        let app_error = AppError::Component(format!("Theme {} failed: {}", operation, error));
+        self.report_warning(app_error, "ThemeManager", operation);
+    }
+
+    /// Report loading/pagination errors with suggestions
+    pub fn report_loading_error(
+        &self,
+        component: &str,
+        operation: &str,
+        error: impl std::fmt::Display,
+    ) {
+        let context = ErrorContext::new(component, operation)
+            .with_message(&format!("Failed to {} data", operation))
+            .with_technical_details(&error.to_string())
+            .with_suggestion("Check your connection and try again");
+
+        let app_error = AppError::ServiceBus(error.to_string());
+        self.report(app_error, context);
+    }
+
+    /// Report service bus connection/operation errors with helpful context
+    pub fn report_service_bus_error(
+        &self,
+        operation: &str,
+        error: impl std::fmt::Display,
+        suggestion: Option<&str>,
+    ) {
+        let context = ErrorContext::new("ServiceBus", operation)
+            .with_message(&format!("Service bus {} failed", operation))
+            .with_technical_details(&error.to_string())
+            .with_suggestion(suggestion.unwrap_or("Check your Azure connection and credentials"));
+
+        let app_error = AppError::ServiceBus(error.to_string());
+        self.report(app_error, context);
+    }
+
+    /// Report bulk operation errors with operation counts
+    pub fn report_bulk_operation_error(
+        &self,
+        operation: &str,
+        count: usize,
+        error: impl std::fmt::Display,
+    ) {
+        let context = ErrorContext::new("BulkOperationHandler", operation)
+            .with_message(&format!("Failed to {} {} messages", operation, count))
+            .with_technical_details(&error.to_string())
+            .with_suggestion(
+                "Some messages may have been processed. Check the queue and try again if needed",
+            );
+
+        let app_error = AppError::ServiceBus(error.to_string());
+        self.report(app_error, context);
+    }
+
+    /// Report configuration errors with suggestions
+    pub fn report_config_error(&self, config_type: &str, error: impl std::fmt::Display) {
+        let context = ErrorContext::new("Configuration", "load_config")
+            .with_message(&format!("Failed to load {} configuration", config_type))
+            .with_technical_details(&error.to_string())
+            .with_suggestion("Check your configuration file and restart the application");
+
+        let app_error = AppError::Config(error.to_string());
+        self.report(app_error, context);
+    }
+
+
 }
 
-/// Legacy error handling function - kept for backward compatibility
-pub fn handle_error(error: AppError) {
-    // Log the error with appropriate level based on error type
-    match &error {
-        AppError::Io(msg) => log::error!("IO Error: {}", msg),
-        AppError::ServiceBus(msg) => log::error!("Service Bus Error: {}", msg),
-        AppError::Component(msg) => log::warn!("Component Error: {}", msg),
-        AppError::State(msg) => log::warn!("State Error: {}", msg),
-        AppError::Config(msg) => log::warn!("Configuration Error: {}", msg),
-    }
-}
+
 
 #[cfg(test)]
 mod tests {
@@ -423,18 +476,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_result_extension_trait() {
-        let (tx, _rx) = mpsc::channel();
-        let reporter = ErrorReporter::new(tx);
-        let error = AppError::Config("Test error".to_string());
 
-        // Test that error is reported when Result is Err
-        let result: Result<(), AppError> = Err(error.clone());
-        let returned_result = result.report_on_error(&reporter, "TestComponent", "test_operation");
-
-        assert_eq!(returned_result, Err(error));
-    }
 
     #[test]
     fn test_io_error_variant() {
@@ -467,18 +509,7 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_info_severity_no_popup() {
-        let (tx, rx) = mpsc::channel();
-        let reporter = ErrorReporter::new(tx);
-        let error = AppError::Component("Info message".to_string());
 
-        // Test info reporting (should not send popup)
-        reporter.report_info(error, "TestComponent", "test_operation");
-
-        // Verify no message was sent (info only logs)
-        assert!(rx.try_recv().is_err());
-    }
 
     #[test]
     fn test_user_friendly_message_generation() {
@@ -535,46 +566,9 @@ mod tests {
         assert!(matches!(context.severity, ErrorSeverity::Error));
     }
 
-    #[test]
-    fn test_critical_error_reporting() {
-        let (tx, rx) = mpsc::channel();
-        let reporter = ErrorReporter::new(tx);
-        let error = AppError::Config("Critical configuration error".to_string());
 
-        // Test critical error reporting
-        reporter.report_critical(error, "Config", "load_config");
 
-        // Verify message was sent
-        let msg = rx.recv().expect("Should receive critical error message");
-        assert!(matches!(
-            msg,
-            Msg::PopupActivity(PopupActivityMsg::ShowError(_))
-        ));
-    }
 
-    #[test]
-    fn test_detailed_error_reporting() {
-        let (tx, rx) = mpsc::channel();
-        let reporter = ErrorReporter::new(tx);
-        let error = AppError::ServiceBus("Service bus connection failed".to_string());
-
-        // Test detailed error reporting (restored functionality)
-        reporter.report_detailed(
-            error.clone(),
-            "ServiceBus",
-            "connect",
-            "Failed to connect to service bus",
-            "Connection timeout after 30 seconds",
-            "Check network connectivity and service bus configuration",
-        );
-
-        // Verify message was sent
-        let msg = rx.recv().expect("Should receive detailed error message");
-        assert!(matches!(
-            msg,
-            Msg::PopupActivity(PopupActivityMsg::ShowError(_))
-        ));
-    }
 
     #[test]
     fn test_format_additional_context_consistency() {
