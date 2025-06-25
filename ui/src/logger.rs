@@ -38,11 +38,7 @@ pub fn setup_logger() -> Result<(), log::SetLoggerError> {
 
     // Create log file if configured
     if let Some(file_path) = log_file {
-        match OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(file_path)
-        {
+        match OpenOptions::new().create(true).append(true).open(file_path) {
             Ok(file) => {
                 // Only log to the file
                 base_config.chain(file).apply()?;
@@ -74,7 +70,10 @@ pub fn setup_logger() -> Result<(), log::SetLoggerError> {
                 );
             }
             Err(e) => {
-                eprintln!("Warning: Failed to open default log file '{}': {}", default_log_path, e);
+                eprintln!(
+                    "Warning: Failed to open default log file '{}': {}",
+                    default_log_path, e
+                );
                 eprintln!("Continuing without file logging.");
                 // Apply base config without file output
                 base_config.apply()?;

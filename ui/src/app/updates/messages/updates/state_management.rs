@@ -4,8 +4,8 @@ use crate::components::common::{ComponentId, MessageActivityMsg, Msg};
 use crate::config;
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
-use server::service_bus_manager::QueueInfo;
 use server::model::MessageModel;
+use server::service_bus_manager::QueueInfo;
 use tuirealm::terminal::TerminalAdapter;
 
 impl<T> Model<T>
@@ -16,15 +16,17 @@ where
     pub fn handle_messages_loaded(&mut self, messages: Vec<MessageModel>) -> Option<Msg> {
         // Initialize pagination state with the loaded messages
         self.queue_state.message_pagination.reset();
-        self.queue_state.message_pagination.add_loaded_page(messages.clone());
-        
+        self.queue_state
+            .message_pagination
+            .add_loaded_page(messages.clone());
+
         // Set the current page messages
         self.queue_state.messages = Some(messages);
-        
+
         // Update pagination state to calculate has_next_page properly
         let page_size = config::get_config_or_panic().max_messages();
         self.queue_state.message_pagination.update(page_size);
-        
+
         if let Err(e) = self.remount_messages_with_focus(true) {
             self.error_reporter
                 .report_simple(e, "MessageStateHandler", "handle_messages_loaded");
@@ -47,10 +49,7 @@ where
     }
 
     /// Handle queue switch completion
-    pub fn handle_queue_switched(
-        &mut self,
-        queue_info: QueueInfo,
-    ) -> Option<Msg> {
+    pub fn handle_queue_switched(&mut self, queue_info: QueueInfo) -> Option<Msg> {
         // Update the queue state with the new queue information
         self.queue_state.current_queue_name = Some(queue_info.name.clone());
         self.queue_state.current_queue_type = queue_info.queue_type.clone();
@@ -370,8 +369,8 @@ where
 
         // For single message deletions, be more aggressive about backfilling
         // Check if this looks like a small deletion that should always trigger backfill
-        let small_deletion_threshold = crate::config::get_config_or_panic()
-            .bulk_operations()
+        let small_deletion_threshold = config::get_config_or_panic()
+            .batch()
             .small_deletion_threshold();
         let is_small_deletion = page_is_under_filled
             && (page_size as usize - current_page_size) <= small_deletion_threshold;

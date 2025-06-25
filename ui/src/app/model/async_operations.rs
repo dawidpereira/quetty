@@ -2,8 +2,8 @@ use super::Model;
 use crate::components::common::{MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg};
 use crate::config;
 use crate::error::AppError;
-use server::service_bus_manager::{QueueType, ServiceBusCommand, ServiceBusResponse};
 use server::service_bus_manager::ServiceBusManager;
+use server::service_bus_manager::{QueueType, ServiceBusCommand, ServiceBusResponse};
 
 use tuirealm::terminal::TerminalAdapter;
 
@@ -19,12 +19,14 @@ where
             .execute("Loading namespaces...", async move {
                 log::debug!("Requesting namespaces from Azure AD");
 
-                let namespaces = ServiceBusManager::list_namespaces_azure_ad(config::get_config_or_panic().azure_ad())
-                    .await
-                    .map_err(|e| {
-                        log::error!("Failed to list namespaces: {}", e);
-                        AppError::ServiceBus(e.to_string())
-                    })?;
+                let namespaces = ServiceBusManager::list_namespaces_azure_ad(
+                    config::get_config_or_panic().azure_ad(),
+                )
+                .await
+                .map_err(|e| {
+                    log::error!("Failed to list namespaces: {}", e);
+                    AppError::ServiceBus(e.to_string())
+                })?;
 
                 log::info!("Loaded {} namespaces", namespaces.len());
 
@@ -44,29 +46,29 @@ where
     pub fn load_queues(&self) {
         let tx_to_main = self.tx_to_main.clone();
 
-        self.task_manager
-            .execute("Loading queues...", async move {
-                log::debug!("Requesting queues from Azure AD");
+        self.task_manager.execute("Loading queues...", async move {
+            log::debug!("Requesting queues from Azure AD");
 
-                let queues = ServiceBusManager::list_queues_azure_ad(config::get_config_or_panic().azure_ad())
+            let queues =
+                ServiceBusManager::list_queues_azure_ad(config::get_config_or_panic().azure_ad())
                     .await
                     .map_err(|e| {
                         log::error!("Failed to list queues: {}", e);
                         AppError::ServiceBus(e.to_string())
                     })?;
 
-                log::info!("Loaded {} queues", queues.len());
+            log::info!("Loaded {} queues", queues.len());
 
-                // Send loaded queues
-                if let Err(e) = tx_to_main.send(Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(
-                    queues,
-                ))) {
-                    log::error!("Failed to send queues loaded message: {}", e);
-                    return Err(AppError::Component(e.to_string()));
-                }
+            // Send loaded queues
+            if let Err(e) =
+                tx_to_main.send(Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(queues)))
+            {
+                log::error!("Failed to send queues loaded message: {}", e);
+                return Err(AppError::Component(e.to_string()));
+            }
 
-                Ok(())
-            });
+            Ok(())
+        });
     }
 
     /// Create new consumer for the selected queue using TaskManager
@@ -97,7 +99,11 @@ where
                     queue_type,
                 };
 
-                let response = service_bus_manager.lock().await.execute_command(command).await;
+                let response = service_bus_manager
+                    .lock()
+                    .await
+                    .execute_command(command)
+                    .await;
 
                 let queue_info = match response {
                     ServiceBusResponse::QueueSwitched { queue_info } => {
@@ -109,7 +115,9 @@ where
                         return Err(AppError::ServiceBus(error.to_string()));
                     }
                     _ => {
-                        return Err(AppError::ServiceBus("Unexpected response for switch queue".to_string()));
+                        return Err(AppError::ServiceBus(
+                            "Unexpected response for switch queue".to_string(),
+                        ));
                     }
                 };
 
@@ -139,51 +147,60 @@ where
         let tx_to_main = self.tx_to_main.clone();
         let max_messages = config::get_config_or_panic().max_messages();
 
-        self.task_manager.execute("Loading messages...", async move {
-            log::debug!("Loading messages from current queue");
+        self.task_manager
+            .execute("Loading messages...", async move {
+                log::debug!("Loading messages from current queue");
 
-            // Peek messages from the current queue
-            let command = ServiceBusCommand::PeekMessages {
-                max_count: max_messages,
-                from_sequence: None,
-            };
+                // Peek messages from the current queue
+                let command = ServiceBusCommand::PeekMessages {
+                    max_count: max_messages,
+                    from_sequence: None,
+                };
 
-            let response = service_bus_manager.lock().await.execute_command(command).await;
+                let response = service_bus_manager
+                    .lock()
+                    .await
+                    .execute_command(command)
+                    .await;
 
-            let messages = match response {
-                ServiceBusResponse::MessagesReceived { messages } => {
-                    log::info!("Loaded {} messages", messages.len());
-                    messages
+                let messages = match response {
+                    ServiceBusResponse::MessagesReceived { messages } => {
+                        log::info!("Loaded {} messages", messages.len());
+                        messages
+                    }
+                    ServiceBusResponse::Error { error } => {
+                        log::error!("Failed to load messages: {}", error);
+                        return Err(AppError::ServiceBus(error.to_string()));
+                    }
+                    _ => {
+                        return Err(AppError::ServiceBus(
+                            "Unexpected response for peek messages".to_string(),
+                        ));
+                    }
+                };
+
+                // Send loaded messages
+                if let Err(e) = tx_to_main.send(Msg::MessageActivity(
+                    MessageActivityMsg::MessagesLoaded(messages),
+                )) {
+                    log::error!("Failed to send messages loaded: {}", e);
+                    return Err(AppError::Component(e.to_string()));
                 }
-                ServiceBusResponse::Error { error } => {
-                    log::error!("Failed to load messages: {}", error);
-                    return Err(AppError::ServiceBus(error.to_string()));
-                }
-                _ => {
-                    return Err(AppError::ServiceBus("Unexpected response for peek messages".to_string()));
-                }
-            };
 
-            // Send loaded messages
-            if let Err(e) = tx_to_main.send(Msg::MessageActivity(MessageActivityMsg::MessagesLoaded(messages))) {
-                log::error!("Failed to send messages loaded: {}", e);
-                return Err(AppError::Component(e.to_string()));
-            }
-
-            Ok(())
-        });
+                Ok(())
+            });
     }
 
     /// Force reload messages - useful after bulk operations that modify the queue
     pub fn handle_force_reload_messages(&mut self) -> Option<Msg> {
         log::info!("Force reloading messages after bulk operation - resetting pagination state");
-        
+
         // Reset pagination state to clear all existing messages and start fresh
         self.reset_pagination_state();
-        
+
         // Load fresh messages from the beginning
         self.load_messages();
-        
+
         None
     }
 }

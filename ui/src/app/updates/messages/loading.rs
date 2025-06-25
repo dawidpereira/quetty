@@ -45,13 +45,17 @@ where
         Ok(())
     }
 
-    fn get_service_bus_manager(&self) -> std::sync::Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>> {
+    fn get_service_bus_manager(
+        &self,
+    ) -> std::sync::Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>> {
         self.service_bus_manager.clone()
     }
 
     async fn execute_loading_task(
         tx_to_main: Sender<Msg>,
-        service_bus_manager: std::sync::Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>>,
+        service_bus_manager: std::sync::Arc<
+            tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>,
+        >,
         from_sequence: Option<i64>,
         message_count: u32,
     ) -> Result<(), AppError> {
@@ -62,7 +66,11 @@ where
             from_sequence,
         };
 
-        let response = service_bus_manager.lock().await.execute_command(command).await;
+        let response = service_bus_manager
+            .lock()
+            .await
+            .execute_command(command)
+            .await;
 
         let messages = match response {
             ServiceBusResponse::MessagesReceived { messages } => {
@@ -73,7 +81,9 @@ where
                 return Err(AppError::ServiceBus(error.to_string()));
             }
             _ => {
-                return Err(AppError::ServiceBus("Unexpected response for peek messages".to_string()));
+                return Err(AppError::ServiceBus(
+                    "Unexpected response for peek messages".to_string(),
+                ));
             }
         };
 

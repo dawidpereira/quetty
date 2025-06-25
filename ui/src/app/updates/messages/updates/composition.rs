@@ -40,17 +40,17 @@ where
 
     /// Handle setting the repeat count for bulk message sending
     pub fn handle_set_message_repeat_count(&self) -> Option<Msg> {
-        let bulk_config = config::get_config_or_panic().bulk_operations();
+        let bulk_config = config::get_config_or_panic().batch();
 
         Some(Msg::PopupActivity(PopupActivityMsg::ShowNumberInput {
-            title: "Bulk Send Message".to_string(),
+            title: "Set Repeat Count".to_string(),
             message: format!(
-                "How many times should the message be sent?\n(Limit: {}-{})",
-                bulk_config.min_count(),
-                bulk_config.max_count()
+                "Enter the number of times to repeat sending selected messages (Min: {}, Max: {})",
+                bulk_config.bulk_operation_min_count(),
+                bulk_config.bulk_operation_max_count()
             ),
-            min_value: bulk_config.min_count(),
-            max_value: bulk_config.max_count(),
+            min_value: bulk_config.bulk_operation_min_count(),
+            max_value: bulk_config.bulk_operation_max_count(),
         }))
     }
 
@@ -104,7 +104,9 @@ where
     /// Execute fresh message loading from the beginning
     async fn execute_fresh_message_load(
         tx_to_main: Sender<Msg>,
-        service_bus_manager: std::sync::Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>>,
+        service_bus_manager: std::sync::Arc<
+            tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>,
+        >,
     ) -> Result<(), AppError> {
         use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 
@@ -113,16 +115,25 @@ where
             from_sequence: None,
         };
 
-        let response = service_bus_manager.lock().await.execute_command(command).await;
+        let response = service_bus_manager
+            .lock()
+            .await
+            .execute_command(command)
+            .await;
 
         let messages = match response {
             ServiceBusResponse::MessagesReceived { messages } => messages,
             ServiceBusResponse::Error { error } => {
                 log::error!("Failed to peek messages from beginning: {}", error);
-                return Err(AppError::ServiceBus(format!("Failed to peek messages from beginning: {}", error)));
+                return Err(AppError::ServiceBus(format!(
+                    "Failed to peek messages from beginning: {}",
+                    error
+                )));
             }
             _ => {
-                return Err(AppError::ServiceBus("Unexpected response for peek messages".to_string()));
+                return Err(AppError::ServiceBus(
+                    "Unexpected response for peek messages".to_string(),
+                ));
             }
         };
 

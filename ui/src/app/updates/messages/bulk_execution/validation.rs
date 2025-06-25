@@ -23,8 +23,12 @@ where
     /// Validates that message IDs are not empty and within limits
     fn validate_message_ids(&self, message_ids: &[MessageIdentifier]) -> Result<(), bool> {
         let count = message_ids.len();
-        let min_count = config::get_config_or_panic().bulk_operations().min_count();
-        let max_count = config::get_config_or_panic().bulk_operations().max_count();
+        let min_count = config::get_config_or_panic()
+            .batch()
+            .bulk_operation_min_count();
+        let max_count = config::get_config_or_panic()
+            .batch()
+            .bulk_operation_max_count();
 
         if count < min_count {
             log::warn!("Insufficient messages for bulk operation: {}", count);

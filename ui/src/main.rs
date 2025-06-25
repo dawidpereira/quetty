@@ -29,9 +29,9 @@ impl ConfigErrorDisplay {
         validation_errors: Vec<config::ConfigValidationError>,
     ) -> Result<Self, Box<dyn StdError>> {
         // Initialize a minimal model for error display
-        let mut model = Model::new().await.map_err(|e| {
-            format!("Failed to initialize model for error display: {}", e)
-        })?;
+        let mut model = Model::new()
+            .await
+            .map_err(|e| format!("Failed to initialize model for error display: {}", e))?;
 
         // Show the first error in a popup (most critical one)
         if let Some(first_error) = validation_errors.first() {
@@ -182,17 +182,17 @@ async fn main() -> Result<(), Box<dyn StdError>> {
 
     // Load configuration early, but don't validate yet
     let config = match config::get_config() {
-        config::ConfigLoadResult::Success(config) => config,
+        config::ConfigLoadResult::Success(config) => config.as_ref(),
         config::ConfigLoadResult::LoadError(error) => {
             error!("Configuration loading failed: {}", error);
-            eprintln!("Critical configuration error: {}", error);
-            eprintln!("Please fix your configuration and try again.");
+            error!("Critical configuration error: {}", error);
+            error!("Please fix your configuration and try again.");
             return Ok(());
         }
         config::ConfigLoadResult::DeserializeError(error) => {
             error!("Configuration parsing failed: {}", error);
-            eprintln!("Critical configuration error: {}", error);
-            eprintln!("Please fix your configuration and try again.");
+            error!("Critical configuration error: {}", error);
+            error!("Please fix your configuration and try again.");
             return Ok(());
         }
     };
@@ -204,7 +204,7 @@ async fn main() -> Result<(), Box<dyn StdError>> {
     // Handle critical theme failures
     if let ThemeInitializationResult::CriticalFailure { error_message } = &theme_init_result {
         error!("{}", error_message);
-        eprintln!("{}", error_message);
+        error!("Application cannot start due to theme initialization failure");
         return Ok(());
     }
 
@@ -227,8 +227,8 @@ async fn main() -> Result<(), Box<dyn StdError>> {
         }
         Err(e) => {
             error!("Failed to initialize application model: {}", e);
-            eprintln!("Critical initialization error: {}", e);
-            eprintln!("The application cannot start. Please check your configuration and try again.");
+            error!("Critical initialization error: {}", e);
+            error!("The application cannot start. Please check your configuration and try again.");
             return Ok(());
         }
     };
@@ -410,9 +410,9 @@ mod tests {
         };
 
         // Should not panic - just testing Debug implementation
-        println!("Success: {:?}", success);
-        println!("Fallback: {:?}", fallback);
-        println!("Critical: {:?}", critical);
+        log::debug!("Theme initialization - Success: {:?}", success);
+        log::debug!("Theme initialization - Fallback: {:?}", fallback);
+        log::debug!("Theme initialization - Critical: {:?}", critical);
     }
 
     #[test]

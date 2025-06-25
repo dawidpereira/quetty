@@ -51,7 +51,9 @@ mod helpers {
             queue_state.message_pagination.last_loaded_sequence = Some(last_msg.sequence);
         }
 
-        queue_state.message_pagination.update(config::get_config_or_panic().max_messages());
+        queue_state
+            .message_pagination
+            .update(config::get_config_or_panic().max_messages());
     }
 
     /// Create a test QueueState with pagination
@@ -113,7 +115,8 @@ mod helpers {
     /// Check if current page is under-filled and needs backfill
     pub fn check_needs_backfill(pagination: &MessagePaginationState) -> (bool, usize) {
         let page_size = config::get_config_or_panic().max_messages() as usize;
-        let current_page_messages = pagination.get_current_page_messages(config::get_config_or_panic().max_messages());
+        let current_page_messages =
+            pagination.get_current_page_messages(config::get_config_or_panic().max_messages());
         let current_page_size = current_page_messages.len();
         let page_is_under_filled = current_page_size < page_size;
 
@@ -402,7 +405,9 @@ fn test_small_deletion_threshold_logic() {
     setup_pagination_with_messages(&mut queue_state, initial_messages);
 
     // Get small deletion threshold from config
-    let small_deletion_threshold = config::get_config_or_panic().bulk_operations().small_deletion_threshold();
+    let small_deletion_threshold = config::get_config_or_panic()
+        .batch()
+        .small_deletion_threshold();
 
     // Delete exactly the small deletion threshold number of messages
     let mut to_remove = Vec::new();

@@ -4,10 +4,10 @@ use super::component::{
 use super::selection::create_toggle_message_selection;
 use crate::components::common::{MessageActivityMsg, Msg, QueueActivityMsg};
 use crate::config;
+use server::service_bus_manager::QueueType;
 use tuirealm::command::CmdResult;
 use tuirealm::event::{Key, KeyEvent, KeyModifiers};
 use tuirealm::{Event, MockComponent, NoUserEvent, State, StateValue};
-use server::service_bus_manager::QueueType;
 
 pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<Msg> {
     let cmd_result = match ev {
@@ -182,7 +182,9 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
                     }
                 }
             } else {
-                return Some(Msg::ShowError("❌ Unable to determine queue type. Please try switching queues.".to_string()));
+                return Some(Msg::ShowError(
+                    "❌ Unable to determine queue type. Please try switching queues.".to_string(),
+                ));
             }
         }
         Event::Keyboard(KeyEvent {
@@ -200,7 +202,9 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
                     }
                 }
             } else {
-                return Some(Msg::ShowError("❌ Unable to determine queue type. Please try switching queues.".to_string()));
+                return Some(Msg::ShowError(
+                    "❌ Unable to determine queue type. Please try switching queues.".to_string(),
+                ));
             }
         }
 
@@ -211,12 +215,12 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
         }) => {
             // Get pagination info to determine queue type
             if let Some(pagination_info) = messages.pagination_info() {
-                                  match pagination_info.queue_type {
-                     QueueType::Main => {
-                         // Main queue: 's' key is not supported (no copy to DLQ)
-                         return Some(Msg::ShowError("❌ Copy to DLQ is not supported by Azure Service Bus.\n\n💡 Use 'S' (Shift+s) to move messages to DLQ instead.\n📖 In Main Queue: 'S' = Move to DLQ".to_string()));
-                     }
-                     QueueType::DeadLetter => {
+                match pagination_info.queue_type {
+                    QueueType::Main => {
+                        // Main queue: 's' key is not supported (no copy to DLQ)
+                        return Some(Msg::ShowError("❌ Copy to DLQ is not supported by Azure Service Bus.\n\n💡 Use 'S' (Shift+s) to move messages to DLQ instead.\n📖 In Main Queue: 'S' = Move to DLQ".to_string()));
+                    }
+                    QueueType::DeadLetter => {
                         // DLQ: 's' = resend to main without deleting from DLQ
                         return Some(Msg::MessageActivity(
                             MessageActivityMsg::BulkResendSelectedFromDLQ(false),
@@ -224,7 +228,9 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
                     }
                 }
             } else {
-                return Some(Msg::ShowError("❌ Unable to determine queue type. Please try switching queues.".to_string()));
+                return Some(Msg::ShowError(
+                    "❌ Unable to determine queue type. Please try switching queues.".to_string(),
+                ));
             }
         }
 
@@ -234,14 +240,14 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
         }) => {
             // Get pagination info to determine queue type
             if let Some(pagination_info) = messages.pagination_info() {
-                                  match pagination_info.queue_type {
-                     QueueType::Main => {
-                         // Main queue: 'S' = move to DLQ (with deletion)
-                         return Some(Msg::MessageActivity(
-                             MessageActivityMsg::BulkSendSelectedToDLQWithDelete,
-                         ));
-                     }
-                     QueueType::DeadLetter => {
+                match pagination_info.queue_type {
+                    QueueType::Main => {
+                        // Main queue: 'S' = move to DLQ (with deletion)
+                        return Some(Msg::MessageActivity(
+                            MessageActivityMsg::BulkSendSelectedToDLQWithDelete,
+                        ));
+                    }
+                    QueueType::DeadLetter => {
                         // DLQ: 'S' = resend to main with deletion from DLQ
                         return Some(Msg::MessageActivity(
                             MessageActivityMsg::BulkResendSelectedFromDLQ(true),
@@ -249,7 +255,9 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
                     }
                 }
             } else {
-                return Some(Msg::ShowError("❌ Unable to determine queue type. Please try switching queues.".to_string()));
+                return Some(Msg::ShowError(
+                    "❌ Unable to determine queue type. Please try switching queues.".to_string(),
+                ));
             }
         }
 

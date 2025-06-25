@@ -21,12 +21,13 @@ pub struct ServiceBusManager {
 
 impl ServiceBusManager {
     /// Create a new ServiceBusManager
-    pub fn new(service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>) -> Self {
+    pub fn new(
+        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+        batch_config: BatchConfig,
+    ) -> Self {
         let consumer_manager = ConsumerManager::new(service_bus_client.clone());
         let producer_manager = ProducerManager::new(service_bus_client.clone());
-        // Create bulk handler with default config
-        let bulk_config = BatchConfig::new(2048, 300);
-        let bulk_handler = BulkOperationHandler::new(bulk_config);
+        let bulk_handler = BulkOperationHandler::new(batch_config);
 
         Self {
             consumer_manager,
@@ -228,7 +229,7 @@ impl ServiceBusManager {
         ))
     }
 
-    // Bulk operation handlers (temporarily stubbed out)
+            // Bulk operation handlers
     async fn handle_bulk_complete(
         &self,
         message_ids: Vec<MessageIdentifier>,
@@ -262,12 +263,11 @@ impl ServiceBusManager {
             .ok_or(ServiceBusError::ConsumerNotFound)?;
 
         // Create a bulk delete operation using the bulk operations handler
-        let context = crate::bulk_operations::BulkOperationContext {
-            consumer: consumer.clone(),
-            service_bus_client: self.service_bus_client.clone(),
-            target_queue: String::new(), // Not used for deletion
-            operation_type: crate::bulk_operations::QueueOperationType::SendToQueue, // Not used for deletion
-        };
+        let context = crate::bulk_operations::BulkOperationContext::new(
+            consumer.clone(),
+            self.service_bus_client.clone(),
+            String::new(), // Not used for deletion
+        );
 
         let params = crate::bulk_operations::BulkSendParams::with_retrieval(
             String::new(), // No target queue for deletion
@@ -354,12 +354,11 @@ impl ServiceBusManager {
         );
 
         // Create a bulk send operation using the bulk operations handler
-        let context = crate::bulk_operations::BulkOperationContext {
-            consumer: consumer.clone(),
-            service_bus_client: self.service_bus_client.clone(),
-            target_queue: target_queue.clone(),
-            operation_type,
-        };
+        let context = crate::bulk_operations::BulkOperationContext::new(
+            consumer.clone(),
+            self.service_bus_client.clone(),
+            target_queue.clone(),
+        );
 
         let params = crate::bulk_operations::BulkSendParams::with_retrieval(
             target_queue,
@@ -418,12 +417,11 @@ impl ServiceBusManager {
                     .get_raw_consumer()
                     .ok_or(ServiceBusError::ConsumerNotFound)?;
 
-                let context = crate::bulk_operations::BulkOperationContext {
-                    consumer: consumer.clone(),
-                    service_bus_client: self.service_bus_client.clone(),
-                    target_queue: target_queue.clone(),
-                    operation_type,
-                };
+                let context = crate::bulk_operations::BulkOperationContext::new(
+                    consumer.clone(),
+                    self.service_bus_client.clone(),
+                    target_queue.clone(),
+                );
 
                 let params = crate::bulk_operations::BulkSendParams::with_message_data(
                     target_queue.clone(),

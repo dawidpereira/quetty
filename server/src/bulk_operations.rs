@@ -6,7 +6,112 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
+use tokio::time::timeout;
+use tokio_util::sync::CancellationToken;
+
+/// RAII guard for managing service bus resources with automatic cleanup
+pub struct ServiceBusResourceGuard<T: 'static> {
+    resource: Option<tokio::sync::MutexGuard<'static, T>>,
+    cleanup_fn: Option<Box<dyn FnOnce() + Send>>,
+}
+
+impl<T: 'static> ServiceBusResourceGuard<T> {
+    /// Create a new resource guard with optional cleanup function
+    pub fn new(
+        resource: tokio::sync::MutexGuard<'static, T>,
+        cleanup_fn: Option<Box<dyn FnOnce() + Send>>,
+    ) -> Self {
+        Self {
+            resource: Some(resource),
+            cleanup_fn,
+        }
+    }
+
+    /// Get a reference to the guarded resource
+    pub fn get(&self) -> Option<&T> {
+        self.resource.as_deref()
+    }
+
+    /// Get a mutable reference to the guarded resource
+    pub fn get_mut(&mut self) -> Option<&mut T> {
+        self.resource.as_deref_mut()
+    }
+}
+
+impl<T: 'static> Drop for ServiceBusResourceGuard<T> {
+    fn drop(&mut self) {
+        // Drop the resource first
+        self.resource.take();
+
+        // Then run cleanup if provided
+        if let Some(cleanup) = self.cleanup_fn.take() {
+            cleanup();
+        }
+
+        log::debug!("ServiceBusResourceGuard: Resource cleanup completed");
+    }
+}
+
+/// Safe lock acquisition with timeout
+pub async fn acquire_lock_with_timeout<'a, T>(
+    mutex: &'a Arc<Mutex<T>>,
+    operation_name: &str,
+    timeout_duration: Duration,
+    cancel_token: Option<&CancellationToken>,
+) -> Result<tokio::sync::MutexGuard<'a, T>, Box<dyn Error + Send + Sync>> {
+    log::debug!("Attempting to acquire lock for {}", operation_name);
+
+    let lock_future = mutex.lock();
+
+    // Handle cancellation if token is provided
+    if let Some(token) = cancel_token {
+        tokio::select! {
+            guard = timeout(timeout_duration, lock_future) => {
+                match guard {
+                    Ok(guard) => {
+                        log::debug!("Successfully acquired lock for {}", operation_name);
+                        Ok(guard)
+                    }
+                    Err(_) => {
+                        let error_msg = format!(
+                            "Timeout acquiring lock for {} after {:?}",
+                            operation_name,
+                            timeout_duration
+                        );
+                        log::error!("{}", error_msg);
+                        Err(Box::new(std::io::Error::new(std::io::ErrorKind::TimedOut, error_msg)))
+                    }
+                }
+            }
+            _ = token.cancelled() => {
+                let error_msg = format!("Lock acquisition for {} was cancelled", operation_name);
+                log::warn!("{}", error_msg);
+                Err(Box::new(std::io::Error::new(std::io::ErrorKind::Interrupted, error_msg)))
+            }
+        }
+    } else {
+        // No cancellation token, just use timeout
+        match timeout(timeout_duration, lock_future).await {
+            Ok(guard) => {
+                log::debug!("Successfully acquired lock for {}", operation_name);
+                Ok(guard)
+            }
+            Err(_) => {
+                let error_msg = format!(
+                    "Timeout acquiring lock for {} after {:?}",
+                    operation_name, timeout_duration
+                );
+                log::error!("{}", error_msg);
+                Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    error_msg,
+                )))
+            }
+        }
+    }
+}
 
 /// Result of a bulk operation with detailed statistics
 #[derive(Debug, Clone)]
@@ -124,7 +229,7 @@ impl PartialEq<MessageIdentifier> for String {
 pub struct BatchConfig {
     /// Maximum batch size for bulk operations (default: 2048, Azure Service Bus limit)
     max_batch_size: Option<u32>,
-    /// Timeout for bulk operations (default: 300 seconds)
+    /// Timeout for bulk operations in seconds (default: 300)
     operation_timeout_secs: Option<u64>,
     /// Buffer percentage for batch size calculation (default: 0.15 = 15%)
     buffer_percentage: Option<f64>,
@@ -134,6 +239,20 @@ pub struct BatchConfig {
     bulk_chunk_size: Option<usize>,
     /// Processing time limit for bulk operations in seconds (default: 30)
     bulk_processing_time_secs: Option<u64>,
+    /// Timeout for lock operations in seconds (default: 5)
+    lock_timeout_secs: Option<u64>,
+    /// Multiplier for calculating max messages to process (default: 3)
+    max_messages_multiplier: Option<usize>,
+    /// Minimum messages to process in bulk operations (default: 100)
+    min_messages_to_process: Option<usize>,
+    /// Maximum messages to process in bulk operations (default: 1000)
+    max_messages_to_process: Option<usize>,
+    /// Maximum number of messages for bulk operations (default: 100)
+    bulk_operation_max_count: Option<usize>,
+    /// Threshold for triggering auto-reload after bulk operations (default: 10)
+    auto_reload_threshold: Option<usize>,
+    /// Small deletion threshold for backfill operations (default: 5)
+    small_deletion_threshold: Option<usize>,
 }
 
 impl BatchConfig {
@@ -146,13 +265,18 @@ impl BatchConfig {
             min_buffer_size: None,
             bulk_chunk_size: None,
             bulk_processing_time_secs: None,
+            lock_timeout_secs: None,
+            max_messages_multiplier: None,
+            min_messages_to_process: None,
+            max_messages_to_process: None,
+            bulk_operation_max_count: None,
+            auto_reload_threshold: None,
+            small_deletion_threshold: None,
         }
     }
 
     /// Get the maximum batch size for bulk operations
     pub fn max_batch_size(&self) -> u32 {
-        // Note: We use 2048 as default here since server doesn't depend on ui
-        // The ui module validates this against limits::AZURE_SERVICE_BUS_MAX_BATCH_SIZE
         self.max_batch_size.unwrap_or(2048)
     }
 
@@ -180,6 +304,46 @@ impl BatchConfig {
     pub fn bulk_processing_time_secs(&self) -> u64 {
         self.bulk_processing_time_secs.unwrap_or(30)
     }
+
+    /// Get the timeout for lock operations in seconds
+    pub fn lock_timeout_secs(&self) -> u64 {
+        self.lock_timeout_secs.unwrap_or(5)
+    }
+
+    /// Get the multiplier for calculating max messages to process
+    pub fn max_messages_multiplier(&self) -> usize {
+        self.max_messages_multiplier.unwrap_or(3)
+    }
+
+    /// Get the minimum messages to process in bulk operations
+    pub fn min_messages_to_process(&self) -> usize {
+        self.min_messages_to_process.unwrap_or(100)
+    }
+
+    /// Get the maximum messages to process in bulk operations
+    pub fn max_messages_to_process(&self) -> usize {
+        self.max_messages_to_process.unwrap_or(1000)
+    }
+
+    /// Get the maximum number of messages for bulk operations
+    pub fn bulk_operation_max_count(&self) -> usize {
+        self.bulk_operation_max_count.unwrap_or(100)
+    }
+
+    /// Get the minimum number of messages for bulk operations
+    pub fn bulk_operation_min_count(&self) -> usize {
+        1
+    }
+
+    /// Get the threshold for triggering auto-reload after bulk operations
+    pub fn auto_reload_threshold(&self) -> usize {
+        self.auto_reload_threshold.unwrap_or(10)
+    }
+
+    /// Get the small deletion threshold for backfill operations
+    pub fn small_deletion_threshold(&self) -> usize {
+        self.small_deletion_threshold.unwrap_or(5)
+    }
 }
 
 /// Context for Service Bus operations containing shared resources
@@ -188,6 +352,7 @@ pub struct ServiceBusOperationContext {
     pub consumer: Arc<Mutex<Consumer>>,
     pub service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
     pub main_queue_name: String,
+    pub cancel_token: CancellationToken,
 }
 
 impl ServiceBusOperationContext {
@@ -201,6 +366,7 @@ impl ServiceBusOperationContext {
             consumer,
             service_bus_client,
             main_queue_name,
+            cancel_token: CancellationToken::new(),
         }
     }
 }
@@ -584,7 +750,13 @@ impl BulkOperationHandler {
 
         log::debug!("Creating producer for queue: {}", queue_name);
 
-        let mut client = service_bus_client.lock().await;
+        let mut client = acquire_lock_with_timeout(
+            &service_bus_client,
+            "send_messages",
+            Duration::from_secs(self.config.lock_timeout_secs()),
+            None, // No cancellation token available in this context
+        )
+        .await?;
         let mut producer = client
             .create_producer_for_queue(queue_name, ServiceBusSenderOptions::default())
             .await
@@ -661,7 +833,15 @@ impl BulkOperationHandler {
         context: &BulkOperationContext,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         log::debug!("Completing {} messages in source queue", messages.len());
-        let mut consumer_guard = context.consumer.lock().await;
+
+        let mut consumer_guard = acquire_lock_with_timeout(
+            &context.consumer,
+            "complete_messages",
+            Duration::from_secs(self.config.lock_timeout_secs()),
+            Some(&context.cancel_token),
+        )
+        .await?;
+
         consumer_guard.complete_messages(messages).await.map_err(
             |e| -> Box<dyn Error + Send + Sync> {
                 Box::new(std::io::Error::new(
@@ -976,7 +1156,7 @@ impl BulkOperationHandler {
             .map(|m| (m.id.clone(), m.clone()))
             .collect();
 
-        // Log target message IDs and sequences for debugging
+
         log::info!("Target messages for deletion:");
         for (i, msg_id) in params.message_identifiers.iter().take(10).enumerate() {
             log::info!(
@@ -998,9 +1178,12 @@ impl BulkOperationHandler {
         let batch_size = std::cmp::min(10, total_requested);
 
         // Limit maximum messages to process to prevent runaway operations
-        // Process at most 5x the number of target messages, with a minimum of 500
-        // This accounts for Azure Service Bus message ordering differences
-        let max_messages_to_process = (total_requested * 5).max(500);
+        // Use configuration values for calculating the limits
+        let max_messages_to_process = (total_requested * self.config.max_messages_multiplier())
+            .clamp(
+                self.config.min_messages_to_process(),
+                self.config.max_messages_to_process(),
+            );
 
         log::info!(
             "Processing bulk delete for {} selected messages using batch size {} (max {} messages to process)",
@@ -1018,8 +1201,10 @@ impl BulkOperationHandler {
         // Process messages in smaller batches to avoid lock expiration
         let mut remaining_targets = target_map.clone();
         let mut total_processed = 0;
+        let mut processed_message_ids = std::collections::HashSet::new();
+        let mut batches_without_targets = 0;
         let start_time = std::time::Instant::now();
-        let max_processing_time_secs = self.config.bulk_processing_time_secs(); // Stay well under 60-second lock timeout to prevent expiration
+        let max_processing_time_secs = self.config.bulk_processing_time_secs();
 
         while !remaining_targets.is_empty()
             && total_processed < max_messages_to_process
@@ -1043,10 +1228,23 @@ impl BulkOperationHandler {
                 break;
             }
 
-            // Receive a small batch of messages
+            // Check for cancellation before starting batch processing
+            if context.is_cancelled() {
+                log::info!("Bulk delete operation cancelled");
+                break;
+            }
+
+            // Receive a small batch of messages using safe lock acquisition
             let batch_start_time = std::time::Instant::now();
             let received_messages = {
-                let mut consumer_guard = context.consumer.lock().await;
+                let mut consumer_guard = acquire_lock_with_timeout(
+                    &context.consumer,
+                    "receive_messages",
+                    Duration::from_secs(self.config.lock_timeout_secs()),
+                    Some(&context.cancel_token),
+                )
+                .await?;
+
                 consumer_guard
                     .receive_messages(batch_size as u32)
                     .await
@@ -1065,7 +1263,6 @@ impl BulkOperationHandler {
                 receive_time
             );
 
-            // Log sequence number range of received messages for debugging
             if !received_messages.is_empty() {
                 let min_seq = received_messages
                     .iter()
@@ -1093,6 +1290,8 @@ impl BulkOperationHandler {
             // Immediately process this batch to avoid lock expiration
             let mut target_messages = Vec::new();
             let mut non_target_messages = Vec::new();
+            let mut new_messages_in_batch = 0;
+            let received_messages_count = received_messages.len();
 
             for message in received_messages {
                 let message_id = message
@@ -1100,6 +1299,21 @@ impl BulkOperationHandler {
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| "unknown".to_string());
                 let message_sequence = message.sequence_number();
+
+                // Check if we've already processed this message to avoid infinite loops
+                if processed_message_ids.contains(&message_id) {
+                    log::debug!(
+                        "Skipping already processed message: {} (sequence: {})",
+                        message_id,
+                        message_sequence
+                    );
+                    // Don't abandon already processed messages, just skip them
+                    continue;
+                }
+
+                // Mark this message as processed
+                processed_message_ids.insert(message_id.clone());
+                new_messages_in_batch += 1;
 
                 // Check if this message matches our targets (ID-only matching)
                 if remaining_targets.contains_key(&message_id) {
@@ -1119,6 +1333,27 @@ impl BulkOperationHandler {
                     non_target_messages.push(message);
                 }
                 total_processed += 1;
+            }
+
+            if new_messages_in_batch == 0 {
+                log::warn!(
+                    "No new messages in batch - all {} messages were already processed. Breaking to avoid infinite loop.",
+                    received_messages_count
+                );
+                break;
+            }
+
+            if target_messages.is_empty() {
+                batches_without_targets += 1;
+                if batches_without_targets >= 20 {
+                    log::warn!(
+                        "Processed {} consecutive batches without finding target messages. Stopping to avoid excessive processing.",
+                        batches_without_targets
+                    );
+                    break;
+                }
+            } else {
+                batches_without_targets = 0;
             }
 
             // Immediately complete target messages while locks are still valid
@@ -1189,7 +1424,15 @@ impl BulkOperationHandler {
                     "Abandoning {} non-target messages",
                     non_target_messages.len()
                 );
-                let mut consumer_guard = context.consumer.lock().await;
+
+                let mut consumer_guard = acquire_lock_with_timeout(
+                    &context.consumer,
+                    "abandon_messages",
+                    Duration::from_secs(self.config.lock_timeout_secs()),
+                    Some(&context.cancel_token),
+                )
+                .await?;
+
                 match consumer_guard.abandon_messages(&non_target_messages).await {
                     Ok(()) => {
                         let abandon_time = abandon_start_time.elapsed().as_millis();
@@ -1234,7 +1477,7 @@ impl BulkOperationHandler {
         // Calculate not found messages correctly - use remaining targets count
         result.not_found = remaining_targets.len();
 
-        // Debug logging to track the calculation
+
         log::debug!(
             "Final calculation: successful={}, failed={}, remaining_targets={}, total_requested={}",
             result.successful,
@@ -1342,6 +1585,7 @@ pub struct BulkOperationContext {
     pub service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
     pub target_queue: String,
     pub operation_type: QueueOperationType,
+    pub cancel_token: CancellationToken,
 }
 
 impl BulkOperationContext {
@@ -1357,7 +1601,36 @@ impl BulkOperationContext {
             service_bus_client,
             target_queue,
             operation_type,
+            cancel_token: CancellationToken::new(),
         }
+    }
+
+    /// Create a new context with a specific cancellation token
+    pub fn with_cancel_token(
+        consumer: Arc<Mutex<Consumer>>,
+        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+        target_queue: String,
+        cancel_token: CancellationToken,
+    ) -> Self {
+        let operation_type = QueueOperationType::from_queue_name(&target_queue);
+        Self {
+            consumer,
+            service_bus_client,
+            target_queue,
+            operation_type,
+            cancel_token,
+        }
+    }
+
+    /// Cancel the operation
+    pub fn cancel(&self) {
+        self.cancel_token.cancel();
+        log::info!("Bulk operation cancelled for queue: {}", self.target_queue);
+    }
+
+    /// Check if the operation has been cancelled
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel_token.is_cancelled()
     }
 }
 
