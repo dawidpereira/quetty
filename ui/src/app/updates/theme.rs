@@ -32,7 +32,11 @@ where
                 if let Err(e) = manager.switch_theme_from_config(&theme_config) {
                     // Close the theme picker first so the error popup can be seen
                     if let Err(unmount_err) = self.unmount_theme_picker() {
-                        self.error_reporter.report_mount_error("ThemePicker", "unmount", unmount_err);
+                        self.error_reporter.report_mount_error(
+                            "ThemePicker",
+                            "unmount",
+                            unmount_err,
+                        );
                     }
 
                     // Theme errors are warnings since they don't break core functionality
@@ -43,7 +47,8 @@ where
             Err(e) => {
                 // Close the theme picker first so the error popup can be seen
                 if let Err(unmount_err) = self.unmount_theme_picker() {
-                    self.error_reporter.report_mount_error("ThemePicker", "unmount", unmount_err);
+                    self.error_reporter
+                        .report_mount_error("ThemePicker", "unmount", unmount_err);
                 }
 
                 self.error_reporter.report_theme_error("acquire_lock", e);
@@ -53,7 +58,8 @@ where
 
         // Close the theme picker
         if let Err(e) = self.unmount_theme_picker() {
-            self.error_reporter.report_mount_error("ThemePicker", "unmount", e);
+            self.error_reporter
+                .report_mount_error("ThemePicker", "unmount", e);
             return None;
         }
 
@@ -72,7 +78,8 @@ where
         log::debug!("Theme picker closed");
 
         if let Err(e) = self.unmount_theme_picker() {
-            self.error_reporter.report_mount_error("ThemePicker", "unmount", e);
+            self.error_reporter
+                .report_mount_error("ThemePicker", "unmount", e);
             None
         } else {
             None

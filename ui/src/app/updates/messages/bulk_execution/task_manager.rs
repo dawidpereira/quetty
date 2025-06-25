@@ -246,7 +246,11 @@ pub fn handle_bulk_send_task_result_simple(
             );
         }
         Err(error) => {
-            params.error_reporter.report_bulk_operation_error("send", params.message_count(), &error);
+            params.error_reporter.report_bulk_operation_error(
+                "send",
+                params.message_count(),
+                &error,
+            );
 
             handle_bulk_send_error(
                 &params.tx_to_main,
@@ -300,7 +304,9 @@ fn handle_bulk_send_success_simple(
     );
 
     // Use centralized post-processor to handle completion
-    if let Err(e) = BulkOperationPostProcessor::handle_completion(&context, tx_to_main, error_reporter) {
+    if let Err(e) =
+        BulkOperationPostProcessor::handle_completion(&context, tx_to_main, error_reporter)
+    {
         error_reporter.report_bulk_operation_error("complete", result.successful, &e);
     }
 }

@@ -84,13 +84,16 @@ impl TaskManager {
     }
 
     /// Helper method to send a message to the main thread or report error if it fails
-    pub fn send_message_or_report_error(tx: &Sender<Msg>, msg: Msg, context: &str, error_reporter: &ErrorReporter) {
+    pub fn send_message_or_report_error(
+        tx: &Sender<Msg>,
+        msg: Msg,
+        context: &str,
+        error_reporter: &ErrorReporter,
+    ) {
         if let Err(e) = tx.send(msg) {
             error_reporter.report_send_error(context, e);
         }
     }
-
-
 }
 
 #[cfg(test)]

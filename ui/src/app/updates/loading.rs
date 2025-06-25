@@ -19,7 +19,8 @@ where
 
                 // Mount loading indicator with proper subscriptions
                 if let Err(e) = self.mount_loading_indicator(&message) {
-                    self.error_reporter.report_mount_error("LoadingIndicator", "mount", &e);
+                    self.error_reporter
+                        .report_mount_error("LoadingIndicator", "mount", &e);
                 }
 
                 self.set_app_state(AppState::Loading);
@@ -52,7 +53,8 @@ where
                 // Unmount loading indicator
                 if self.app.mounted(&ComponentId::LoadingIndicator) {
                     if let Err(e) = self.app.umount(&ComponentId::LoadingIndicator) {
-                        self.error_reporter.report_mount_error("LoadingIndicator", "unmount", &e);
+                        self.error_reporter
+                            .report_mount_error("LoadingIndicator", "unmount", &e);
                     } else {
                         log::debug!("Loading indicator unmounted successfully");
                     }

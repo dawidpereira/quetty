@@ -142,15 +142,11 @@ impl ErrorReporter {
         self.report(error, context);
     }
 
-
-
     /// Report a warning (shows warning popup)
     pub fn report_warning(&self, error: AppError, component: &str, operation: &str) {
         let context = ErrorContext::new(component, operation).with_severity(ErrorSeverity::Warning);
         self.report(error, context);
     }
-
-
 
     /// Report a critical error that will cause application exit
     /// This method should be used when the error is severe enough to terminate the application
@@ -167,8 +163,6 @@ impl ErrorReporter {
             .with_suggestion("The application will terminate. Please fix the issue and restart.");
         self.report(error, context);
     }
-
-
 
     /// Report error with full context
     pub fn report(&self, error: AppError, context: ErrorContext) {
@@ -432,11 +426,7 @@ impl ErrorReporter {
         let app_error = AppError::Config(error.to_string());
         self.report(app_error, context);
     }
-
-
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -476,8 +466,6 @@ mod tests {
         );
     }
 
-
-
     #[test]
     fn test_io_error_variant() {
         let error = AppError::Io("File not found".to_string());
@@ -508,8 +496,6 @@ mod tests {
             Msg::PopupActivity(PopupActivityMsg::ShowWarning(_))
         ));
     }
-
-
 
     #[test]
     fn test_user_friendly_message_generation() {
@@ -565,10 +551,6 @@ mod tests {
         assert_eq!(context.user_message, "Custom error message");
         assert!(matches!(context.severity, ErrorSeverity::Error));
     }
-
-
-
-
 
     #[test]
     fn test_format_additional_context_consistency() {

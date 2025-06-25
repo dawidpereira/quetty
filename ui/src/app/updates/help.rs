@@ -16,19 +16,22 @@ where
 
                 // Unmount the help screen
                 if let Err(e) = self.app.umount(&ComponentId::HelpScreen) {
-                    self.error_reporter.report_mount_error("HelpScreen", "unmount", &e);
+                    self.error_reporter
+                        .report_mount_error("HelpScreen", "unmount", &e);
                 }
 
                 // Return to appropriate component based on state
                 match self.state_manager.app_state {
                     AppState::NamespacePicker => {
                         if let Err(e) = self.app.active(&ComponentId::NamespacePicker) {
-                            self.error_reporter.report_activation_error("NamespacePicker", &e);
+                            self.error_reporter
+                                .report_activation_error("NamespacePicker", &e);
                         }
                     }
                     AppState::QueuePicker => {
                         if let Err(e) = self.app.active(&ComponentId::QueuePicker) {
-                            self.error_reporter.report_activation_error("QueuePicker", &e);
+                            self.error_reporter
+                                .report_activation_error("QueuePicker", &e);
                         }
                     }
                     AppState::MessagePicker => {
@@ -38,12 +41,14 @@ where
                     }
                     AppState::MessageDetails => {
                         if let Err(e) = self.app.active(&ComponentId::MessageDetails) {
-                            self.error_reporter.report_activation_error("MessageDetails", &e);
+                            self.error_reporter
+                                .report_activation_error("MessageDetails", &e);
                         }
                     }
                     AppState::ThemePicker => {
                         if let Err(e) = self.app.active(&ComponentId::ThemePicker) {
-                            self.error_reporter.report_activation_error("ThemePicker", &e);
+                            self.error_reporter
+                                .report_activation_error("ThemePicker", &e);
                         }
                     }
                     _ => {}
@@ -54,11 +59,13 @@ where
 
                 // Unmount the help screen
                 if let Err(e) = self.app.umount(&ComponentId::HelpScreen) {
-                    self.error_reporter.report_mount_error("HelpScreen", "unmount", &e);
+                    self.error_reporter
+                        .report_mount_error("HelpScreen", "unmount", &e);
                 }
 
                 if let Err(e) = self.app.active(&ComponentId::NamespacePicker) {
-                    self.error_reporter.report_activation_error("NamespacePicker", &e);
+                    self.error_reporter
+                        .report_activation_error("NamespacePicker", &e);
                 }
             }
         } else {
@@ -75,13 +82,15 @@ where
                     Box::new(HelpScreen::new()),
                     Vec::default(),
                 ) {
-                    self.error_reporter.report_mount_error("HelpScreen", "mount", &e);
+                    self.error_reporter
+                        .report_mount_error("HelpScreen", "mount", &e);
                 }
             }
 
             // Activate the help screen
             if let Err(e) = self.app.active(&ComponentId::HelpScreen) {
-                self.error_reporter.report_activation_error("HelpScreen", &e);
+                self.error_reporter
+                    .report_activation_error("HelpScreen", &e);
             }
         }
 

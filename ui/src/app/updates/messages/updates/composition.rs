@@ -21,7 +21,8 @@ where
         self.set_app_state(AppState::MessageDetails);
 
         if let Err(e) = self.app.active(&ComponentId::MessageDetails) {
-            self.error_reporter.report_activation_error("MessageDetails", &e);
+            self.error_reporter
+                .report_activation_error("MessageDetails", &e);
         }
 
         if let Err(e) = self.remount_message_details_for_composition() {
@@ -146,9 +147,7 @@ where
 
         tx_to_main
             .send(Msg::MessageActivity(activity_msg))
-            .map_err(|e| {
-                AppError::Component(e.to_string())
-            })?;
+            .map_err(|e| AppError::Component(e.to_string()))?;
 
         Ok(())
     }

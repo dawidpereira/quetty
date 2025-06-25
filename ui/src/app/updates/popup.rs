@@ -34,7 +34,8 @@ where
 
     fn handle_show_error(&mut self, error: AppError) -> Option<Msg> {
         if let Err(e) = self.mount_error_popup(&error) {
-            self.error_reporter.report_mount_error("ErrorPopup", "mount", e);
+            self.error_reporter
+                .report_mount_error("ErrorPopup", "mount", e);
             return None;
         }
         None
@@ -42,7 +43,8 @@ where
 
     fn handle_close_error(&mut self) -> Option<Msg> {
         if let Err(e) = self.unmount_error_popup() {
-            self.error_reporter.report_mount_error("ErrorPopup", "unmount", e);
+            self.error_reporter
+                .report_mount_error("ErrorPopup", "unmount", e);
             return None;
         }
         None
@@ -52,7 +54,8 @@ where
         // Create a properly formatted warning error using ErrorReporter's formatting
         let warning_error = self.error_reporter.create_warning_error(message);
         if let Err(e) = self.mount_error_popup(&warning_error) {
-            self.error_reporter.report_mount_error("WarningPopup", "mount", e);
+            self.error_reporter
+                .report_mount_error("WarningPopup", "mount", e);
             return None;
         }
         None
@@ -60,7 +63,8 @@ where
 
     fn handle_show_success(&mut self, message: String) -> Option<Msg> {
         if let Err(e) = self.mount_success_popup(&message) {
-            self.error_reporter.report_mount_error("SuccessPopup", "mount", e);
+            self.error_reporter
+                .report_mount_error("SuccessPopup", "mount", e);
             return None;
         }
         None
@@ -68,7 +72,8 @@ where
 
     fn handle_close_success(&mut self) -> Option<Msg> {
         if let Err(e) = self.unmount_success_popup() {
-            self.error_reporter.report_mount_error("SuccessPopup", "unmount", e);
+            self.error_reporter
+                .report_mount_error("SuccessPopup", "unmount", e);
             return None;
         }
         None
@@ -85,7 +90,8 @@ where
         self.set_pending_confirmation_action(Some(on_confirm));
 
         if let Err(e) = self.mount_confirmation_popup(&title, &message) {
-            self.error_reporter.report_mount_error("ConfirmationPopup", "mount", e);
+            self.error_reporter
+                .report_mount_error("ConfirmationPopup", "mount", e);
             return None;
         }
         None
@@ -96,7 +102,8 @@ where
 
         // Close the confirmation popup
         if let Err(e) = self.unmount_confirmation_popup() {
-            self.error_reporter.report_mount_error("ConfirmationPopup", "unmount", e);
+            self.error_reporter
+                .report_mount_error("ConfirmationPopup", "unmount", e);
         }
 
         if confirmed {
@@ -125,7 +132,8 @@ where
     ) -> Option<Msg> {
         // Use the new NumberInputPopup component
         if let Err(e) = self.mount_number_input_popup(title, message, min_value, max_value) {
-            self.error_reporter.report_mount_error("NumberInputPopup", "mount", e);
+            self.error_reporter
+                .report_mount_error("NumberInputPopup", "mount", e);
             return None;
         }
         None
@@ -136,7 +144,8 @@ where
 
         // Unmount the number input popup
         if let Err(e) = self.unmount_number_input_popup() {
-            self.error_reporter.report_mount_error("NumberInputPopup", "unmount", e);
+            self.error_reporter
+                .report_mount_error("NumberInputPopup", "unmount", e);
         }
 
         // If value is 0, it means cancel
