@@ -21,19 +21,23 @@ impl ProducerManager {
         }
     }
 
-    /// Send a single message to a queue
+    /// Send a single message to a queue using the service bus
     pub async fn send_message(
         &mut self,
         queue_name: &str,
         message: MessageData,
     ) -> ServiceBusResult<()> {
-        log::info!("Sending single message to queue: {}", queue_name);
+        log::info!(
+            "Sending message to queue '{}' (content: {} bytes)",
+            queue_name,
+            message.content.len()
+        );
 
         // Get or create producer for the queue
         let producer = self.get_or_create_producer(queue_name).await?;
 
-        // Create ServiceBusMessage from MessageData
-        let service_bus_message = self.create_service_bus_message(message)?;
+        // Convert MessageData to ServiceBusMessage
+        let service_bus_message = self.create_service_bus_message(&message)?;
 
         // Send the message
         producer
@@ -76,7 +80,7 @@ impl ProducerManager {
 
         // Convert MessageData to ServiceBusMessage objects
         let mut service_bus_messages = Vec::new();
-        for message in messages {
+        for message in &messages {
             match self.create_service_bus_message(message) {
                 Ok(sb_message) => service_bus_messages.push(sb_message),
                 Err(e) => {
@@ -137,7 +141,7 @@ impl ProducerManager {
         let mut all_messages = Vec::new();
         for _ in 0..repeat_count {
             for message in &messages {
-                match self.create_service_bus_message(message.clone()) {
+                match self.create_service_bus_message(message) {
                     Ok(sb_message) => all_messages.push(sb_message),
                     Err(e) => {
                         log::error!("Failed to create ServiceBusMessage: {}", e);
@@ -195,7 +199,7 @@ impl ProducerManager {
         let mut all_messages = Vec::new();
         for _ in 0..repeat_count {
             for data in &messages_data {
-                let message = azservicebus::ServiceBusMessage::new(data.clone());
+                let message = azservicebus::ServiceBusMessage::new(data.to_vec());
                 all_messages.push(message);
             }
         }
@@ -238,7 +242,7 @@ impl ProducerManager {
     ) -> ServiceBusResult<Arc<Mutex<Producer>>> {
         // Check if producer already exists
         if let Some(producer) = self.producers.get(queue_name) {
-            return Ok(producer.clone());
+            return Ok(Arc::clone(producer));
         }
 
         // Create new producer
@@ -256,7 +260,7 @@ impl ProducerManager {
 
         let producer_arc = Arc::new(Mutex::new(producer));
         self.producers
-            .insert(queue_name.to_string(), producer_arc.clone());
+            .insert(queue_name.to_string(), Arc::clone(&producer_arc));
 
         log::info!("Successfully created producer for queue: {}", queue_name);
         Ok(producer_arc)
@@ -265,9 +269,9 @@ impl ProducerManager {
     /// Convert MessageData to ServiceBusMessage
     fn create_service_bus_message(
         &self,
-        message_data: MessageData,
+        message_data: &MessageData,
     ) -> ServiceBusResult<ServiceBusMessage> {
-        let message = ServiceBusMessage::new(message_data.content.into_bytes());
+        let message = ServiceBusMessage::new(message_data.content.clone().into_bytes());
 
         // Note: Application properties not currently supported in this version
         // If needed, this can be implemented when the azservicebus crate supports it
@@ -284,7 +288,7 @@ impl ProducerManager {
     pub fn get_producer_stats(&self) -> HashMap<String, usize> {
         self.producers
             .keys()
-            .map(|queue_name| (queue_name.clone(), 1)) // 1 producer per queue
+            .map(|queue_name| (queue_name.to_string(), 1)) // 1 producer per queue
             .collect()
     }
 

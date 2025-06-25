@@ -1,10 +1,11 @@
+use crate::app::model::AppState;
 use crate::app::model::Model;
 use crate::app::updates::messages::async_operations;
 use crate::components::common::{ComponentId, MessageActivityMsg, Msg, PopupActivityMsg};
 use crate::error::AppError;
-use crate::app::model::AppState;
 use server::bulk_operations::MessageIdentifier;
 use server::service_bus_manager::{MessageData, ServiceBusCommand, ServiceBusResponse};
+use std::sync::Arc;
 
 use tuirealm::terminal::TerminalAdapter;
 
@@ -16,14 +17,16 @@ where
     pub fn handle_edit_message(&mut self, index: usize) -> Option<Msg> {
         if let Some(current_messages) = &self.queue_manager.queue_state.messages {
             if index < current_messages.len() {
-                let selected_message = current_messages[index].clone();
+                let selected_message = &current_messages[index];
                 log::info!("Starting to edit message {}", selected_message.id);
 
                 // First, defocus the messages component
                 if let Err(e) = self.remount_messages_with_focus(false) {
                     self.error_reporter
                         .report_simple(e, "MessageEditor", "handle_edit_message");
-                    return Some(Msg::ShowError("Failed to prepare message editing view".to_string()));
+                    return Some(Msg::ShowError(
+                        "Failed to prepare message editing view".to_string(),
+                    ));
                 }
 
                 // Set the app state to MessageDetails
@@ -34,7 +37,9 @@ where
                     log::error!("Failed to activate message details component: {}", e);
                     // Recovery: go back to message picker state
                     self.set_app_state(AppState::MessagePicker);
-                    return Some(Msg::ShowError("Failed to open message editor. Please try again.".to_string()));
+                    return Some(Msg::ShowError(
+                        "Failed to open message editor. Please try again.".to_string(),
+                    ));
                 }
 
                 // Remount MessageDetails with the selected message
@@ -43,7 +48,9 @@ where
                         .report_simple(e, "MessageEditor", "handle_edit_message");
                     // Recovery: go back to message picker state
                     self.set_app_state(AppState::MessagePicker);
-                    return Some(Msg::ShowError("Failed to load message for editing. Please try again.".to_string()));
+                    return Some(Msg::ShowError(
+                        "Failed to load message for editing. Please try again.".to_string(),
+                    ));
                 }
 
                 self.set_editing_message(true);
@@ -113,7 +120,7 @@ where
             format!("Sending message {} times...", repeat_count)
         };
 
-        let service_bus_manager = self.service_bus_manager.clone();
+        let service_bus_manager = Arc::clone(&self.service_bus_manager);
         let tx_to_main = self.state_manager.tx_to_main.clone();
 
         self.task_manager.execute(loading_message, async move {
@@ -158,19 +165,20 @@ where
             queue_name
         );
 
-        let service_bus_manager = self.service_bus_manager.clone();
+        let service_bus_manager = Arc::clone(&self.service_bus_manager);
         let tx_to_main = self.state_manager.tx_to_main.clone();
+        let message_id_str = message_id.to_string();
 
         self.task_manager
             .execute("Replacing message...", async move {
                 let result = async {
                     // Step 1: Send new message with edited content
-                    Self::send_single_message(service_bus_manager.clone(), queue_name.clone(), content)
+                    Self::send_single_message(Arc::clone(&service_bus_manager), queue_name.clone(), content)
                         .await?;
 
                     // Step 2: Delete original message using service bus manager
                     let delete_command = ServiceBusCommand::BulkDelete {
-                        message_ids: vec![message_id.clone()],
+                        message_ids: vec![message_id],
                     };
 
                     let delete_response = service_bus_manager.lock().await.execute_command(delete_command).await;
@@ -180,13 +188,13 @@ where
                             if result.successful > 0 {
                                 log::info!(
                                     "Successfully deleted original message {} in queue: {}",
-                                    message_id,
+                                    message_id_str,
                                     queue_name
                                 );
                             } else {
                                 log::warn!(
                                     "Message {} was not found or could not be deleted (may have been already processed)",
-                                    message_id
+                                    message_id_str
                                 );
                             }
                         }
@@ -201,7 +209,7 @@ where
 
                     log::info!(
                         "Successfully replaced message {} in queue: {}",
-                        message_id,
+                        message_id_str,
                         queue_name
                     );
                     Ok::<(), AppError>(())
@@ -210,7 +218,7 @@ where
 
                 if result.is_ok() {
                     let _ = tx_to_main.send(Msg::MessageActivity(
-                        MessageActivityMsg::BulkRemoveMessagesFromState(vec![message_id.to_string()]),
+                        MessageActivityMsg::BulkRemoveMessagesFromState(vec![message_id_str]),
                     ));
                 }
 

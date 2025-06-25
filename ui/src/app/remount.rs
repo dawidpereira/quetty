@@ -91,7 +91,11 @@ where
         let pagination_info = self.create_pagination_info();
 
         // Get current selections for display
-        let selected_messages = self.queue_manager.queue_state.bulk_selection.get_selected_messages();
+        let selected_messages = self
+            .queue_manager
+            .queue_state
+            .bulk_selection
+            .get_selected_messages();
 
         self.app
             .remount(
@@ -162,7 +166,11 @@ where
         let pagination_info = self.create_pagination_info();
 
         // Get current selections for display
-        let selected_messages = self.queue_manager.queue_state.bulk_selection.get_selected_messages();
+        let selected_messages = self
+            .queue_manager
+            .queue_state
+            .bulk_selection
+            .get_selected_messages();
 
         self.app
             .remount(
@@ -205,20 +213,40 @@ where
         let current_page_size = current_page_messages.len();
 
         PaginationInfo {
-            current_page: self.queue_manager.queue_state.message_pagination.current_page,
-            total_pages_loaded: self.queue_manager.queue_state.message_pagination.total_pages_loaded,
+            current_page: self
+                .queue_manager
+                .queue_state
+                .message_pagination
+                .current_page,
+            total_pages_loaded: self
+                .queue_manager
+                .queue_state
+                .message_pagination
+                .total_pages_loaded,
             total_messages_loaded: self
                 .queue_state()
                 .message_pagination
                 .all_loaded_messages
                 .len(),
             current_page_size,
-            has_next_page: self.queue_manager.queue_state.message_pagination.has_next_page,
-            has_previous_page: self.queue_manager.queue_state.message_pagination.has_previous_page,
+            has_next_page: self
+                .queue_manager
+                .queue_state
+                .message_pagination
+                .has_next_page,
+            has_previous_page: self
+                .queue_manager
+                .queue_state
+                .message_pagination
+                .has_previous_page,
             queue_name: self.queue_manager.queue_state.current_queue_name.clone(),
             queue_type: self.queue_manager.queue_state.current_queue_type.clone(),
             bulk_mode: self.queue_manager.queue_state.bulk_selection.selection_mode,
-            selected_count: self.queue_manager.queue_state.bulk_selection.selection_count(),
+            selected_count: self
+                .queue_manager
+                .queue_state
+                .bulk_selection
+                .selection_count(),
         }
     }
 

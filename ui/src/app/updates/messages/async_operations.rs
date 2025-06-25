@@ -10,7 +10,8 @@ where
 {
     /// Get current queue name or return error
     pub fn get_current_queue(&self) -> Result<String, AppError> {
-        self.queue_manager.queue_state
+        self.queue_manager
+            .queue_state
             .current_queue_name
             .clone()
             .ok_or_else(|| AppError::State("No queue selected".to_string()))
