@@ -1,0 +1,58 @@
+# Carbonfox - A dark colorscheme inspired by IBM Carbon
+# Inspired by: https://github.com/EdenEast/nightfox.nvim
+[metadata]
+name = "Carbonfox"
+description = "A dark colorscheme inspired by IBM Carbon"
+author = "EdenEast (Nightfox.nvim)"
+theme_name = "nightfox"
+flavor_name = "carbonfox"
+theme_icon = "🦊"
+flavor_icon = "⚫"
+inspiration = "https://github.com/EdenEast/nightfox.nvim"
+
+[colors]
+# === Core Text Colors ===
+text_primary = "#f2f4f8" # Primary text throughout app
+text_muted = "#7b7c7e"   # Muted text for help bar separators
+
+# === Layout Colors ===
+surface = "#393939" # Surface background for pickers
+
+# === Accent Colors ===
+primary_accent = "#78a9ff" # Blue - focused borders, active states, status text
+title_accent = "#f2f4f8"   # Primary text - component titles
+header_accent = "#42be65"  # Green - table headers and line numbers
+
+# === Selection Colors ===
+selection_bg = "#ee5396" # Pink - selection background
+selection_fg = "#161616" # Dark text - selection foreground
+
+# === Message Table Colors ===
+message_sequence = "#f1c21b"       # Yellow - sequence numbers  
+message_id = "#ff7eb6"             # Pink - message identifiers
+message_timestamp = "#82cfff"      # Light blue - timestamps
+message_delivery_count = "#be95ff" # Purple - delivery counts
+message_state_ready = "#42be65"    # Green - Ready for delivery (Active, Scheduled)
+message_state_deferred = "#f1c21b" # Yellow - Deferred handling (Deferred)
+message_state_outcome = "#be95ff"  # Purple - Processing outcome (Completed, Abandoned)
+message_state_failed = "#ff7eb6"   # Pink - Failed delivery (Dead-lettered)
+queue_count = "#42be65"            # Green - for queue counts (legacy field)
+
+# === List Item Colors ===
+namespace_list_item = "#be95ff" # Purple - namespace picker items
+
+# === Status Colors ===
+status_success = "#42be65" # Green - success messages
+status_warning = "#f1c21b" # Yellow - warning messages
+status_error = "#ff7eb6"   # Pink - error messages
+status_info = "#82cfff"    # Light blue - queue picker items
+status_loading = "#be95ff" # Purple - loading indicator
+
+# === Help System Colors ===
+shortcut_key = "#f1c21b"         # Yellow - keyboard shortcuts
+shortcut_description = "#7b7c7e" # Muted text - help descriptions
+help_section_title = "#be95ff"   # Purple - help section titles
+
+# === Popup System Colors (used by confirmation popup) ===
+popup_background = "#262626" # Slightly different from main bg
+popup_text = "#7b7c7e"       # Muted text - secondary text 

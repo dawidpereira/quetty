@@ -1,0 +1,57 @@
+# Catppuccin Macchiato - Medium contrast with gentle colors creating a soothing atmosphere
+[metadata]
+name = "Catppuccin Macchiato"
+description = "Medium contrast with gentle colors creating a soothing atmosphere"
+author = "Catppuccin Community"
+theme_name = "catppuccin"
+flavor_name = "macchiato"
+theme_icon = "😸"
+flavor_icon = "🌺"
+inspiration = "https://github.com/catppuccin/catppuccin"
+
+[colors]
+# === Core Text Colors ===
+text_primary = "#cad3f5" # Text - primary text throughout app
+text_muted = "#a5adcb"   # Subtext0 - help bar separators
+
+# === Layout Colors ===
+surface = "#363a4f" # Surface0 - background for pickers
+
+# === Accent Colors ===
+primary_accent = "#8aadf4" # Blue - focused borders, active states, status text
+title_accent = "#cad3f5"   # Text - component titles
+header_accent = "#a6da95"  # Green - table headers and line numbers
+
+# === Selection Colors ===
+selection_bg = "#c6a0f6" # Mauve - selection background
+selection_fg = "#24273a" # Base - selection foreground
+
+# === Message Table Colors ===
+message_sequence = "#eed49f"       # Yellow - sequence numbers  
+message_id = "#ed8796"             # Red - message identifiers
+message_timestamp = "#91d7e3"      # Sky - timestamps
+message_delivery_count = "#c6a0f6" # Mauve - delivery counts
+message_state_ready = "#a6da95"    # Green - Ready for delivery (Active, Scheduled)
+message_state_deferred = "#eed49f" # Yellow - Deferred handling (Deferred)
+message_state_outcome = "#c6a0f6"  # Mauve - Processing outcome (Completed, Abandoned)
+message_state_failed = "#ed8796"   # Red - Failed delivery (Dead-lettered)
+queue_count = "#a6da95"            # Green - for queue counts (legacy field)
+
+# === List Item Colors ===
+namespace_list_item = "#c6a0f6" # Mauve - namespace picker items
+
+# === Status Colors ===
+status_success = "#a6da95" # Green - success messages
+status_warning = "#eed49f" # Yellow - warning messages
+status_error = "#ed8796"   # Red - error messages
+status_info = "#91d7e3"    # Sky - queue picker items
+status_loading = "#c6a0f6" # Mauve - loading indicator
+
+# === Help System Colors ===
+shortcut_key = "#eed49f"         # Yellow - keyboard shortcuts
+shortcut_description = "#a5adcb" # Subtext0 - help descriptions
+help_section_title = "#c6a0f6"   # Mauve - help section titles
+
+# === Popup System Colors (used by confirmation popup) ===
+popup_background = "#1e2030" # Mantle - slightly different from main bg
+popup_text = "#a5adcb"       # Subtext0 - secondary text 
