@@ -9,6 +9,10 @@ pub enum ServiceBusCommand {
         queue_type: QueueType,
     },
     GetCurrentQueue,
+    GetQueueStatistics {
+        queue_name: String,
+        queue_type: QueueType,
+    },
 
     // Message retrieval operations
     PeekMessages {

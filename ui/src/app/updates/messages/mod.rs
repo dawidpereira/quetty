@@ -188,6 +188,9 @@ where
             MessageActivityMsg::BackfillMessagesLoaded(backfill_messages) => {
                 self.handle_backfill_messages_loaded(backfill_messages)
             }
+            MessageActivityMsg::QueueStatsUpdated(stats_cache) => {
+                self.handle_queue_stats_updated(stats_cache)
+            }
             MessageActivityMsg::ForceReloadMessages => self.handle_force_reload_messages(),
             _ => None,
         }

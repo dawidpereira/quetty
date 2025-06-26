@@ -101,6 +101,7 @@ pub enum MessageActivityMsg {
     },
     NewMessagesLoaded(Vec<MessageModel>),
     BackfillMessagesLoaded(Vec<MessageModel>),
+    QueueStatsUpdated(crate::app::updates::messages::pagination::QueueStatsCache),
     PageChanged,
     ToggleMessageSelectionByIndex(usize),
     SelectAllCurrentPage,
