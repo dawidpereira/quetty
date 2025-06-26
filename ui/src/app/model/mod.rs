@@ -121,11 +121,7 @@ where
 
     /// Set redraw flag
     pub fn set_redraw(&mut self, redraw: bool) {
-        if redraw {
-            self.state_manager.redraw = true;
-        } else {
-            self.state_manager.redraw = false;
-        }
+        self.state_manager.redraw = redraw;
     }
 
     /// Set quit flag
