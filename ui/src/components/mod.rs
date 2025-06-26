@@ -2,6 +2,7 @@ pub mod common;
 pub mod confirmation_popup;
 pub mod error_popup;
 pub mod global_key_watcher;
+pub mod help;
 pub mod help_bar;
 pub mod help_screen;
 pub mod loading_indicator;

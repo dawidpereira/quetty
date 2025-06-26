@@ -17,7 +17,6 @@ pub struct KeyBindingsConfig {
     key_alt_prev_page: Option<char>,
 
     // Message actions
-    key_send_to_dlq: Option<char>,
     key_resend_from_dlq: Option<char>,
     key_resend_and_delete_from_dlq: Option<char>,
     key_delete_message: Option<char>,
@@ -87,9 +86,6 @@ impl KeyBindingsConfig {
     }
 
     // Message actions
-    pub fn send_to_dlq(&self) -> char {
-        self.key_send_to_dlq.unwrap_or('s')
-    }
 
     pub fn resend_from_dlq(&self) -> char {
         self.key_resend_from_dlq.unwrap_or('r')
