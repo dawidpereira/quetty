@@ -1,8 +1,5 @@
-use super::task_manager::{
-    BulkSendData, BulkSendParams, BulkSendTaskParams, BulkTaskManager, DLQ_DISPLAY_NAME,
-    MAIN_QUEUE_DISPLAY_NAME,
-};
-use super::validation::{validate_bulk_resend_request, validate_bulk_send_to_dlq_request};
+use super::operation_setup::{BulkOperationSetup, BulkOperationType};
+use super::task_manager::{BulkSendData, BulkSendParams, BulkSendTaskParams, BulkTaskManager};
 use crate::app::model::Model;
 use crate::components::common::Msg;
 use crate::error::AppError;
@@ -16,21 +13,28 @@ pub fn handle_bulk_resend_from_dlq_execution<T: TerminalAdapter>(
     model: &mut Model<T>,
     message_ids: Vec<MessageIdentifier>,
 ) -> Option<Msg> {
-    if message_ids.is_empty() {
-        log::warn!("No messages provided for bulk resend operation");
-        return None;
-    }
+    // Use BulkOperationSetup for validation and configuration
+    let validated_operation = match BulkOperationSetup::new(model, message_ids)
+        .operation_type(BulkOperationType::ResendFromDlq {
+            delete_source: true,
+        })
+        .validate_and_build()
+    {
+        Ok(op) => op,
+        Err(e) => {
+            model
+                .error_reporter
+                .report_simple(e, "BulkResend", "validation");
+            return None;
+        }
+    };
 
-    if validate_bulk_resend_request(model, &message_ids).is_err() {
-        return None;
-    }
-
-    // Get the main queue name for DLQ to Main operation
-    let target_queue = match get_main_queue_name_from_current_dlq(model) {
-        Ok(name) => name,
+    // Get target queue from validated operation
+    let target_queue = match validated_operation.get_target_queue() {
+        Ok(queue) => queue,
         Err(e) => {
             model.error_reporter.report_service_bus_error(
-                "get_main_queue_name",
+                "get_target_queue",
                 &e,
                 Some("Check your queue configuration"),
             );
@@ -38,17 +42,20 @@ pub fn handle_bulk_resend_from_dlq_execution<T: TerminalAdapter>(
         }
     };
 
+    let (from_display, to_display) = validated_operation.get_queue_display_names();
+    let loading_template = validated_operation.get_loading_message();
+
     // For resend WITH DELETE, we need to use message retrieval approach
     // so the server can actually receive and complete/delete the messages from DLQ
     start_bulk_send_operation(
         model,
-        message_ids,
+        validated_operation.message_ids().to_vec(),
         BulkSendParams::new(
             target_queue,
-            true, // should_delete = true for DLQ to Main (delete from DLQ after successful resend)
-            "Bulk resending {} messages from DLQ to main queue...",
-            DLQ_DISPLAY_NAME,
-            MAIN_QUEUE_DISPLAY_NAME,
+            validated_operation.should_delete_source(),
+            &loading_template.replace(&validated_operation.message_ids().len().to_string(), "{}"),
+            &from_display,
+            &to_display,
         ),
     )
 }
@@ -58,27 +65,35 @@ pub fn handle_bulk_resend_from_dlq_only_execution<T: TerminalAdapter>(
     model: &mut Model<T>,
     message_ids: Vec<MessageIdentifier>,
 ) -> Option<Msg> {
-    if message_ids.is_empty() {
-        log::warn!("No messages provided for bulk resend-only operation");
-        return None;
-    }
-
-    if validate_bulk_resend_request(model, &message_ids).is_err() {
-        return None;
-    }
-
-    // For resend-only, we get message data from the current state (peeked messages)
-    let messages_data = match extract_message_data_from_current_state(model, &message_ids) {
-        Ok(data) => data,
-        Err(_) => return None,
+    // Use BulkOperationSetup for validation and configuration
+    let validated_operation = match BulkOperationSetup::new(model, message_ids)
+        .operation_type(BulkOperationType::ResendFromDlq {
+            delete_source: false,
+        })
+        .validate_and_build()
+    {
+        Ok(op) => op,
+        Err(e) => {
+            model
+                .error_reporter
+                .report_simple(e, "BulkResendOnly", "validation");
+            return None;
+        }
     };
 
-    // Get the main queue name for DLQ to Main operation
-    let target_queue = match get_main_queue_name_from_current_dlq(model) {
-        Ok(name) => name,
+    // For resend-only, we get message data from the current state (peeked messages)
+    let messages_data =
+        match extract_message_data_from_current_state(model, validated_operation.message_ids()) {
+            Ok(data) => data,
+            Err(_) => return None,
+        };
+
+    // Get target queue from validated operation
+    let target_queue = match validated_operation.get_target_queue() {
+        Ok(queue) => queue,
         Err(e) => {
             model.error_reporter.report_service_bus_error(
-                "get_main_queue_name",
+                "get_target_queue",
                 &e,
                 Some("Check your queue configuration"),
             );
@@ -86,15 +101,18 @@ pub fn handle_bulk_resend_from_dlq_only_execution<T: TerminalAdapter>(
         }
     };
 
+    let (from_display, to_display) = validated_operation.get_queue_display_names();
+    let loading_template = validated_operation.get_loading_message();
+
     start_bulk_send_with_data_operation(
         model,
         messages_data,
         BulkSendParams::new(
             target_queue,
-            false, // should_delete = false for resend-only
-            "Bulk copying {} messages from DLQ to main queue (keeping in DLQ)...",
-            DLQ_DISPLAY_NAME,
-            MAIN_QUEUE_DISPLAY_NAME,
+            validated_operation.should_delete_source(),
+            &loading_template.replace(&validated_operation.message_ids().len().to_string(), "{}"),
+            &from_display,
+            &to_display,
         ),
     )
 }
@@ -104,34 +122,47 @@ pub fn handle_bulk_send_to_dlq_with_delete_execution<T: TerminalAdapter>(
     model: &mut Model<T>,
     message_ids: Vec<MessageIdentifier>,
 ) -> Option<Msg> {
-    if message_ids.is_empty() {
-        log::warn!("No messages provided for bulk send to DLQ with delete operation");
-        return None;
-    }
+    // Use BulkOperationSetup for validation and configuration
+    let validated_operation = match BulkOperationSetup::new(model, message_ids)
+        .operation_type(BulkOperationType::SendToDlq {
+            delete_source: true,
+        })
+        .validate_and_build()
+    {
+        Ok(op) => op,
+        Err(e) => {
+            model
+                .error_reporter
+                .report_simple(e, "BulkSendToDlq", "validation");
+            return None;
+        }
+    };
 
-    if validate_bulk_send_to_dlq_request(model, &message_ids).is_err() {
-        return None;
-    }
+    // Get target queue from validated operation
+    let target_queue = match validated_operation.get_target_queue() {
+        Ok(queue) => queue,
+        Err(e) => {
+            model.error_reporter.report_service_bus_error(
+                "get_target_queue",
+                &e,
+                Some("Check your queue configuration"),
+            );
+            return None;
+        }
+    };
 
-    // Get the DLQ name for Main to DLQ operation
-    let target_queue = format!(
-        "{}/$deadletterqueue",
-        model
-            .queue_state()
-            .current_queue_name
-            .as_ref()
-            .unwrap_or(&"unknown".to_string())
-    );
+    let (from_display, to_display) = validated_operation.get_queue_display_names();
+    let loading_template = validated_operation.get_loading_message();
 
     let params = BulkSendParams::new(
         target_queue,
-        true, // should_delete = true for move to DLQ (delete from main)
-        "Bulk moving {} messages from main queue to DLQ...",
-        MAIN_QUEUE_DISPLAY_NAME,
-        DLQ_DISPLAY_NAME,
+        validated_operation.should_delete_source(),
+        &loading_template.replace(&validated_operation.message_ids().len().to_string(), "{}"),
+        &from_display,
+        &to_display,
     );
 
-    start_bulk_send_operation(model, message_ids, params)
+    start_bulk_send_operation(model, validated_operation.message_ids().to_vec(), params)
 }
 
 /// Extract message data from current state (works for any queue)
@@ -172,30 +203,6 @@ fn extract_message_data_from_current_state<T: TerminalAdapter>(
     );
 
     Ok(messages_data)
-}
-
-/// Get the main queue name for DLQ to Main operation
-fn get_main_queue_name_from_current_dlq<T: TerminalAdapter>(
-    model: &Model<T>,
-) -> Result<String, AppError> {
-    let current_queue_name = model
-        .queue_state()
-        .current_queue_name
-        .as_ref()
-        .ok_or_else(|| AppError::State("No current queue name available".to_string()))?;
-
-    // Remove the DLQ suffix to get the main queue name
-    let main_queue_name = if current_queue_name.ends_with("/$deadletterqueue") {
-        current_queue_name
-            .strip_suffix("/$deadletterqueue")
-            .unwrap_or(current_queue_name)
-            .to_string()
-    } else {
-        // If it doesn't end with DLQ suffix, assume it's already the main queue name
-        current_queue_name.to_string()
-    };
-
-    Ok(main_queue_name)
 }
 
 /// Generic method to start bulk send operation with either message IDs or pre-fetched data

@@ -103,17 +103,26 @@ where
                 self.handle_bulk_resend_selected_from_dlq(delete_from_dlq)
             }
             MessageActivityMsg::BulkDeleteMessages(message_ids) => {
-                self.handle_bulk_delete_execution(message_ids)
+                bulk_execution::delete_operations::handle_bulk_delete_execution(self, message_ids)
             }
 
             MessageActivityMsg::BulkSendToDLQWithDelete(message_ids) => {
-                self.handle_bulk_send_to_dlq_with_delete_execution(message_ids)
+                bulk_execution::send_operations::handle_bulk_send_to_dlq_with_delete_execution(
+                    self,
+                    message_ids,
+                )
             }
             MessageActivityMsg::BulkResendFromDLQ(message_ids, delete_from_dlq) => {
                 if delete_from_dlq {
-                    self.handle_bulk_resend_from_dlq_execution(message_ids)
+                    bulk_execution::send_operations::handle_bulk_resend_from_dlq_execution(
+                        self,
+                        message_ids,
+                    )
                 } else {
-                    self.handle_bulk_resend_from_dlq_only_execution(message_ids)
+                    bulk_execution::send_operations::handle_bulk_resend_from_dlq_only_execution(
+                        self,
+                        message_ids,
+                    )
                 }
             }
             MessageActivityMsg::BulkRemoveMessagesFromState(message_ids) => {

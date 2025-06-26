@@ -1,3 +1,4 @@
+pub mod application_lifecycle;
 pub mod bulk_operation_processor;
 pub mod managers;
 pub mod model;
