@@ -302,14 +302,29 @@ where
 
     /// Remove messages from pagination state and return count removed
     pub fn remove_messages_from_pagination_state(&mut self, message_ids: &[String]) -> usize {
-        let initial_count = self
-            .queue_state()
-            .message_pagination
-            .all_loaded_messages
-            .len();
+        let initial_count = self.get_loaded_message_count();
         log::debug!("Initial message count: {}", initial_count);
 
-        // Remove messages from all_loaded_messages
+        let removed_count = self.remove_from_loaded_messages(message_ids);
+        self.remove_from_current_messages(message_ids);
+        self.cleanup_bulk_selection(message_ids);
+
+        self.log_removal_summary(initial_count, removed_count);
+        removed_count
+    }
+
+    /// Get the current count of loaded messages
+    fn get_loaded_message_count(&self) -> usize {
+        self.queue_state()
+            .message_pagination
+            .all_loaded_messages
+            .len()
+    }
+
+    /// Remove messages from all_loaded_messages and return count removed
+    fn remove_from_loaded_messages(&mut self, message_ids: &[String]) -> usize {
+        let initial_count = self.get_loaded_message_count();
+
         self.queue_state_mut()
             .message_pagination
             .all_loaded_messages
@@ -325,12 +340,20 @@ where
                 should_keep
             });
 
+        let final_count = self.get_loaded_message_count();
+        initial_count.saturating_sub(final_count)
+    }
+
+    /// Remove messages from current page messages collection
+    fn remove_from_current_messages(&mut self, message_ids: &[String]) {
         if let Some(ref mut messages) = self.queue_state_mut().messages {
             messages.retain(|msg| !message_ids.contains(&msg.id));
         }
+    }
 
-        // Remove messages from bulk selection using proper MessageIdentifier objects
-        // We need to find the actual MessageIdentifier objects with correct sequence numbers
+    /// Clean up bulk selection state by removing specified messages
+    fn cleanup_bulk_selection(&mut self, message_ids: &[String]) {
+        // Find the actual MessageIdentifier objects with correct sequence numbers
         let message_ids_to_remove: Vec<MessageIdentifier> = self
             .queue_state()
             .bulk_selection
@@ -354,8 +377,7 @@ where
             .bulk_selection
             .remove_messages(&message_ids_to_remove);
 
-        // If all selected messages were processed, clear the selection entirely
-        // This prevents any residual state from accumulating across operations
+        // Clear selection entirely if all messages were processed
         if self
             .queue_state()
             .bulk_selection
@@ -365,21 +387,16 @@ where
             log::debug!("All selected messages processed, clearing bulk selection state");
             self.queue_state_mut().bulk_selection.clear_all();
         }
+    }
 
-        let final_count = self
-            .queue_state()
-            .message_pagination
-            .all_loaded_messages
-            .len();
-        let removed_count = initial_count.saturating_sub(final_count);
-
+    /// Log summary of message removal operation
+    fn log_removal_summary(&self, _initial_count: usize, removed_count: usize) {
+        let final_count = self.get_loaded_message_count();
         log::info!(
             "Removed {} messages from pagination state (remaining: {})",
             removed_count,
             final_count
         );
-
-        removed_count
     }
 
     /// Calculate and execute auto-loading if needed (using proper backfill logic)
@@ -388,6 +405,18 @@ where
         target_page: usize,
         _remaining_message_count: usize,
     ) -> Result<bool, AppError> {
+        self.update_current_page(target_page);
+        self.update_pagination_state_after_removal();
+
+        if !self.should_auto_fill()? {
+            return Ok(false);
+        }
+
+        self.execute_auto_fill()
+    }
+
+    /// Update current page if it has changed
+    fn update_current_page(&mut self, target_page: usize) {
         if target_page
             != self
                 .queue_manager
@@ -397,11 +426,10 @@ where
         {
             self.queue_state_mut().message_pagination.current_page = target_page;
         }
+    }
 
-        // Update pagination state BEFORE making auto-loading decisions
-        // This ensures has_next_page reflects the current state after message removal
-        self.update_pagination_state_after_removal();
-
+    /// Determine if auto-fill should be executed based on current state
+    fn should_auto_fill(&self) -> Result<bool, AppError> {
         let page_size = config::get_config_or_panic().max_messages();
         let current_page = self
             .queue_manager
@@ -413,48 +441,30 @@ where
             .message_pagination
             .get_current_page_messages(page_size);
         let current_page_size = current_page_messages.len();
-        let page_is_under_filled = current_page_size < page_size as usize;
 
-        // For single message deletions, be more aggressive about backfilling
-        // Check if this looks like a small deletion that should always trigger backfill
-        let small_deletion_threshold = config::get_config_or_panic()
-            .batch()
-            .small_deletion_threshold();
-        let is_small_deletion = page_is_under_filled
-            && (page_size as usize - current_page_size) <= small_deletion_threshold;
-
-        // Always try to backfill for small deletions, even if has_next_page is false
-        // This handles the case where the pagination state hasn't been updated properly
-        let should_auto_fill = page_is_under_filled
-            && (self.queue_manager.queue_state.message_pagination.has_next_page ||
-            is_small_deletion ||
-            // Additional condition: if we have any loaded messages beyond the current page
-            self.queue_manager.queue_state.message_pagination.all_loaded_messages.len() > (current_page + 1) * page_size as usize);
-
-        if should_auto_fill {
-            let messages_needed = page_size as usize - current_page_size;
-            log::info!(
-                "Page {} is under-filled with {} messages (expected {}), auto-loading {} more (has_next_page: {}, is_small_deletion: {}, total_loaded: {})",
+        // Early return if page is properly filled
+        if current_page_size >= page_size as usize {
+            log::debug!(
+                "Page {} is properly filled with {} messages",
                 current_page + 1,
-                current_page_size,
-                page_size,
-                messages_needed,
-                self.queue_manager
-                    .queue_state
-                    .message_pagination
-                    .has_next_page,
-                is_small_deletion,
-                &self
-                    .queue_manager
-                    .queue_state
-                    .message_pagination
-                    .all_loaded_messages
-                    .len()
+                current_page_size
             );
+            return Ok(false);
+        }
 
-            self.load_messages_for_backfill(messages_needed as u32)?;
-            return Ok(true);
-        } else if page_is_under_filled {
+        let is_small_deletion = self.is_small_deletion(page_size, current_page_size);
+        let has_messages_beyond_page =
+            self.has_messages_beyond_current_page(page_size, current_page);
+
+        let should_fill = self
+            .queue_manager
+            .queue_state
+            .message_pagination
+            .has_next_page
+            || is_small_deletion
+            || has_messages_beyond_page;
+
+        if !should_fill {
             log::debug!(
                 "Page {} has {} messages but no more messages available from API and not a small deletion - no auto-loading needed (has_next_page: {}, total_loaded: {})",
                 current_page + 1,
@@ -463,22 +473,74 @@ where
                     .queue_state
                     .message_pagination
                     .has_next_page,
-                &self
-                    .queue_manager
+                self.queue_manager
                     .queue_state
                     .message_pagination
                     .all_loaded_messages
                     .len()
             );
-        } else {
-            log::debug!(
-                "Page {} is properly filled with {} messages",
-                current_page + 1,
-                current_page_size
-            );
         }
 
-        Ok(false) // No backfilling happened
+        Ok(should_fill)
+    }
+
+    /// Check if this is a small deletion that should trigger backfill
+    fn is_small_deletion(&self, page_size: u32, current_page_size: usize) -> bool {
+        let small_deletion_threshold = config::get_config_or_panic()
+            .batch()
+            .small_deletion_threshold();
+
+        current_page_size < page_size as usize
+            && (page_size as usize - current_page_size) <= small_deletion_threshold
+    }
+
+    /// Check if there are loaded messages beyond the current page
+    fn has_messages_beyond_current_page(&self, page_size: u32, current_page: usize) -> bool {
+        self.queue_manager
+            .queue_state
+            .message_pagination
+            .all_loaded_messages
+            .len()
+            > (current_page + 1) * page_size as usize
+    }
+
+    /// Execute auto-fill by loading additional messages
+    fn execute_auto_fill(&mut self) -> Result<bool, AppError> {
+        let page_size = config::get_config_or_panic().max_messages();
+        let current_page = self
+            .queue_manager
+            .queue_state
+            .message_pagination
+            .current_page;
+        let current_page_messages = self
+            .queue_state()
+            .message_pagination
+            .get_current_page_messages(page_size);
+        let current_page_size = current_page_messages.len();
+        let messages_needed = page_size as usize - current_page_size;
+
+        let is_small_deletion = self.is_small_deletion(page_size, current_page_size);
+
+        log::info!(
+            "Page {} is under-filled with {} messages (expected {}), auto-loading {} more (has_next_page: {}, is_small_deletion: {}, total_loaded: {})",
+            current_page + 1,
+            current_page_size,
+            page_size,
+            messages_needed,
+            self.queue_manager
+                .queue_state
+                .message_pagination
+                .has_next_page,
+            is_small_deletion,
+            self.queue_manager
+                .queue_state
+                .message_pagination
+                .all_loaded_messages
+                .len()
+        );
+
+        self.load_messages_for_backfill(messages_needed as u32)?;
+        Ok(true)
     }
 
     /// Update pagination state after message removal (called before auto-loading decisions)

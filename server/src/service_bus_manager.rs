@@ -5,6 +5,7 @@ pub use self::responses::ServiceBusResponse;
 pub use self::types::*;
 
 // Module declarations
+pub mod command_handlers;
 pub mod commands;
 pub mod consumer_manager;
 pub mod errors;
@@ -30,35 +31,35 @@ impl AzureAdConfig {
                 "AZURE_AD__TENANT_ID is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
             ))
     }
-    
+
     pub fn client_id(&self) -> Result<&str, ServiceBusError> {
         self.client_id.as_deref()
             .ok_or_else(|| ServiceBusError::ConfigurationError(
                 "AZURE_AD__CLIENT_ID is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
             ))
     }
-    
+
     pub fn client_secret(&self) -> Result<&str, ServiceBusError> {
         self.client_secret.as_deref()
             .ok_or_else(|| ServiceBusError::ConfigurationError(
                 "AZURE_AD__CLIENT_SECRET is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
             ))
     }
-    
+
     pub fn subscription_id(&self) -> Result<&str, ServiceBusError> {
         self.subscription_id.as_deref()
             .ok_or_else(|| ServiceBusError::ConfigurationError(
                 "AZURE_AD__SUBSCRIPTION_ID is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
             ))
     }
-    
+
     pub fn resource_group(&self) -> Result<&str, ServiceBusError> {
         self.resource_group.as_deref()
             .ok_or_else(|| ServiceBusError::ConfigurationError(
                 "AZURE_AD__RESOURCE_GROUP is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
             ))
     }
-    
+
     pub fn namespace(&self) -> Result<&str, ServiceBusError> {
         self.namespace.as_deref()
             .ok_or_else(|| ServiceBusError::ConfigurationError(

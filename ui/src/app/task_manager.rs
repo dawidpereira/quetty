@@ -265,25 +265,27 @@ mod tests {
         }
 
         #[test]
-        fn test_send_message_or_log_error_success() {
+        fn test_send_message_or_report_error_success() {
             let (tx, rx) = mpsc::channel();
+            let error_reporter = ErrorReporter::new(tx.clone());
             let test_msg = Msg::LoadingActivity(LoadingActivityMsg::Stop);
 
-            TaskManager::send_message_or_log_error(&tx, test_msg, "test");
+            TaskManager::send_message_or_report_error(&tx, test_msg, "test", &error_reporter);
 
             let received = assert_ok!(rx.try_recv());
             assert_matches!(received, Msg::LoadingActivity(LoadingActivityMsg::Stop));
         }
 
         #[test]
-        fn test_send_message_or_log_error_failure() {
+        fn test_send_message_or_report_error_failure() {
             let (tx, rx) = mpsc::channel();
+            let error_reporter = ErrorReporter::new(tx.clone());
             drop(rx); // Drop receiver to cause send error
 
             let test_msg = Msg::LoadingActivity(LoadingActivityMsg::Stop);
 
-            // This should not panic, just log the error
-            TaskManager::send_message_or_log_error(&tx, test_msg, "test");
+            // This should not panic, just report the error
+            TaskManager::send_message_or_report_error(&tx, test_msg, "test", &error_reporter);
 
             // If we reach here, the function handled the error gracefully
         }

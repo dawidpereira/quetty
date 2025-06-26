@@ -43,8 +43,6 @@ impl HelpSection {
         }
     }
 
-
-
     pub fn add_single_key(mut self, key: String, description: &str) -> Self {
         self.shortcuts.push(Shortcut::single(key, description));
         self
@@ -124,7 +122,10 @@ impl HelpContent {
             // RIGHT COLUMN - Bulk Selection Mode
             HelpSection::new("BULK SELECTION MODE", "📦")
                 .add_single_key("[ ]".to_string(), "Toggle selection for current message")
-                .add_single_key("[Ctrl+a]".to_string(), "Select all messages on current page")
+                .add_single_key(
+                    "[Ctrl+a]".to_string(),
+                    "Select all messages on current page",
+                )
                 .add_single_key(
                     "[Ctrl+Shift+A]".to_string(),
                     "Select all loaded messages (all pages)",

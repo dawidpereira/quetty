@@ -8,10 +8,6 @@ use std::sync::Arc;
 use std::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
-// Constants for consistent queue display names
-pub const DLQ_DISPLAY_NAME: &str = "DLQ";
-pub const MAIN_QUEUE_DISPLAY_NAME: &str = "Main";
-
 /// Parameters for bulk send operations
 #[derive(Debug, Clone)]
 pub struct BulkSendParams {
