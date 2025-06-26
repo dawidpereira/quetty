@@ -82,6 +82,9 @@ impl ServiceBusManager {
             ServiceBusCommand::GetCurrentQueue => {
                 self.queue_handler.handle_get_current_queue().await
             }
+            ServiceBusCommand::GetQueueStatistics { queue_name, queue_type } => {
+                self.queue_handler.handle_get_queue_statistics(queue_name, queue_type).await
+            }
 
             // Message retrieval commands
             ServiceBusCommand::PeekMessages { max_count, from_sequence } => {

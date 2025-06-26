@@ -33,6 +33,9 @@ pub struct PaginationInfo {
     // Bulk selection info
     pub bulk_mode: bool,
     pub selected_count: usize,
+    // Queue statistics
+    pub queue_total_messages: Option<u64>,
+    pub queue_stats_age_seconds: Option<i64>,
 }
 
 pub struct Messages {

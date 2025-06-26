@@ -48,7 +48,7 @@ where
         Ok(())
     }
 
-    fn get_service_bus_manager(
+    pub(crate) fn get_service_bus_manager(
         &self,
     ) -> std::sync::Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>> {
         self.service_bus_manager.clone()
@@ -78,6 +78,22 @@ where
         let messages = match response {
             ServiceBusResponse::MessagesReceived { messages } => {
                 log::info!("Loaded {} new messages from API", messages.len());
+                
+                // Debug: log sequence range of received messages
+                if !messages.is_empty() {
+                    let first_seq = messages.first().unwrap().sequence;
+                    let last_seq = messages.last().unwrap().sequence;
+                    log::debug!("Received messages with sequences: {} to {} (count: {})", 
+                               first_seq, last_seq, messages.len());
+                    
+                    // Check for gaps in sequences
+                    let expected_count = (last_seq - first_seq + 1) as usize;
+                    if messages.len() != expected_count {
+                        log::warn!("Sequence gap detected! Expected {} messages between {} and {}, got {}", 
+                                  expected_count, first_seq, last_seq, messages.len());
+                    }
+                }
+                
                 messages
             }
             ServiceBusResponse::Error { error } => {
@@ -99,27 +115,17 @@ where
         tx_to_main: &Sender<Msg>,
         messages: Vec<MessageModel>,
     ) -> Result<(), AppError> {
-        if !messages.is_empty() {
-            tx_to_main
-                .send(Msg::MessageActivity(MessageActivityMsg::NewMessagesLoaded(
-                    messages,
-                )))
-                .map_err(|e| {
-                    log::error!("Failed to send new messages loaded message: {}", e);
-                    AppError::Component(e.to_string())
-                })?;
-        } else {
-            Self::send_page_changed_fallback(tx_to_main)?;
-        }
+        // Always send NewMessagesLoaded, even if empty, so pagination can track end-of-queue
+        tx_to_main
+            .send(Msg::MessageActivity(MessageActivityMsg::NewMessagesLoaded(
+                messages,
+            )))
+            .map_err(|e| {
+                log::error!("Failed to send new messages loaded message: {}", e);
+                AppError::Component(e.to_string())
+            })?;
         Ok(())
     }
 
-    fn send_page_changed_fallback(tx_to_main: &Sender<Msg>) -> Result<(), AppError> {
-        tx_to_main
-            .send(Msg::MessageActivity(MessageActivityMsg::PageChanged))
-            .map_err(|e| {
-                log::error!("Failed to send page changed message: {}", e);
-                AppError::Component(e.to_string())
-            })
-    }
+
 }

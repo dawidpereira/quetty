@@ -212,6 +212,14 @@ where
             .get_current_page_messages(page_size);
         let current_page_size = current_page_messages.len();
 
+        // Extract queue statistics from cache if available
+        let (queue_total_messages, queue_stats_age_seconds) = 
+            if let Some(cache) = self.queue_state().message_pagination.get_cached_stats() {
+                (cache.active_message_count, Some(cache.age_seconds()))
+            } else {
+                (None, None)
+            };
+
         PaginationInfo {
             current_page: self
                 .queue_manager
@@ -247,6 +255,8 @@ where
                 .queue_state
                 .bulk_selection
                 .selection_count(),
+            queue_total_messages,
+            queue_stats_age_seconds,
         }
     }
 

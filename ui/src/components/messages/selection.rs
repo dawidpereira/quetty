@@ -56,14 +56,29 @@ pub fn format_pagination_status(info: &PaginationInfo) -> String {
     if info.total_messages_loaded == 0 {
         format!("No messages available {}", bulk_info)
     } else {
-        format!(
-            "Page {}/{} • {} total • {} on page {} {}",
+        let base_status = format!(
+            "Page {}/{} • {} loaded • {} on page",
             info.current_page + 1, // Display as 1-based
             info.total_pages_loaded.max(1),
             info.total_messages_loaded,
-            info.current_page_size,
-            navigation_hints,
-            bulk_info
-        )
+            info.current_page_size
+        );
+
+        // Add queue statistics if available
+        let queue_info = if let Some(total) = info.queue_total_messages {
+            if let Some(age) = info.queue_stats_age_seconds {
+                if age < 60 {
+                    format!(" • {} in queue", total)
+                } else {
+                    format!(" • ~{} in queue ({}m ago)", total, age / 60)
+                }
+            } else {
+                format!(" • {} in queue", total)
+            }
+        } else {
+            String::new()
+        };
+
+        format!("{}{} {} {}", base_status, queue_info, navigation_hints, bulk_info)
     }
 }

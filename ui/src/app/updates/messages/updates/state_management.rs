@@ -60,7 +60,16 @@ where
             queue_info.queue_type
         );
 
+        // Invalidate stats cache since we're switching to a different queue
+        self.queue_state_mut().message_pagination.invalidate_stats_cache();
+
         self.reset_pagination_state();
+        
+        // Load queue statistics immediately when switching queues
+        if let Err(e) = self.load_queue_statistics_for_current_queue() {
+            log::warn!("Failed to load queue statistics after queue switch: {}", e);
+        }
+        
         self.load_messages();
         None
     }
@@ -89,14 +98,77 @@ where
             .all_loaded_messages
             .is_empty();
 
-        self.queue_state_mut()
-            .message_pagination
-            .add_loaded_page(new_messages);
+        // If we got 0 messages, we've reached the end of the queue
+        if new_messages.is_empty() {
+            log::debug!("No new messages loaded - reached end of queue");
+            self.queue_state_mut().message_pagination.reached_end_of_queue = true;
+            
+            if let Err(e) = self.update_current_page_view() {
+                self.error_reporter
+                    .report_simple(e, "MessageState", "new_messages_empty");
+                return None;
+            }
+            return None;
+        }
 
-        if !is_initial_load {
+        let new_message_count = new_messages.len();
+        let page_size = config::get_config_or_panic().max_messages() as usize;
+        
+        log::debug!("Loading {} new messages (page_size: {})", new_message_count, page_size);
+
+        // Check if we're currently loading messages to fill an incomplete page
+        let current_page_size_before = if !is_initial_load {
+            let current_page_messages = self
+                .queue_state()
+                .message_pagination
+                .get_current_page_messages(config::get_config_or_panic().max_messages());
+            current_page_messages.len()
+        } else {
+            0
+        };
+
+        let is_filling_current_page = !is_initial_load && current_page_size_before > 0 && current_page_size_before < page_size;
+
+        if is_filling_current_page {
+            log::debug!("Extending current page from {} to {} messages", current_page_size_before, current_page_size_before + new_message_count);
             self.queue_state_mut()
                 .message_pagination
-                .advance_to_next_page();
+                .extend_current_page(new_messages);
+        } else {
+            log::debug!("Adding new page with {} messages", new_message_count);
+            self.queue_state_mut()
+                .message_pagination
+                .add_loaded_page(new_messages);
+
+            if !is_initial_load {
+                self.queue_state_mut()
+                    .message_pagination
+                    .advance_to_next_page();
+            }
+        }
+
+        // Check if current page still needs more messages to reach full page size
+        let current_page_messages = self
+            .queue_state()
+            .message_pagination
+            .get_current_page_messages(config::get_config_or_panic().max_messages());
+        let current_page_size = current_page_messages.len();
+        
+        if current_page_size < page_size && new_message_count > 0 && !self.queue_state().message_pagination.reached_end_of_queue {
+            let messages_needed = page_size - current_page_size;
+            log::info!(
+                "Page still incomplete: {} messages (expected {}), loading {} more...",
+                current_page_size, page_size, messages_needed
+            );
+            
+            // Continue loading to fill the current page
+            if let Err(e) = self.load_messages_from_api_with_count(messages_needed as u32) {
+                log::error!("Failed to load additional messages: {}", e);
+                // Continue with partial page rather than failing completely
+            } else {
+                // Don't update view yet - wait for the additional messages
+                return None;
+            }
         }
 
         if let Err(e) = self.update_current_page_view() {
@@ -155,6 +227,9 @@ where
         for msg_id in &message_ids {
             log::debug!("Removing message ID: {}", msg_id);
         }
+
+        // Invalidate stats cache since queue size is changing
+        self.queue_state_mut().message_pagination.invalidate_stats_cache();
 
         let removed_count = self.remove_messages_from_pagination_state(&message_ids);
         let (target_page, remaining_message_count) =
@@ -685,6 +760,9 @@ where
         failed_count: usize,
         total_count: usize,
     ) -> Option<Msg> {
+        // Invalidate stats cache since messages were deleted from queue
+        self.queue_state_mut().message_pagination.invalidate_stats_cache();
+
         // Show success/status popup
         let queue_name = match &self.queue_manager.queue_state.current_queue_type {
             server::service_bus_manager::QueueType::Main => "main queue",
@@ -785,5 +863,73 @@ where
                 .message_pagination
                 .current_page
         );
+    }
+
+    /// Handle queue statistics update
+    pub fn handle_queue_stats_updated(
+        &mut self,
+        stats_cache: crate::app::updates::messages::pagination::QueueStatsCache,
+    ) -> Option<Msg> {
+        log::debug!("Updating queue stats cache");
+        self.queue_state_mut()
+            .message_pagination
+            .update_stats_cache(stats_cache);
+        None
+    }
+
+    /// Load queue statistics for the current queue
+    pub fn load_queue_statistics_for_current_queue(&mut self) -> crate::error::AppResult<()> {
+        let queue_name = self.queue_state().current_queue_name.clone();
+        let queue_type = self.queue_state().current_queue_type.clone();
+        
+        if let Some(name) = queue_name {
+            log::debug!("Loading statistics for queue: {} ({:?})", name, queue_type);
+            
+            // Load stats in background immediately
+            let service_bus_manager = self.get_service_bus_manager();
+            let tx_to_main = self.state_manager.tx_to_main.clone();
+
+            self.task_manager.execute("Loading queue stats...", async move {
+                use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
+
+                log::debug!("Loading queue statistics for: {} ({:?})", name, queue_type);
+                let stats_command = ServiceBusCommand::GetQueueStatistics {
+                    queue_name: name.clone(),
+                    queue_type: queue_type.clone(),
+                };
+                
+                match service_bus_manager.lock().await.execute_command(stats_command).await {
+                    ServiceBusResponse::QueueStatistics {
+                        queue_name,
+                        queue_type,
+                        active_message_count,
+                        dead_letter_message_count,
+                        retrieved_at: _,
+                    } => {
+                        log::debug!("Successfully loaded queue stats: active={:?}", active_message_count);
+                        let stats_cache = crate::app::updates::messages::pagination::QueueStatsCache::new(
+                            queue_name,
+                            queue_type,
+                            active_message_count,
+                            dead_letter_message_count,
+                        );
+                        
+                        if let Err(e) = tx_to_main.send(Msg::MessageActivity(MessageActivityMsg::QueueStatsUpdated(stats_cache))) {
+                            log::warn!("Failed to send queue stats update: {}", e);
+                        }
+                    }
+                    ServiceBusResponse::Error { error } => {
+                        log::warn!("Failed to load queue stats: {}", error);
+                    }
+                    _ => {
+                        log::warn!("Unexpected response for queue statistics");
+                    }
+                }
+
+                Ok(())
+            });
+        }
+        
+        Ok(())
     }
 }

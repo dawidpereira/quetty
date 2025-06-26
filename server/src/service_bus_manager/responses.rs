@@ -1,4 +1,4 @@
-use super::types::{OperationStats, QueueInfo};
+use super::types::{OperationStats, QueueInfo, QueueType};
 use crate::bulk_operations::{BulkOperationResult, MessageIdentifier};
 use crate::model::MessageModel;
 
@@ -10,6 +10,13 @@ pub enum ServiceBusResponse {
     },
     CurrentQueue {
         queue_info: Option<QueueInfo>,
+    },
+    QueueStatistics {
+        queue_name: String,
+        queue_type: QueueType,
+        active_message_count: Option<u64>,
+        dead_letter_message_count: Option<u64>,
+        retrieved_at: chrono::DateTime<chrono::Utc>,
     },
 
     // Message retrieval responses
