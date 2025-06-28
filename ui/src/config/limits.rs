@@ -40,3 +40,10 @@ pub const MIN_MESSAGES_TO_PROCESS_LIMIT: usize = 10;
 
 /// Maximum messages to process in bulk operations
 pub const MAX_MESSAGES_TO_PROCESS_LIMIT: usize = 5000;
+
+/// Queue statistics configuration limits
+/// Minimum TTL for queue statistics cache (30 seconds)
+pub const MIN_QUEUE_STATS_CACHE_TTL_SECONDS: u64 = 30;
+
+/// Maximum TTL for queue statistics cache (1 hour)
+pub const MAX_QUEUE_STATS_CACHE_TTL_SECONDS: u64 = 3600;

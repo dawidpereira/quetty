@@ -41,10 +41,7 @@ where
             }
 
             // Pagination operations
-            MessageActivityMsg::NextPage
-            | MessageActivityMsg::PreviousPage
-            | MessageActivityMsg::PageChanged
-            | MessageActivityMsg::PaginationStateUpdated { .. } => {
+            MessageActivityMsg::NextPage | MessageActivityMsg::PreviousPage => {
                 self.handle_pagination_operations(msg)
             }
 
@@ -142,18 +139,6 @@ where
         match msg {
             MessageActivityMsg::NextPage => self.handle_next_page_request(),
             MessageActivityMsg::PreviousPage => self.handle_previous_page_request(),
-            MessageActivityMsg::PageChanged => self.handle_page_changed(),
-            MessageActivityMsg::PaginationStateUpdated {
-                has_next,
-                has_previous,
-                current_page,
-                total_pages_loaded,
-            } => self.handle_pagination_state_updated(
-                has_next,
-                has_previous,
-                current_page,
-                total_pages_loaded,
-            ),
             _ => None,
         }
     }
@@ -185,13 +170,11 @@ where
             MessageActivityMsg::NewMessagesLoaded(new_messages) => {
                 self.handle_new_messages_loaded(new_messages)
             }
-            MessageActivityMsg::BackfillMessagesLoaded(backfill_messages) => {
-                self.handle_backfill_messages_loaded(backfill_messages)
-            }
             MessageActivityMsg::QueueStatsUpdated(stats_cache) => {
                 self.handle_queue_stats_updated(stats_cache)
             }
             MessageActivityMsg::ForceReloadMessages => self.handle_force_reload_messages(),
+            MessageActivityMsg::RefreshQueueStatistics => self.handle_refresh_queue_statistics(),
             _ => None,
         }
     }

@@ -11,6 +11,12 @@ where
 {
     /// Load a specific count of messages from API
     pub fn load_messages_from_api_with_count(&mut self, message_count: u32) -> AppResult<()> {
+        // Check if already loading to prevent concurrent operations
+        if self.queue_state().message_pagination.is_loading() {
+            log::debug!("Already loading messages, skipping request");
+            return Ok(());
+        }
+
         log::debug!(
             "Loading {} messages from API, last_sequence: {:?}",
             message_count,
@@ -20,8 +26,10 @@ where
                 .last_loaded_sequence
         );
 
-        let tx_to_main = self.state_manager.tx_to_main.clone();
+        // Set loading state
+        self.queue_state_mut().message_pagination.set_loading(true);
 
+        let tx_to_main = self.state_manager.tx_to_main.clone();
         let service_bus_manager = self.get_service_bus_manager();
         let from_sequence = self
             .queue_state()
@@ -39,8 +47,11 @@ where
                 )
                 .await;
 
+                // Always send a message to clear loading state, even on error
                 if let Err(e) = &result {
                     log::error!("Error in message loading task: {}", e);
+                    // Send empty message list to clear loading state
+                    let _ = Self::send_loaded_messages(&tx_to_main, Vec::new());
                 }
                 result
             });
@@ -78,22 +89,31 @@ where
         let messages = match response {
             ServiceBusResponse::MessagesReceived { messages } => {
                 log::info!("Loaded {} new messages from API", messages.len());
-                
+
                 // Debug: log sequence range of received messages
                 if !messages.is_empty() {
                     let first_seq = messages.first().unwrap().sequence;
                     let last_seq = messages.last().unwrap().sequence;
-                    log::debug!("Received messages with sequences: {} to {} (count: {})", 
-                               first_seq, last_seq, messages.len());
-                    
+                    log::debug!(
+                        "Received messages with sequences: {} to {} (count: {})",
+                        first_seq,
+                        last_seq,
+                        messages.len()
+                    );
+
                     // Check for gaps in sequences
                     let expected_count = (last_seq - first_seq + 1) as usize;
                     if messages.len() != expected_count {
-                        log::warn!("Sequence gap detected! Expected {} messages between {} and {}, got {}", 
-                                  expected_count, first_seq, last_seq, messages.len());
+                        log::warn!(
+                            "Sequence gap detected! Expected {} messages between {} and {}, got {}",
+                            expected_count,
+                            first_seq,
+                            last_seq,
+                            messages.len()
+                        );
                     }
                 }
-                
+
                 messages
             }
             ServiceBusResponse::Error { error } => {
@@ -106,6 +126,7 @@ where
             }
         };
 
+        // Always send the result, even if empty, so loading state gets cleared
         Self::send_loaded_messages(&tx_to_main, messages)?;
 
         Ok(())
@@ -126,6 +147,4 @@ where
             })?;
         Ok(())
     }
-
-
 }

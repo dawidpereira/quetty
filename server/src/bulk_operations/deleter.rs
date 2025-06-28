@@ -1,5 +1,7 @@
 use super::resource_guard::acquire_lock_with_timeout;
-use super::types::{BatchConfig, BulkOperationContext, BulkOperationResult, BulkSendParams, MessageIdentifier};
+use super::types::{
+    BatchConfig, BulkOperationContext, BulkOperationResult, BulkSendParams, MessageIdentifier,
+};
 use std::collections::HashMap;
 use std::error::Error;
 use std::time::Duration;
@@ -7,6 +9,23 @@ use std::time::Duration;
 /// Handles bulk message deletion operations
 pub struct MessageDeleter {
     config: BatchConfig,
+}
+
+/// Processing state for batch operations to reduce parameter count
+struct BatchProcessingState {
+    remaining_targets: HashMap<String, MessageIdentifier>,
+    processed_message_ids: std::collections::HashSet<String>,
+    total_processed: usize,
+}
+
+impl BatchProcessingState {
+    fn new(target_map: HashMap<String, MessageIdentifier>) -> Self {
+        Self {
+            remaining_targets: target_map,
+            processed_message_ids: std::collections::HashSet::new(),
+            total_processed: 0,
+        }
+    }
 }
 
 impl MessageDeleter {
@@ -23,7 +42,10 @@ impl MessageDeleter {
         let total_requested = params.message_identifiers.len();
         let mut result = BulkOperationResult::new(total_requested);
 
-        log::info!("Starting bulk delete operation for {} messages", total_requested);
+        log::info!(
+            "Starting bulk delete operation for {} messages",
+            total_requested
+        );
 
         if total_requested == 0 {
             log::warn!("No messages provided for bulk delete operation");
@@ -46,17 +68,17 @@ impl MessageDeleter {
 
         log::info!(
             "Processing {} messages with batch size {} (max {} to process)",
-            total_requested, batch_size, max_messages_to_process
+            total_requested,
+            batch_size,
+            max_messages_to_process
         );
 
         // Main processing loop
-        let mut remaining_targets = target_map.clone();
-        let mut total_processed = 0;
-        let mut processed_message_ids = std::collections::HashSet::new();
+        let mut state = BatchProcessingState::new(target_map.clone());
         let start_time = std::time::Instant::now();
 
-        while !remaining_targets.is_empty() 
-            && total_processed < max_messages_to_process
+        while !state.remaining_targets.is_empty()
+            && state.total_processed < max_messages_to_process
             && start_time.elapsed().as_secs() < self.config.bulk_processing_time_secs()
         {
             if context.is_cancelled() {
@@ -64,20 +86,21 @@ impl MessageDeleter {
                 break;
             }
 
-            match self.process_batch(
-                &context, &target_map, &mut remaining_targets,
-                &mut processed_message_ids, &mut total_processed,
-                batch_size, &mut result
-            ).await? {
+            match self
+                .process_batch(&context, &target_map, &mut state, batch_size, &mut result)
+                .await?
+            {
                 true => continue,
                 false => break,
             }
         }
 
-        result.not_found = remaining_targets.len();
+        result.not_found = state.remaining_targets.len();
         log::info!(
             "Bulk delete completed: {} successful, {} failed, {} not found",
-            result.successful, result.failed, result.not_found
+            result.successful,
+            result.failed,
+            result.not_found
         );
 
         Ok(result)
@@ -87,9 +110,7 @@ impl MessageDeleter {
         &self,
         context: &BulkOperationContext,
         target_map: &HashMap<String, MessageIdentifier>,
-        remaining_targets: &mut HashMap<String, MessageIdentifier>,
-        processed_message_ids: &mut std::collections::HashSet<String>,
-        total_processed: &mut usize,
+        state: &mut BatchProcessingState,
         batch_size: usize,
         result: &mut BulkOperationResult,
     ) -> Result<bool, Box<dyn Error + Send + Sync>> {
@@ -100,13 +121,18 @@ impl MessageDeleter {
                 "receive_messages",
                 Duration::from_secs(self.config.lock_timeout_secs()),
                 Some(&context.cancel_token),
-            ).await?;
+            )
+            .await?;
 
-            consumer_guard.receive_messages(batch_size as u32).await
-                .map_err(|e| Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to receive messages: {}", e)
-                )) as Box<dyn Error + Send + Sync>)?
+            consumer_guard
+                .receive_messages(batch_size as u32)
+                .await
+                .map_err(|e| {
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to receive messages: {}", e),
+                    )) as Box<dyn Error + Send + Sync>
+                })?
         };
 
         if received_messages.is_empty() {
@@ -118,19 +144,20 @@ impl MessageDeleter {
         let mut non_target_messages = Vec::new();
 
         for message in received_messages {
-            let message_id = message.message_id()
+            let message_id = message
+                .message_id()
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "unknown".to_string());
 
-            if processed_message_ids.contains(&message_id) {
+            if state.processed_message_ids.contains(&message_id) {
                 continue;
             }
 
-            processed_message_ids.insert(message_id.clone());
-            *total_processed += 1;
+            state.processed_message_ids.insert(message_id.clone());
+            state.total_processed += 1;
 
-            if remaining_targets.contains_key(&message_id) {
-                remaining_targets.remove(&message_id);
+            if state.remaining_targets.contains_key(&message_id) {
+                state.remaining_targets.remove(&message_id);
                 target_messages.push(message);
             } else {
                 non_target_messages.push(message);
@@ -164,13 +191,14 @@ impl MessageDeleter {
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut consumer_guard = context.consumer.lock().await;
         for message in messages {
-            consumer_guard.complete_message(message).await
-                .map_err(|e| -> Box<dyn Error + Send + Sync> {
+            consumer_guard.complete_message(message).await.map_err(
+                |e| -> Box<dyn Error + Send + Sync> {
                     Box::new(std::io::Error::new(
                         std::io::ErrorKind::Other,
                         format!("Failed to complete message: {}", e),
                     ))
-                })?;
+                },
+            )?;
         }
         Ok(())
     }
@@ -181,13 +209,14 @@ impl MessageDeleter {
         context: &BulkOperationContext,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut consumer_guard = context.consumer.lock().await;
-        consumer_guard.abandon_messages(messages).await
-            .map_err(|e| -> Box<dyn Error + Send + Sync> {
+        consumer_guard.abandon_messages(messages).await.map_err(
+            |e| -> Box<dyn Error + Send + Sync> {
                 Box::new(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     format!("Failed to abandon messages: {}", e),
                 ))
-            })?;
+            },
+        )?;
         Ok(())
     }
 
@@ -205,4 +234,5 @@ impl MessageDeleter {
             }
         }
     }
-} 
+}
+

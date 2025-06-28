@@ -1,9 +1,11 @@
 use super::AzureAdConfig;
-use super::commands::ServiceBusCommand;
+use super::azure_management_client::StatisticsConfig;
 use super::command_handlers::*;
+use super::commands::ServiceBusCommand;
 use super::consumer_manager::ConsumerManager;
 use super::errors::ServiceBusResult;
 use super::producer_manager::ProducerManager;
+use super::queue_statistics_service::QueueStatisticsService;
 use super::responses::ServiceBusResponse;
 use super::types::QueueInfo;
 use crate::bulk_operations::{BatchConfig, BulkOperationHandler};
@@ -19,11 +21,11 @@ pub struct ServiceBusManager {
     status_handler: StatusCommandHandler,
     bulk_handler: BulkCommandHandler,
     resource_handler: ResourceCommandHandler,
-    
+
     // Shared state
     consumer_manager: Arc<Mutex<ConsumerManager>>,
     producer_manager: Arc<Mutex<ProducerManager>>,
-    
+
     // Error tracking
     last_error: Arc<Mutex<Option<String>>>,
 }
@@ -33,18 +35,36 @@ impl ServiceBusManager {
     pub fn new(
         service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
         batch_config: BatchConfig,
+        azure_ad_config: AzureAdConfig,
+        statistics_config: StatisticsConfig,
     ) -> Self {
-        let consumer_manager = Arc::new(Mutex::new(ConsumerManager::new(service_bus_client.clone())));
-        let producer_manager = Arc::new(Mutex::new(ProducerManager::new(service_bus_client.clone())));
+        let consumer_manager =
+            Arc::new(Mutex::new(ConsumerManager::new(service_bus_client.clone())));
+        let producer_manager =
+            Arc::new(Mutex::new(ProducerManager::new(service_bus_client.clone())));
         let bulk_handler_inner = Arc::new(BulkOperationHandler::new(batch_config));
+        let statistics_service = Arc::new(QueueStatisticsService::new(
+            statistics_config,
+            azure_ad_config,
+        ));
 
         Self {
-            queue_handler: QueueCommandHandler::new(consumer_manager.clone()),
+            queue_handler: QueueCommandHandler::new(consumer_manager.clone(), statistics_service),
             message_handler: MessageCommandHandler::new(consumer_manager.clone()),
             send_handler: SendCommandHandler::new(producer_manager.clone()),
-            status_handler: StatusCommandHandler::new(consumer_manager.clone(), producer_manager.clone()),
-            bulk_handler: BulkCommandHandler::new(bulk_handler_inner, consumer_manager.clone(), service_bus_client.clone()),
-            resource_handler: ResourceCommandHandler::new(consumer_manager.clone(), producer_manager.clone()),
+            status_handler: StatusCommandHandler::new(
+                consumer_manager.clone(),
+                producer_manager.clone(),
+            ),
+            bulk_handler: BulkCommandHandler::new(
+                bulk_handler_inner,
+                consumer_manager.clone(),
+                service_bus_client.clone(),
+            ),
+            resource_handler: ResourceCommandHandler::new(
+                consumer_manager.clone(),
+                producer_manager.clone(),
+            ),
             consumer_manager,
             producer_manager,
             last_error: Arc::new(Mutex::new(None)),
@@ -73,34 +93,64 @@ impl ServiceBusManager {
     }
 
     /// Handle a command using specialized command handlers
-    async fn handle_command(&self, command: ServiceBusCommand) -> ServiceBusResult<ServiceBusResponse> {
+    async fn handle_command(
+        &self,
+        command: ServiceBusCommand,
+    ) -> ServiceBusResult<ServiceBusResponse> {
         match command {
             // Queue management commands
-            ServiceBusCommand::SwitchQueue { queue_name, queue_type } => {
-                self.queue_handler.handle_switch_queue(queue_name, queue_type).await
+            ServiceBusCommand::SwitchQueue {
+                queue_name,
+                queue_type,
+            } => {
+                self.queue_handler
+                    .handle_switch_queue(queue_name, queue_type)
+                    .await
             }
             ServiceBusCommand::GetCurrentQueue => {
                 self.queue_handler.handle_get_current_queue().await
             }
-            ServiceBusCommand::GetQueueStatistics { queue_name, queue_type } => {
-                self.queue_handler.handle_get_queue_statistics(queue_name, queue_type).await
+            ServiceBusCommand::GetQueueStatistics {
+                queue_name,
+                queue_type,
+            } => {
+                self.queue_handler
+                    .handle_get_queue_statistics(queue_name, queue_type)
+                    .await
             }
 
             // Message retrieval commands
-            ServiceBusCommand::PeekMessages { max_count, from_sequence } => {
-                self.message_handler.handle_peek_messages(max_count, from_sequence).await
+            ServiceBusCommand::PeekMessages {
+                max_count,
+                from_sequence,
+            } => {
+                self.message_handler
+                    .handle_peek_messages(max_count, from_sequence)
+                    .await
             }
             ServiceBusCommand::ReceiveMessages { max_count } => {
-                self.message_handler.handle_receive_messages(max_count).await
+                self.message_handler
+                    .handle_receive_messages(max_count)
+                    .await
             }
             ServiceBusCommand::CompleteMessage { message_id } => {
-                self.message_handler.handle_complete_message(message_id).await
+                self.message_handler
+                    .handle_complete_message(message_id)
+                    .await
             }
             ServiceBusCommand::AbandonMessage { message_id } => {
-                self.message_handler.handle_abandon_message(message_id).await
+                self.message_handler
+                    .handle_abandon_message(message_id)
+                    .await
             }
-            ServiceBusCommand::DeadLetterMessage { message_id, reason, error_description } => {
-                self.message_handler.handle_dead_letter_message(message_id, reason, error_description).await
+            ServiceBusCommand::DeadLetterMessage {
+                message_id,
+                reason,
+                error_description,
+            } => {
+                self.message_handler
+                    .handle_dead_letter_message(message_id, reason, error_description)
+                    .await
             }
 
             // Bulk operation commands
@@ -113,22 +163,62 @@ impl ServiceBusManager {
             ServiceBusCommand::BulkAbandon { message_ids } => {
                 self.bulk_handler.handle_bulk_abandon(message_ids).await
             }
-            ServiceBusCommand::BulkDeadLetter { message_ids, reason, error_description } => {
-                self.bulk_handler.handle_bulk_dead_letter(message_ids, reason, error_description).await
+            ServiceBusCommand::BulkDeadLetter {
+                message_ids,
+                reason,
+                error_description,
+            } => {
+                self.bulk_handler
+                    .handle_bulk_dead_letter(message_ids, reason, error_description)
+                    .await
             }
-            ServiceBusCommand::BulkSend { message_ids, target_queue, should_delete_source, repeat_count } => {
-                self.bulk_handler.handle_bulk_send(message_ids, target_queue, should_delete_source, repeat_count).await
+            ServiceBusCommand::BulkSend {
+                message_ids,
+                target_queue,
+                should_delete_source,
+                repeat_count,
+            } => {
+                self.bulk_handler
+                    .handle_bulk_send(
+                        message_ids,
+                        target_queue,
+                        should_delete_source,
+                        repeat_count,
+                    )
+                    .await
             }
-            ServiceBusCommand::BulkSendPeeked { messages_data, target_queue, should_delete_source, repeat_count } => {
-                self.bulk_handler.handle_bulk_send_peeked(messages_data, target_queue, should_delete_source, repeat_count).await
+            ServiceBusCommand::BulkSendPeeked {
+                messages_data,
+                target_queue,
+                should_delete_source,
+                repeat_count,
+            } => {
+                self.bulk_handler
+                    .handle_bulk_send_peeked(
+                        messages_data,
+                        target_queue,
+                        should_delete_source,
+                        repeat_count,
+                    )
+                    .await
             }
 
             // Send operation commands
-            ServiceBusCommand::SendMessage { queue_name, message } => {
-                self.send_handler.handle_send_message(queue_name, message).await
+            ServiceBusCommand::SendMessage {
+                queue_name,
+                message,
+            } => {
+                self.send_handler
+                    .handle_send_message(queue_name, message)
+                    .await
             }
-            ServiceBusCommand::SendMessages { queue_name, messages } => {
-                self.send_handler.handle_send_messages(queue_name, messages).await
+            ServiceBusCommand::SendMessages {
+                queue_name,
+                messages,
+            } => {
+                self.send_handler
+                    .handle_send_messages(queue_name, messages)
+                    .await
             }
 
             // Status and health commands

@@ -5,12 +5,14 @@ pub use self::responses::ServiceBusResponse;
 pub use self::types::*;
 
 // Module declarations
+pub mod azure_management_client;
 pub mod command_handlers;
 pub mod commands;
 pub mod consumer_manager;
 pub mod errors;
 pub mod manager;
 pub mod producer_manager;
+pub mod queue_statistics_service;
 pub mod responses;
 pub mod types;
 

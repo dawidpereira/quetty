@@ -1,6 +1,6 @@
 use crate::app::model::AppState;
 use crate::app::model::Model;
-use crate::components::common::{ComponentId, MessageActivityMsg, Msg};
+use crate::components::common::{ComponentId, Msg};
 use crate::config;
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
@@ -60,17 +60,12 @@ where
             queue_info.queue_type
         );
 
-        // Invalidate stats cache since we're switching to a different queue
-        self.queue_state_mut().message_pagination.invalidate_stats_cache();
+        // Reset pagination state for new queue
+        self.queue_state_mut().message_pagination.reset();
 
-        self.reset_pagination_state();
-        
-        // Load queue statistics immediately when switching queues
-        if let Err(e) = self.load_queue_statistics_for_current_queue() {
-            log::warn!("Failed to load queue statistics after queue switch: {}", e);
-        }
-        
+        // Load messages for the new queue
         self.load_messages();
+
         None
     }
 
@@ -90,124 +85,121 @@ where
         None
     }
 
-    /// Handle new messages loaded (pagination)
-    pub fn handle_new_messages_loaded(&mut self, new_messages: Vec<MessageModel>) -> Option<Msg> {
-        let is_initial_load = self
-            .queue_state()
-            .message_pagination
-            .all_loaded_messages
-            .is_empty();
+    /// Handle new messages being loaded
+    pub fn handle_new_messages_loaded(&mut self, messages: Vec<MessageModel>) -> Option<Msg> {
+        let message_count = messages.len();
 
-        // If we got 0 messages, we've reached the end of the queue
-        if new_messages.is_empty() {
-            log::debug!("No new messages loaded - reached end of queue");
-            self.queue_state_mut().message_pagination.reached_end_of_queue = true;
-            
-            if let Err(e) = self.update_current_page_view() {
-                self.error_reporter
-                    .report_simple(e, "MessageState", "new_messages_empty");
-                return None;
+        // Clear loading state first
+        self.queue_state_mut().message_pagination.set_loading(false);
+
+        // Update the message list
+        self.queue_state_mut()
+            .message_pagination
+            .append_messages(messages);
+
+        // Check if we should advance page after loading
+        let page_size = config::get_config_or_panic().max_messages() as usize;
+        let current_page = self.queue_state().message_pagination.current_page;
+        let total_messages = self.queue_state().message_pagination.total_messages();
+        let should_advance = self.queue_state().message_pagination.advance_after_load;
+
+        log::debug!(
+            "Messages loaded: count={}, total={}, current_page={}, should_advance={}",
+            message_count,
+            total_messages,
+            current_page,
+            should_advance
+        );
+
+        // Handle page advancement if requested
+        if should_advance && message_count > 0 {
+            let next_page_start = (current_page + 1) * page_size;
+            if next_page_start < total_messages {
+                log::debug!(
+                    "Advancing to next page {} -> {} after loading",
+                    current_page,
+                    current_page + 1
+                );
+                self.queue_state_mut().message_pagination.current_page += 1;
             }
-            return None;
+            // Clear the flag
+            self.queue_state_mut().message_pagination.advance_after_load = false;
         }
 
-        let new_message_count = new_messages.len();
-        let page_size = config::get_config_or_panic().max_messages() as usize;
-        
-        log::debug!("Loading {} new messages (page_size: {})", new_message_count, page_size);
+        // Update pagination state
+        let page_size_u32 = config::get_config_or_panic().max_messages();
+        self.queue_state_mut()
+            .message_pagination
+            .update(page_size_u32);
 
-        // Check if we're currently loading messages to fill an incomplete page
-        let current_page_size_before = if !is_initial_load {
+        log::info!(
+            "Loaded {} messages, total: {}, current page: {}",
+            message_count,
+            total_messages,
+            self.queue_state().message_pagination.current_page
+        );
+
+        // Check if we need auto-fill due to sequence gaps (only if we loaded some messages but less than expected)
+        if message_count > 0
+            && message_count < page_size_u32 as usize
+            && !self.queue_state().message_pagination.reached_end_of_queue
+        {
             let current_page_messages = self
                 .queue_state()
                 .message_pagination
-                .get_current_page_messages(config::get_config_or_panic().max_messages());
-            current_page_messages.len()
-        } else {
-            0
-        };
+                .get_current_page_messages(page_size_u32);
+            if current_page_messages.len() < page_size_u32 as usize {
+                log::info!(
+                    "Page incomplete due to sequence gaps ({} < {}), triggering auto-fill",
+                    current_page_messages.len(),
+                    page_size_u32
+                );
 
-        let is_filling_current_page = !is_initial_load && current_page_size_before > 0 && current_page_size_before < page_size;
-
-        if is_filling_current_page {
-            log::debug!("Extending current page from {} to {} messages", current_page_size_before, current_page_size_before + new_message_count);
-            self.queue_state_mut()
-                .message_pagination
-                .extend_current_page(new_messages);
-        } else {
-            log::debug!("Adding new page with {} messages", new_message_count);
-            self.queue_state_mut()
-                .message_pagination
-                .add_loaded_page(new_messages);
-
-            if !is_initial_load {
-                self.queue_state_mut()
-                    .message_pagination
-                    .advance_to_next_page();
+                // Try to auto-fill the current page
+                match self.should_auto_fill() {
+                    Ok(true) => {
+                        if let Err(e) = self.execute_auto_fill() {
+                            log::error!("Failed to execute auto-fill: {}", e);
+                        } else {
+                            log::debug!("Auto-fill initiated for incomplete page");
+                            // Auto-fill will trigger another message load, so return early
+                            return None;
+                        }
+                    }
+                    Ok(false) => {
+                        log::debug!("Auto-fill not needed or not possible");
+                    }
+                    Err(e) => {
+                        log::error!("Error checking auto-fill: {}", e);
+                    }
+                }
             }
         }
 
-        // Check if current page still needs more messages to reach full page size
-        let current_page_messages = self
-            .queue_state()
-            .message_pagination
-            .get_current_page_messages(config::get_config_or_panic().max_messages());
-        let current_page_size = current_page_messages.len();
-        
-        if current_page_size < page_size && new_message_count > 0 && !self.queue_state().message_pagination.reached_end_of_queue {
-            let messages_needed = page_size - current_page_size;
-            log::info!(
-                "Page still incomplete: {} messages (expected {}), loading {} more...",
-                current_page_size, page_size, messages_needed
-            );
-            
-            // Continue loading to fill the current page
-            if let Err(e) = self.load_messages_from_api_with_count(messages_needed as u32) {
-                log::error!("Failed to load additional messages: {}", e);
-                // Continue with partial page rather than failing completely
-            } else {
-                // Don't update view yet - wait for the additional messages
-                return None;
-            }
-        }
+        // Set app state to MessagePicker and focus messages
+        self.set_app_state(crate::app::model::AppState::MessagePicker);
 
+        // Update current page view to show the correct messages for the current page
         if let Err(e) = self.update_current_page_view() {
-            self.error_reporter
-                .report_simple(e, "MessageState", "new_messages");
-            return None;
+            log::error!("Failed to update current page view after loading: {}", e);
         }
 
-        self.set_app_state(AppState::MessagePicker);
+        // Focus the messages component if we have messages
+        if message_count > 0 {
+            if let Err(e) = self
+                .app
+                .active(&crate::components::common::ComponentId::Messages)
+            {
+                log::error!("Failed to activate messages component: {}", e);
+            }
 
-        if !self
-            .queue_state()
-            .message_pagination
-            .all_loaded_messages
-            .is_empty()
-        {
+            // Also remount message details for the first message
             if let Err(e) = self.remount_message_details(0) {
-                self.error_reporter
-                    .report_simple(e, "MessageState", "new_messages");
-                return None;
+                log::error!("Failed to remount message details: {}", e);
             }
         }
 
         None
-    }
-
-    /// Handle backfill messages loaded
-    pub fn handle_backfill_messages_loaded(
-        &mut self,
-        backfill_messages: Vec<MessageModel>,
-    ) -> Option<Msg> {
-        if backfill_messages.is_empty() {
-            log::debug!("No messages loaded for backfill");
-            return None;
-        }
-
-        self.add_backfill_messages_to_state(backfill_messages);
-        self.ensure_pagination_consistency_after_backfill();
-        self.update_pagination_and_view()
     }
 
     /// Handle bulk removal of messages from state - now simplified and focused
@@ -228,8 +220,25 @@ where
             log::debug!("Removing message ID: {}", msg_id);
         }
 
-        // Invalidate stats cache since queue size is changing
-        self.queue_state_mut().message_pagination.invalidate_stats_cache();
+        // Invalidate and refresh stats cache for current queue since its size is changing
+        if let Some(queue_name) = &self.queue_state().current_queue_name {
+            let base_queue_name = if queue_name.ends_with("/$deadletterqueue") {
+                queue_name.trim_end_matches("/$deadletterqueue").to_string()
+            } else {
+                queue_name.clone()
+            };
+            self.queue_state_mut()
+                .stats_manager
+                .invalidate_stats_cache_for_queue(&base_queue_name);
+
+            // Immediately refresh the statistics to show updated counts
+            if let Err(e) = self.load_queue_statistics_from_api(&base_queue_name) {
+                log::error!(
+                    "Failed to refresh queue statistics after bulk removal: {}",
+                    e
+                );
+            }
+        }
 
         let removed_count = self.remove_messages_from_pagination_state(&message_ids);
         let (target_page, remaining_message_count) =
@@ -271,35 +280,7 @@ where
         // Update pagination state
         self.queue_state_mut().message_pagination.update(page_size);
 
-        // Send pagination state update inline
-        if let Err(e) = self.state_manager.tx_to_main.send(Msg::MessageActivity(
-            MessageActivityMsg::PaginationStateUpdated {
-                has_next: self
-                    .queue_manager
-                    .queue_state
-                    .message_pagination
-                    .has_next_page,
-                has_previous: self
-                    .queue_manager
-                    .queue_state
-                    .message_pagination
-                    .has_previous_page,
-                current_page: self
-                    .queue_manager
-                    .queue_state
-                    .message_pagination
-                    .current_page,
-                total_pages_loaded: self
-                    .queue_manager
-                    .queue_state
-                    .message_pagination
-                    .total_pages_loaded,
-            },
-        )) {
-            self.error_reporter
-                .report_send_error("pagination state update", &e);
-            return None;
-        }
+        // Pagination state is now managed internally, no need to send separate update
 
         // Force cursor reset to position 0 after bulk removal
         // This is different from normal page navigation where we preserve cursor
@@ -760,8 +741,25 @@ where
         failed_count: usize,
         total_count: usize,
     ) -> Option<Msg> {
-        // Invalidate stats cache since messages were deleted from queue
-        self.queue_state_mut().message_pagination.invalidate_stats_cache();
+        // Invalidate and refresh stats cache for current queue since messages were deleted from it
+        if let Some(queue_name) = &self.queue_state().current_queue_name {
+            let base_queue_name = if queue_name.ends_with("/$deadletterqueue") {
+                queue_name.trim_end_matches("/$deadletterqueue").to_string()
+            } else {
+                queue_name.clone()
+            };
+            self.queue_state_mut()
+                .stats_manager
+                .invalidate_stats_cache_for_queue(&base_queue_name);
+
+            // Immediately refresh the statistics to show updated counts
+            if let Err(e) = self.load_queue_statistics_from_api(&base_queue_name) {
+                log::error!(
+                    "Failed to refresh queue statistics after bulk delete: {}",
+                    e
+                );
+            }
+        }
 
         // Show success/status popup
         let queue_name = match &self.queue_manager.queue_state.current_queue_type {
@@ -788,148 +786,122 @@ where
         ))
     }
 
-    /// Add backfill messages to state
-    pub fn add_backfill_messages_to_state(&mut self, messages: Vec<MessageModel>) {
-        log::info!("Adding {} backfill messages to state", messages.len());
-
-        self.queue_state_mut()
-            .message_pagination
-            .all_loaded_messages
-            .extend(messages);
-
-        log::debug!(
-            "Added backfill messages, total messages now: {}",
-            &self
-                .queue_manager
-                .queue_state
-                .message_pagination
-                .all_loaded_messages
-                .len()
-        );
-    }
-
-    /// Ensure pagination consistency after backfill
-    pub fn ensure_pagination_consistency_after_backfill(&mut self) {
-        let total_messages = self
-            .queue_state()
-            .message_pagination
-            .all_loaded_messages
-            .len();
-        let messages_per_page = config::get_config_or_panic().max_messages();
-
-        let new_total_pages = if total_messages == 0 {
-            0
-        } else {
-            total_messages.div_ceil(messages_per_page as usize)
-        };
-
-        self.queue_state_mut().message_pagination.total_pages_loaded = new_total_pages;
-
-        if new_total_pages > 0
-            && self
-                .queue_manager
-                .queue_state
-                .message_pagination
-                .current_page
-                >= new_total_pages
-        {
-            self.queue_state_mut().message_pagination.current_page = new_total_pages - 1;
-        }
-
-        // Update pagination state
-        self.queue_state_mut().message_pagination.has_previous_page = self
-            .queue_manager
-            .queue_state
-            .message_pagination
-            .current_page
-            > 0;
-        self.queue_state_mut().message_pagination.has_next_page = self
-            .queue_manager
-            .queue_state
-            .message_pagination
-            .current_page
-            < new_total_pages.saturating_sub(1);
-
-        log::debug!(
-            "Ensured pagination consistency: {}/{} pages, current page: {}",
-            self.queue_manager
-                .queue_state
-                .message_pagination
-                .current_page
-                + 1,
-            new_total_pages,
-            self.queue_manager
-                .queue_state
-                .message_pagination
-                .current_page
-        );
-    }
-
     /// Handle queue statistics update
     pub fn handle_queue_stats_updated(
         &mut self,
         stats_cache: crate::app::updates::messages::pagination::QueueStatsCache,
     ) -> Option<Msg> {
-        log::debug!("Updating queue stats cache");
+        log::info!("Updating queue stats cache for: {}", stats_cache.queue_name);
+
+        // Update the cache
         self.queue_state_mut()
-            .message_pagination
+            .stats_manager
             .update_stats_cache(stats_cache);
+
+        // Remount to show updated stats
+        if let Err(e) = self.remount_messages() {
+            log::error!("Failed to remount messages after stats update: {}", e);
+        }
+
         None
     }
 
-    /// Load queue statistics for the current queue
-    pub fn load_queue_statistics_for_current_queue(&mut self) -> crate::error::AppResult<()> {
-        let queue_name = self.queue_state().current_queue_name.clone();
-        let queue_type = self.queue_state().current_queue_type.clone();
-        
-        if let Some(name) = queue_name {
-            log::debug!("Loading statistics for queue: {} ({:?})", name, queue_type);
-            
-            // Load stats in background immediately
-            let service_bus_manager = self.get_service_bus_manager();
-            let tx_to_main = self.state_manager.tx_to_main.clone();
+    /// Load queue statistics from API (background, non-blocking)
+    pub fn load_queue_statistics_from_api(
+        &mut self,
+        base_queue_name: &str,
+    ) -> crate::error::AppResult<()> {
+        let queue_name = base_queue_name.to_string();
+        let service_bus_manager = self.get_service_bus_manager();
+        let tx_to_main = self.state_manager.tx_to_main.clone();
 
-            self.task_manager.execute("Loading queue stats...", async move {
-                use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
+        log::info!("Loading statistics from API for queue: {}", queue_name);
 
-                log::debug!("Loading queue statistics for: {} ({:?})", name, queue_type);
-                let stats_command = ServiceBusCommand::GetQueueStatistics {
-                    queue_name: name.clone(),
-                    queue_type: queue_type.clone(),
-                };
-                
-                match service_bus_manager.lock().await.execute_command(stats_command).await {
-                    ServiceBusResponse::QueueStatistics {
+        self.task_manager.execute_background(async move {
+            use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
+
+            let stats_command = ServiceBusCommand::GetQueueStatistics {
+                queue_name: queue_name.clone(),
+                queue_type: server::service_bus_manager::QueueType::Main, // We get both counts regardless
+            };
+
+            match service_bus_manager
+                .lock()
+                .await
+                .execute_command(stats_command)
+                .await
+            {
+                ServiceBusResponse::QueueStatistics {
+                    queue_name,
+                    active_message_count,
+                    dead_letter_message_count,
+                    ..
+                } => {
+                    let active_count = active_message_count.unwrap_or(0);
+                    let dlq_count = dead_letter_message_count.unwrap_or(0);
+
+                    log::info!(
+                        "Loaded stats for {}: active={}, dlq={}",
                         queue_name,
-                        queue_type,
-                        active_message_count,
-                        dead_letter_message_count,
-                        retrieved_at: _,
-                    } => {
-                        log::debug!("Successfully loaded queue stats: active={:?}", active_message_count);
-                        let stats_cache = crate::app::updates::messages::pagination::QueueStatsCache::new(
+                        active_count,
+                        dlq_count
+                    );
+
+                    let stats_cache =
+                        crate::app::updates::messages::pagination::QueueStatsCache::new(
                             queue_name,
-                            queue_type,
-                            active_message_count,
-                            dead_letter_message_count,
+                            active_count,
+                            dlq_count,
                         );
-                        
-                        if let Err(e) = tx_to_main.send(Msg::MessageActivity(MessageActivityMsg::QueueStatsUpdated(stats_cache))) {
-                            log::warn!("Failed to send queue stats update: {}", e);
-                        }
-                    }
-                    ServiceBusResponse::Error { error } => {
-                        log::warn!("Failed to load queue stats: {}", error);
-                    }
-                    _ => {
-                        log::warn!("Unexpected response for queue statistics");
+
+                    if let Err(e) =
+                        tx_to_main.send(crate::components::common::Msg::MessageActivity(
+                            crate::components::common::MessageActivityMsg::QueueStatsUpdated(
+                                stats_cache,
+                            ),
+                        ))
+                    {
+                        log::error!("Failed to send queue stats update: {}", e);
                     }
                 }
+                ServiceBusResponse::Error { error } => {
+                    log::warn!("Failed to load queue stats for {}: {}", queue_name, error);
+                }
+                _ => {
+                    log::warn!(
+                        "Unexpected response for queue statistics for {}",
+                        queue_name
+                    );
+                }
+            }
 
-                Ok(())
-            });
-        }
-        
+            Ok::<(), crate::error::AppError>(())
+        });
+
         Ok(())
+    }
+
+    /// Handle refresh queue statistics request (triggered after bulk operations)
+    pub fn handle_refresh_queue_statistics(&mut self) -> Option<Msg> {
+        if let Some(queue_name) = &self.queue_state().current_queue_name {
+            let base_queue_name = if queue_name.ends_with("/$deadletterqueue") {
+                queue_name.trim_end_matches("/$deadletterqueue").to_string()
+            } else {
+                queue_name.clone()
+            };
+
+            log::info!("Refreshing queue statistics for: {}", base_queue_name);
+
+            // Invalidate current cache to force fresh data
+            self.queue_state_mut()
+                .stats_manager
+                .invalidate_stats_cache_for_queue(&base_queue_name);
+
+            // Load fresh statistics from API
+            if let Err(e) = self.load_queue_statistics_from_api(&base_queue_name) {
+                log::error!("Failed to refresh queue statistics: {}", e);
+            }
+        }
+        None
     }
 }

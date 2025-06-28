@@ -1,5 +1,6 @@
 use super::consumer_manager::ConsumerManager;
 use super::producer_manager::ProducerManager;
+use super::queue_statistics_service::QueueStatisticsService;
 use super::types::{QueueInfo, QueueType};
 use crate::bulk_operations::{BulkOperationHandler, MessageIdentifier};
 use crate::service_bus_manager::{
@@ -22,11 +23,18 @@ const ERROR_PEEKED_TO_REGULAR_QUEUE: &str =
 /// Handles queue-related commands
 pub struct QueueCommandHandler {
     consumer_manager: Arc<Mutex<ConsumerManager>>,
+    statistics_service: Arc<QueueStatisticsService>,
 }
 
 impl QueueCommandHandler {
-    pub fn new(consumer_manager: Arc<Mutex<ConsumerManager>>) -> Self {
-        Self { consumer_manager }
+    pub fn new(
+        consumer_manager: Arc<Mutex<ConsumerManager>>,
+        statistics_service: Arc<QueueStatisticsService>,
+    ) -> Self {
+        Self {
+            consumer_manager,
+            statistics_service,
+        }
     }
 
     pub async fn handle_switch_queue(
@@ -51,18 +59,27 @@ impl QueueCommandHandler {
         queue_name: String,
         queue_type: QueueType,
     ) -> ServiceBusResult<ServiceBusResponse> {
-        log::debug!("Getting statistics for queue: {} (type: {:?})", queue_name, queue_type);
-        
-        let retrieved_at = chrono::Utc::now();
-        
-        // Get real queue statistics from the current queue
-        let (active_count, dlq_count) = self.get_current_queue_statistics(&queue_name, &queue_type).await;
-        
         log::debug!(
-            "Retrieved stats for queue '{}' ({:?}): active={:?}, dlq={:?}",
-            queue_name, queue_type, active_count, dlq_count
+            "Getting real statistics for queue: {} (type: {:?})",
+            queue_name,
+            queue_type
         );
-        
+
+        let retrieved_at = chrono::Utc::now();
+
+        // Get both active and dead letter counts from Azure Management API
+        let (active_count, dlq_count) = self
+            .statistics_service
+            .get_both_queue_counts(&queue_name)
+            .await;
+
+        log::debug!(
+            "Retrieved stats for queue '{}': active={:?}, dlq={:?}",
+            queue_name,
+            active_count,
+            dlq_count
+        );
+
         Ok(ServiceBusResponse::QueueStatistics {
             queue_name,
             queue_type,
@@ -70,92 +87,6 @@ impl QueueCommandHandler {
             dead_letter_message_count: dlq_count,
             retrieved_at,
         })
-    }
-
-    /// Get statistics for the current queue by analyzing loaded messages
-    async fn get_current_queue_statistics(&self, queue_name: &str, queue_type: &QueueType) -> (Option<u64>, Option<u64>) {
-        let manager = self.consumer_manager.lock().await;
-        
-        // Only provide statistics if we're currently connected to the requested queue
-        if let Some(current_queue) = manager.current_queue() {
-            if current_queue.name == queue_name && current_queue.queue_type == *queue_type {
-                // We're connected to the requested queue, try to get real statistics
-                match self.estimate_current_queue_size(&manager).await {
-                    Some(active_count) => {
-                        match queue_type {
-                            QueueType::Main => {
-                                // For main queue, we can't easily get DLQ count without switching
-                                // Return the active count and indicate DLQ count is unknown
-                                (Some(active_count), None)
-                            }
-                            QueueType::DeadLetter => {
-                                // For DLQ, there's no sub-DLQ
-                                (Some(active_count), Some(0))
-                            }
-                        }
-                    }
-                    None => {
-                        // Fall back to basic estimation
-                        match queue_type {
-                            QueueType::Main => (None, None),
-                            QueueType::DeadLetter => (None, Some(0)),
-                        }
-                    }
-                }
-            } else {
-                // Not connected to the requested queue, can't provide real statistics
-                log::debug!("Cannot provide statistics for '{}' - currently connected to '{}'", 
-                          queue_name, current_queue.name);
-                (None, None)
-            }
-        } else {
-            // No queue connected
-            log::debug!("Cannot provide statistics - no queue currently connected");
-            (None, None)
-        }
-    }
-
-    /// Estimate the size of the currently connected queue
-    async fn estimate_current_queue_size(&self, manager: &crate::service_bus_manager::consumer_manager::ConsumerManager) -> Option<u64> {
-        // Try to peek messages to estimate queue size
-        match manager.peek_messages(100, None).await {
-            Ok(messages) if !messages.is_empty() => {
-                let first_seq = messages.first().unwrap().sequence;
-                let last_seq = messages.last().unwrap().sequence;
-                
-                // If we got a full batch (100 messages), try to estimate total by peeking further
-                if messages.len() == 100 {
-                    // Try to find the end of the queue by peeking with a high sequence number
-                    match manager.peek_messages(1, Some(last_seq + 10000)).await {
-                        Ok(end_messages) if !end_messages.is_empty() => {
-                            let highest_seq = end_messages.first().unwrap().sequence;
-                            let estimated_count = (highest_seq - first_seq + 1) as u64;
-                            log::debug!("Estimated {} messages (seq range: {}-{})", estimated_count, first_seq, highest_seq);
-                            Some(estimated_count)
-                        }
-                        _ => {
-                            // Conservative estimate based on what we can see
-                            let estimated_count = (last_seq - first_seq + 1) as u64;
-                            log::debug!("Conservative estimate: {} messages (seq range: {}-{})", estimated_count, first_seq, last_seq);
-                            Some(estimated_count)
-                        }
-                    }
-                } else {
-                    // Small queue, use actual count
-                    let count = messages.len() as u64;
-                    log::debug!("Small queue with {} messages", count);
-                    Some(count)
-                }
-            }
-            Ok(_) => {
-                log::debug!("Queue appears to be empty");
-                Some(0)
-            }
-            Err(e) => {
-                log::warn!("Failed to peek messages for statistics: {}", e);
-                None
-            }
-        }
     }
 }
 
@@ -258,7 +189,8 @@ impl BulkCommandHandler {
 
         let consumer = {
             let manager = self.consumer_manager.lock().await;
-            manager.get_raw_consumer()
+            manager
+                .get_raw_consumer()
                 .ok_or(ServiceBusError::ConsumerNotFound)?
                 .clone()
         };
@@ -331,7 +263,8 @@ impl BulkCommandHandler {
 
         let consumer = {
             let manager = self.consumer_manager.lock().await;
-            manager.get_raw_consumer()
+            manager
+                .get_raw_consumer()
                 .ok_or(ServiceBusError::ConsumerNotFound)?
                 .clone()
         };
@@ -399,7 +332,8 @@ impl BulkCommandHandler {
         if let crate::bulk_operations::QueueOperationType::SendToDLQ = operation_type {
             let consumer = {
                 let manager = self.consumer_manager.lock().await;
-                manager.get_raw_consumer()
+                manager
+                    .get_raw_consumer()
                     .ok_or(ServiceBusError::ConsumerNotFound)?
                     .clone()
             };
@@ -568,11 +502,6 @@ mod tests {
 
     #[test]
     fn test_error_constants() {
-        // Test that our error constants are not empty
-        assert!(!ERROR_INDIVIDUAL_MSG_OPERATIONS.is_empty());
-        assert!(!ERROR_BULK_OPERATIONS.is_empty());
-        assert!(!ERROR_PEEKED_TO_REGULAR_QUEUE.is_empty());
-
         // Test that error messages are descriptive
         assert!(ERROR_INDIVIDUAL_MSG_OPERATIONS.contains("require message to be received"));
         assert!(ERROR_BULK_OPERATIONS.contains("require message to be received"));
@@ -607,4 +536,3 @@ mod tests {
         assert!(ERROR_PEEKED_TO_REGULAR_QUEUE.len() > 10);
     }
 }
-

@@ -64,21 +64,32 @@ pub fn format_pagination_status(info: &PaginationInfo) -> String {
             info.current_page_size
         );
 
-        // Add queue statistics if available
-        let queue_info = if let Some(total) = info.queue_total_messages {
-            if let Some(age) = info.queue_stats_age_seconds {
-                if age < 60 {
-                    format!(" • {} in queue", total)
+        // Add queue statistics if available and enabled
+        let queue_info = if crate::config::get_config_or_panic().queue_stats_display_enabled() {
+            if let Some(total) = info.queue_total_messages {
+                if let Some(age) = info.queue_stats_age_seconds {
+                    let age_threshold = crate::config::get_config_or_panic()
+                        .ui()
+                        .queue_stats_age_threshold_seconds()
+                        as i64;
+                    if age < age_threshold {
+                        format!(" • {} in queue", total)
+                    } else {
+                        format!(" • ~{} in queue ({}m ago)", total, age / age_threshold)
+                    }
                 } else {
-                    format!(" • ~{} in queue ({}m ago)", total, age / 60)
+                    format!(" • {} in queue", total)
                 }
             } else {
-                format!(" • {} in queue", total)
+                String::new()
             }
         } else {
             String::new()
         };
 
-        format!("{}{} {} {}", base_status, queue_info, navigation_hints, bulk_info)
+        format!(
+            "{}{} {} {}",
+            base_status, queue_info, navigation_hints, bulk_info
+        )
     }
 }

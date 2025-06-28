@@ -120,6 +120,14 @@ impl BulkOperationPostProcessor {
                     return Err(AppError::Component(e.to_string()));
                 }
 
+                // Refresh queue statistics after bulk operation
+                if let Err(e) = tx_to_main.send(Msg::MessageActivity(
+                    MessageActivityMsg::RefreshQueueStatistics,
+                )) {
+                    error_reporter.report_send_error("refresh queue statistics", &e);
+                    // Don't fail the operation if statistics refresh fails
+                }
+
                 // Send completion message after reload
                 Self::send_completion_message(context, tx_to_main, error_reporter)?;
             }
@@ -142,10 +150,26 @@ impl BulkOperationPostProcessor {
                     }
                 }
 
+                // Refresh queue statistics after bulk operation
+                if let Err(e) = tx_to_main.send(Msg::MessageActivity(
+                    MessageActivityMsg::RefreshQueueStatistics,
+                )) {
+                    error_reporter.report_send_error("refresh queue statistics", &e);
+                    // Don't fail the operation if statistics refresh fails
+                }
+
                 // Send completion message after removal
                 Self::send_completion_message(context, tx_to_main, error_reporter)?;
             }
             ReloadStrategy::CompletionOnly => {
+                // Refresh queue statistics after bulk operation
+                if let Err(e) = tx_to_main.send(Msg::MessageActivity(
+                    MessageActivityMsg::RefreshQueueStatistics,
+                )) {
+                    error_reporter.report_send_error("refresh queue statistics", &e);
+                    // Don't fail the operation if statistics refresh fails
+                }
+
                 // Only send completion message
                 Self::send_completion_message(context, tx_to_main, error_reporter)?;
             }

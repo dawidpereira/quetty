@@ -93,16 +93,9 @@ pub enum MessageActivityMsg {
     QueueNameUpdated(String),
     NextPage,
     PreviousPage,
-    PaginationStateUpdated {
-        has_next: bool,
-        has_previous: bool,
-        current_page: usize,
-        total_pages_loaded: usize,
-    },
+
     NewMessagesLoaded(Vec<MessageModel>),
-    BackfillMessagesLoaded(Vec<MessageModel>),
     QueueStatsUpdated(crate::app::updates::messages::pagination::QueueStatsCache),
-    PageChanged,
     ToggleMessageSelectionByIndex(usize),
     SelectAllCurrentPage,
     SelectAllLoadedMessages,
@@ -129,6 +122,7 @@ pub enum MessageActivityMsg {
         total_count: usize,
     },
     ForceReloadMessages,
+    RefreshQueueStatistics,
 }
 
 #[derive(Debug, PartialEq)]

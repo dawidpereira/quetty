@@ -8,6 +8,12 @@ use tokio::sync::Mutex;
 /// Handles message collection operations from Service Bus queues
 pub struct MessageCollector;
 
+impl Default for MessageCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MessageCollector {
     pub fn new() -> Self {
         Self
@@ -54,7 +60,11 @@ impl MessageCollector {
                     messages_processed += new_messages;
                 }
                 None => {
-                    self.log_no_more_messages(messages_processed, target_messages.len(), target_count);
+                    self.log_no_more_messages(
+                        messages_processed,
+                        target_messages.len(),
+                        target_count,
+                    );
                     break;
                 }
             }
@@ -226,4 +236,5 @@ impl MessageCollector {
 
         new_targets_found
     }
-} 
+}
+

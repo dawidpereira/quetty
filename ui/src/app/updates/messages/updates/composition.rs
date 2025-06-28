@@ -63,6 +63,26 @@ where
 
     /// Handle successful message sending by auto-reload only for empty queues
     pub fn handle_messages_sent_successfully(&mut self) -> Option<Msg> {
+        // Invalidate and refresh stats cache for current queue since messages were sent to it
+        if let Some(queue_name) = &self.queue_state().current_queue_name {
+            let base_queue_name = if queue_name.ends_with("/$deadletterqueue") {
+                queue_name.trim_end_matches("/$deadletterqueue").to_string()
+            } else {
+                queue_name.clone()
+            };
+            self.queue_state_mut()
+                .stats_manager
+                .invalidate_stats_cache_for_queue(&base_queue_name);
+
+            // Immediately refresh the statistics to show updated counts
+            if let Err(e) = self.load_queue_statistics_from_api(&base_queue_name) {
+                log::error!(
+                    "Failed to refresh queue statistics after message send: {}",
+                    e
+                );
+            }
+        }
+
         let current_messages = self
             .queue_state()
             .message_pagination

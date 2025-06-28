@@ -175,11 +175,11 @@ impl<T: TerminalAdapter> BulkOperationSetup<T> {
             BulkOperationType::Delete => {
                 // Delete can work from either queue type
                 // We'll use the current queue type (no restriction)
-                return unsafe { &*self.model }
+                unsafe { &*self.model }
                     .queue_manager
                     .queue_state
                     .current_queue_type
-                    .clone();
+                    .clone()
             }
             BulkOperationType::ResendFromDlq { .. } => QueueType::DeadLetter,
             BulkOperationType::SendToDlq { .. } => QueueType::Main,
@@ -321,7 +321,6 @@ impl<T: TerminalAdapter> ValidatedBulkOperation<T> {
             auto_reload_threshold: self.config.auto_reload_threshold,
             current_message_count,
             selected_from_current_page,
-            operation_type: self.operation_type.clone(),
         }
     }
 }
@@ -332,8 +331,6 @@ pub struct BulkOperationContext {
     pub auto_reload_threshold: usize,
     pub current_message_count: usize,
     pub selected_from_current_page: usize,
-    #[allow(dead_code)]
-    pub operation_type: BulkOperationType,
 }
 
 /// Get human-readable queue type name
@@ -364,21 +361,6 @@ pub trait BulkOperationValidation<T: TerminalAdapter> {
             operation_name,
             message_count
         );
-    }
-
-    /// Create consistent error for invalid queue type
-    #[allow(dead_code)]
-    fn create_queue_type_error(
-        current_type: QueueType,
-        required_type: QueueType,
-        operation_name: &str,
-    ) -> AppError {
-        AppError::State(format!(
-            "{} operation not allowed: currently in {} but operation requires {}",
-            operation_name,
-            queue_type_display_name(current_type),
-            queue_type_display_name(required_type)
-        ))
     }
 }
 
