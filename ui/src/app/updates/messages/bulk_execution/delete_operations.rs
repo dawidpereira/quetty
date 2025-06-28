@@ -1,6 +1,7 @@
 use super::operation_setup::{BulkOperationSetup, BulkOperationType, BulkOperationValidation};
 use crate::app::bulk_operation_processor::BulkOperationPostProcessor;
 use crate::app::model::Model;
+use crate::app::task_manager::ProgressReporter;
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
 use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
@@ -42,58 +43,91 @@ pub fn handle_bulk_delete_execution<T: TerminalAdapter>(
     // Log message order warning
     Model::<T>::log_message_order_warning(message_ids.len(), "delete");
 
-    // Use TaskManager for proper loading management
-    model.task_manager.execute(loading_message, async move {
-        log::info!(
-            "Starting bulk delete operation for {} messages",
-            message_ids.len()
-        );
+    // Generate unique operation ID for cancellation support
+    let operation_id = format!(
+        "bulk_delete_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
 
-        // Execute bulk delete using service bus manager
-        let command = ServiceBusCommand::BulkDelete {
-            message_ids: message_ids.clone(),
-        };
+    // Use enhanced TaskManager with progress reporting and cancellation
+    model.task_manager.execute_with_progress(
+        loading_message,
+        operation_id,
+        move |progress: ProgressReporter| {
+            Box::pin(async move {
+                log::info!(
+                    "Starting enhanced bulk delete operation for {} messages",
+                    message_ids.len()
+                );
 
-        let response = service_bus_manager
-            .lock()
-            .await
-            .execute_command(command)
-            .await;
+                // Report initial progress
+                progress.report_progress("Initializing...");
 
-        let delete_result = match response {
-            ServiceBusResponse::BulkOperationCompleted { result } => result,
-            ServiceBusResponse::Error { error } => {
-                log::error!("Bulk delete operation failed: {}", error);
-                return Err(AppError::ServiceBus(error.to_string()));
-            }
-            _ => {
-                return Err(AppError::ServiceBus(
-                    "Unexpected response for bulk delete".to_string(),
-                ));
-            }
-        };
+                // Execute bulk delete using service bus manager
+                let command = ServiceBusCommand::BulkDelete {
+                    message_ids: message_ids.clone(),
+                };
 
-        log::info!(
-            "Bulk delete completed: {} successful, {} failed",
-            delete_result.successful,
-            delete_result.failed
-        );
+                progress.report_progress("Executing delete operation...");
 
-        // Create context for centralized post-processing
-        let message_ids_str: Vec<String> = message_ids.iter().map(|id| id.to_string()).collect();
-        let post_context = BulkOperationPostProcessor::create_delete_context(
-            &delete_result,
-            message_ids_str,
-            context.auto_reload_threshold,
-            context.current_message_count,
-            context.selected_from_current_page,
-        );
+                let response = service_bus_manager
+                    .lock()
+                    .await
+                    .execute_command(command)
+                    .await;
 
-        // Use centralized post-processor to handle completion
-        BulkOperationPostProcessor::handle_completion(&post_context, &tx_to_main, &error_reporter)?;
+                let delete_result = match response {
+                    ServiceBusResponse::BulkOperationCompleted { result } => {
+                        progress.report_progress(format!(
+                            "Completed: {} successful, {} failed",
+                            result.successful, result.failed
+                        ));
+                        result
+                    }
+                    ServiceBusResponse::Error { error } => {
+                        log::error!("Bulk delete operation failed: {}", error);
+                        return Err(AppError::ServiceBus(error.to_string()));
+                    }
+                    _ => {
+                        return Err(AppError::ServiceBus(
+                            "Unexpected response for bulk delete".to_string(),
+                        ));
+                    }
+                };
 
-        Ok(())
-    });
+                log::info!(
+                    "Bulk delete completed: {} successful, {} failed",
+                    delete_result.successful,
+                    delete_result.failed
+                );
+
+                progress.report_progress("Finalizing...");
+
+                // Create context for centralized post-processing
+                let message_ids_str: Vec<String> =
+                    message_ids.iter().map(|id| id.to_string()).collect();
+                let post_context = BulkOperationPostProcessor::create_delete_context(
+                    &delete_result,
+                    message_ids_str,
+                    context.auto_reload_threshold,
+                    context.current_message_count,
+                    context.selected_from_current_page,
+                );
+
+                // Use centralized post-processor to handle completion
+                BulkOperationPostProcessor::handle_completion(
+                    &post_context,
+                    &tx_to_main,
+                    &error_reporter,
+                )?;
+
+                Ok(())
+            })
+        },
+    );
 
     None
 }

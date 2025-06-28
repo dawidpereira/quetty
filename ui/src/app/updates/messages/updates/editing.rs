@@ -126,27 +126,55 @@ where
         let service_bus_manager = Arc::clone(&self.service_bus_manager);
         let tx_to_main = self.state_manager.tx_to_main.clone();
 
-        self.task_manager.execute(loading_message, async move {
-            let result = if repeat_count == 1 {
-                Self::send_single_message(service_bus_manager, queue_name, content).await
-            } else {
-                Self::send_multiple_messages(service_bus_manager, queue_name, content, repeat_count)
-                    .await
-            };
+        // Generate unique operation ID for cancellation support
+        let operation_id = format!(
+            "send_message_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+        );
 
-            let success_message = if repeat_count == 1 {
-                "✅ Message sent successfully!".to_string()
-            } else {
-                format!("✅ {} messages sent successfully!", repeat_count)
-            };
+        self.task_manager.execute_with_progress(
+            loading_message,
+            operation_id,
+            move |progress: crate::app::task_manager::ProgressReporter| {
+                Box::pin(async move {
+                    progress.report_progress("Preparing message for sending...");
 
-            async_operations::send_completion_messages(
-                &tx_to_main,
-                result.clone(),
-                &success_message,
-            );
-            result
-        });
+                    let result = if repeat_count == 1 {
+                        progress.report_progress("Sending message...");
+                        Self::send_single_message(service_bus_manager, queue_name, content).await
+                    } else {
+                        progress.report_progress(format!("Sending {} messages...", repeat_count));
+                        Self::send_multiple_messages(
+                            service_bus_manager,
+                            queue_name,
+                            content,
+                            repeat_count,
+                        )
+                        .await
+                    };
+
+                    if result.is_ok() {
+                        progress.report_progress("Message sent successfully!");
+                    }
+
+                    let success_message = if repeat_count == 1 {
+                        "✅ Message sent successfully!".to_string()
+                    } else {
+                        format!("✅ {} messages sent successfully!", repeat_count)
+                    };
+
+                    async_operations::send_completion_messages(
+                        &tx_to_main,
+                        result.clone(),
+                        &success_message,
+                    );
+                    result
+                })
+            },
+        );
 
         None
     }
@@ -172,66 +200,85 @@ where
         let tx_to_main = self.state_manager.tx_to_main.clone();
         let message_id_str = message_id.to_string();
 
-        self.task_manager
-            .execute("Replacing message...", async move {
-                let result = async {
-                    // Step 1: Send new message with edited content
-                    Self::send_single_message(Arc::clone(&service_bus_manager), queue_name.clone(), content)
-                        .await?;
+        // Generate unique operation ID for cancellation support
+        let operation_id = format!(
+            "replace_message_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+        );
 
-                    // Step 2: Delete original message using service bus manager
-                    let delete_command = ServiceBusCommand::BulkDelete {
-                        message_ids: vec![message_id],
-                    };
+        self.task_manager.execute_with_progress(
+            "Replacing message...",
+            operation_id,
+            move |progress: crate::app::task_manager::ProgressReporter| {
+                Box::pin(async move {
+                    progress.report_progress("Preparing message replacement...");
 
-                    let delete_response = service_bus_manager.lock().await.execute_command(delete_command).await;
+                    let result = async {
+                        // Step 1: Send new message with edited content
+                        progress.report_progress("Sending new message...");
+                        Self::send_single_message(Arc::clone(&service_bus_manager), queue_name.clone(), content)
+                            .await?;
 
-                    match delete_response {
-                        ServiceBusResponse::BulkOperationCompleted { result } => {
-                            if result.successful > 0 {
-                                log::info!(
-                                    "Successfully deleted original message {} in queue: {}",
-                                    message_id_str,
-                                    queue_name
-                                );
-                            } else {
-                                log::warn!(
-                                    "Message {} was not found or could not be deleted (may have been already processed)",
-                                    message_id_str
-                                );
+                        // Step 2: Delete original message using service bus manager
+                        progress.report_progress("Deleting original message...");
+                        let delete_command = ServiceBusCommand::BulkDelete {
+                            message_ids: vec![message_id],
+                        };
+
+                        let delete_response = service_bus_manager.lock().await.execute_command(delete_command).await;
+
+                        match delete_response {
+                            ServiceBusResponse::BulkOperationCompleted { result } => {
+                                if result.successful > 0 {
+                                    log::info!(
+                                        "Successfully deleted original message {} in queue: {}",
+                                        message_id_str,
+                                        queue_name
+                                    );
+                                } else {
+                                    log::warn!(
+                                        "Message {} was not found or could not be deleted (may have been already processed)",
+                                        message_id_str
+                                    );
+                                }
+                            }
+                            ServiceBusResponse::Error { error } => {
+                                log::error!("Failed to delete original message: {}", error);
+                                return Err(AppError::ServiceBus(format!("Failed to delete original message: {}", error)));
+                            }
+                            _ => {
+                                return Err(AppError::ServiceBus("Unexpected response for bulk delete".to_string()));
                             }
                         }
-                        ServiceBusResponse::Error { error } => {
-                            log::error!("Failed to delete original message: {}", error);
-                            return Err(AppError::ServiceBus(format!("Failed to delete original message: {}", error)));
-                        }
-                        _ => {
-                            return Err(AppError::ServiceBus("Unexpected response for bulk delete".to_string()));
-                        }
+
+                        progress.report_progress("Message replacement completed!");
+                        log::info!(
+                            "Successfully replaced message {} in queue: {}",
+                            message_id_str,
+                            queue_name
+                        );
+                        Ok::<(), AppError>(())
+                    }
+                    .await;
+
+                    if result.is_ok() {
+                        let _ = tx_to_main.send(Msg::MessageActivity(
+                            MessageActivityMsg::BulkRemoveMessagesFromState(vec![message_id_str]),
+                        ));
                     }
 
-                    log::info!(
-                        "Successfully replaced message {} in queue: {}",
-                        message_id_str,
-                        queue_name
+                    async_operations::send_completion_messages(
+                        &tx_to_main,
+                        result.clone(),
+                        "✅ Message replaced successfully!",
                     );
-                    Ok::<(), AppError>(())
-                }
-                .await;
-
-                if result.is_ok() {
-                    let _ = tx_to_main.send(Msg::MessageActivity(
-                        MessageActivityMsg::BulkRemoveMessagesFromState(vec![message_id_str]),
-                    ));
-                }
-
-                async_operations::send_completion_messages(
-                    &tx_to_main,
-                    result.clone(),
-                    "✅ Message replaced successfully!",
-                );
-                result
-            });
+                    result
+                })
+            },
+        );
 
         None
     }

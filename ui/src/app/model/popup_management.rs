@@ -30,7 +30,10 @@ where
         self.app.mount_with_state(
             ComponentId::LoadingIndicator,
             LoadingIndicator::new(message, true),
-            vec![Sub::new(SubEventClause::Tick, SubClause::Always)],
+            vec![
+                Sub::new(SubEventClause::Tick, SubClause::Always),
+                Sub::new(SubEventClause::Any, SubClause::Always),
+            ],
         )?;
 
         log::debug!("Loading indicator mounted successfully");

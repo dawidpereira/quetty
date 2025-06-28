@@ -96,6 +96,52 @@ async fn test_execute_success_complete_flow() {
 }
 
 #[tokio::test]
+async fn test_execute_with_progress_complete_flow() {
+    let (task_manager, rx) = create_test_setup();
+
+    task_manager.execute_with_progress(
+        "Testing progress execution",
+        "test_operation_123",
+        move |progress| {
+            Box::pin(async move {
+                progress.report_progress("Starting work...");
+                sleep(Duration::from_millis(10)).await;
+                progress.report_progress("Halfway done...");
+                sleep(Duration::from_millis(10)).await;
+                progress.report_progress("Almost finished...");
+                Ok::<i32, AppError>(42)
+            })
+        },
+    );
+
+    // Give some time for the task to execute
+    sleep(Duration::from_millis(200)).await;
+
+    // Collect messages: Start -> ShowCancelButton -> Update x3 -> HideCancelButton -> Stop
+    let messages = collect_messages_with_timeout(&rx, 7, 3000);
+
+    assert!(
+        messages.len() >= 6,
+        "Expected at least 6 messages for progress workflow"
+    );
+    assert_start_message(&messages[0], "Testing progress execution");
+
+    // Find progress updates
+    let progress_updates: Vec<&String> = messages
+        .iter()
+        .filter_map(|msg| match msg {
+            Msg::LoadingActivity(LoadingActivityMsg::Update(msg)) => Some(msg),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(progress_updates.len(), 3, "Should have 3 progress updates");
+    assert_eq!(progress_updates[0], "Starting work...");
+    assert_eq!(progress_updates[1], "Halfway done...");
+    assert_eq!(progress_updates[2], "Almost finished...");
+}
+
+#[tokio::test]
 async fn test_execute_error_complete_flow() {
     let (task_manager, rx) = create_test_setup();
 

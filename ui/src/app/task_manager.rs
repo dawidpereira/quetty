@@ -1,9 +1,12 @@
 use crate::components::common::{LoadingActivityMsg, Msg};
 use crate::error::{AppError, ErrorReporter};
 use server::taskpool::TaskPool;
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::future::Future;
 use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 /// Task manager for executing async operations with loading indicators and error handling
@@ -12,6 +15,8 @@ pub struct TaskManager {
     taskpool: TaskPool,
     tx_to_main: Sender<Msg>,
     error_reporter: ErrorReporter,
+    /// Active cancellation tokens for running operations
+    active_operations: Arc<Mutex<HashMap<String, CancellationToken>>>,
 }
 
 impl TaskManager {
@@ -20,28 +25,20 @@ impl TaskManager {
             taskpool,
             tx_to_main,
             error_reporter,
+            active_operations: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    /// Simple execute method with default error handling (most common use case)
+    /// Execute an async operation with loading indicator and timeout support.
+    /// Uses a default 30-second timeout to prevent hanging operations.
+    /// For operations that need user cancellation, use execute_with_progress().
     pub fn execute<F, R>(&self, loading_message: impl Display, operation: F)
     where
         F: Future<Output = Result<R, AppError>> + Send + 'static,
         R: Send + 'static,
     {
-        self.execute_with_cancellation(loading_message, operation, None);
-    }
+        let timeout = Duration::from_secs(30); // Default 30 second timeout
 
-    /// Execute with cancellation support
-    pub fn execute_with_cancellation<F, R>(
-        &self,
-        loading_message: impl Display,
-        operation: F,
-        cancel_token: Option<CancellationToken>,
-    ) where
-        F: Future<Output = Result<R, AppError>> + Send + 'static,
-        R: Send + 'static,
-    {
         // Start loading indicator
         Self::send_message_or_report_error(
             &self.tx_to_main,
@@ -54,16 +51,17 @@ impl TaskManager {
         let error_reporter = self.error_reporter.clone();
 
         self.taskpool.execute(async move {
-            let result = if let Some(token) = cancel_token {
-                tokio::select! {
-                    result = operation => result,
-                    _ = token.cancelled() => {
-                        log::info!("Task cancelled");
-                        Err(AppError::Component("Operation cancelled".to_string()))
-                    }
+            let result = tokio::time::timeout(timeout, operation).await;
+
+            let final_result = match result {
+                Ok(operation_result) => operation_result,
+                Err(_) => {
+                    log::warn!("Operation timed out after {:?}", timeout);
+                    Err(AppError::Component(format!(
+                        "Operation timed out after {} seconds",
+                        timeout.as_secs()
+                    )))
                 }
-            } else {
-                operation.await
             };
 
             // Stop loading indicator
@@ -74,11 +72,8 @@ impl TaskManager {
                 &error_reporter,
             );
 
-            if let Err(error) = result {
-                // Don't report cancellation as an error to the user
-                if !error.to_string().contains("cancelled") {
-                    error_reporter.report_simple(error, "TaskManager", "async_operation");
-                }
+            if let Err(error) = final_result {
+                error_reporter.report_simple(error, "TaskManager", "async_operation_timeout");
             }
         });
     }
@@ -107,6 +102,131 @@ impl TaskManager {
             }
             // no loading indicator messages
         });
+    }
+
+    /// Execute with progress reporting and user cancellation support
+    pub fn execute_with_progress<F, R>(
+        &self,
+        loading_message: impl Display,
+        operation_id: impl Display,
+        operation: F,
+    ) where
+        F: FnOnce(
+                ProgressReporter,
+            )
+                -> std::pin::Pin<Box<dyn Future<Output = Result<R, AppError>> + Send>>
+            + Send
+            + 'static,
+        R: Send + 'static,
+    {
+        let operation_id = operation_id.to_string();
+        let cancel_token = CancellationToken::new();
+
+        // Store the cancellation token
+        {
+            let mut operations = self.active_operations.lock().unwrap();
+            operations.insert(operation_id.clone(), cancel_token.clone());
+        }
+
+        // Start loading indicator with cancel button
+        Self::send_message_or_report_error(
+            &self.tx_to_main,
+            Msg::LoadingActivity(LoadingActivityMsg::Start(loading_message.to_string())),
+            "loading start",
+            &self.error_reporter,
+        );
+
+        Self::send_message_or_report_error(
+            &self.tx_to_main,
+            Msg::LoadingActivity(LoadingActivityMsg::ShowCancelButton(operation_id.clone())),
+            "show cancel button",
+            &self.error_reporter,
+        );
+
+        let tx_to_main = self.tx_to_main.clone();
+        let error_reporter = self.error_reporter.clone();
+        let active_operations = self.active_operations.clone();
+        let operation_id_cleanup = operation_id.clone();
+
+        self.taskpool.execute(async move {
+            let progress_reporter = ProgressReporter::new(tx_to_main.clone());
+            let operation_future = operation(progress_reporter);
+
+            let result = tokio::select! {
+                result = operation_future => result,
+                _ = cancel_token.cancelled() => {
+                    log::info!("Operation '{}' cancelled by user", operation_id);
+                    Err(AppError::Component("Operation cancelled by user".to_string()))
+                }
+            };
+
+            // Cleanup: remove from active operations
+            {
+                let mut operations = active_operations.lock().unwrap();
+                operations.remove(&operation_id_cleanup);
+            }
+
+            // Hide cancel button and stop loading indicator
+            Self::send_message_or_report_error(
+                &tx_to_main,
+                Msg::LoadingActivity(LoadingActivityMsg::HideCancelButton),
+                "hide cancel button",
+                &error_reporter,
+            );
+
+            Self::send_message_or_report_error(
+                &tx_to_main,
+                Msg::LoadingActivity(LoadingActivityMsg::Stop),
+                "loading stop",
+                &error_reporter,
+            );
+
+            if let Err(error) = result {
+                // Don't report cancellation as an error to the user
+                if !error.to_string().contains("cancelled") {
+                    error_reporter.report_simple(error, "TaskManager", "async_operation_progress");
+                }
+            }
+        });
+    }
+
+    /// Cancel an active operation by ID
+    pub fn cancel_operation(&self, operation_id: &str) {
+        let mut operations = self.active_operations.lock().unwrap();
+        if let Some(token) = operations.remove(operation_id) {
+            token.cancel();
+            log::info!("Cancelled operation: {}", operation_id);
+        }
+    }
+
+    /// Get list of active operation IDs
+    pub fn get_active_operations(&self) -> Vec<String> {
+        let operations = self.active_operations.lock().unwrap();
+        operations.keys().cloned().collect()
+    }
+}
+
+/// Progress reporter for long-running operations
+#[derive(Clone)]
+pub struct ProgressReporter {
+    tx_to_main: Sender<Msg>,
+}
+
+impl ProgressReporter {
+    pub fn new(tx_to_main: Sender<Msg>) -> Self {
+        Self { tx_to_main }
+    }
+
+    /// Report progress update to the UI
+    pub fn report_progress(&self, message: impl Display) {
+        if let Err(e) = self
+            .tx_to_main
+            .send(Msg::LoadingActivity(LoadingActivityMsg::Update(
+                message.to_string(),
+            )))
+        {
+            log::error!("Failed to send progress update: {}", e);
+        }
     }
 }
 
@@ -329,6 +449,98 @@ mod tests {
             assert_eq!(start_messages.len(), 2);
             assert!(start_messages.contains(&&"42".to_string()));
             assert!(start_messages.contains(&&"Dynamic message".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_execute_timeout_behavior() {
+            let (task_manager, rx) = create_test_setup();
+
+            task_manager.execute("Test timeout operation", async move {
+                sleep(Duration::from_millis(10)).await;
+                Ok::<i32, AppError>(42)
+            });
+
+            sleep(Duration::from_millis(100)).await;
+            let messages = collect_messages_with_timeout(&rx, 2, 2000);
+
+            assert_eq!(messages.len(), 2);
+            assert_start_message(&messages[0], "Test timeout operation");
+            assert_stop_message(&messages[1]);
+        }
+
+        #[tokio::test]
+        async fn test_cancel_operation() {
+            let (task_manager, _rx) = create_test_setup();
+
+            // Start a long-running operation
+            let operation_id = "test_operation";
+            task_manager.execute_with_progress(
+                "Long running operation",
+                operation_id,
+                move |_progress| {
+                    Box::pin(async move {
+                        sleep(Duration::from_secs(10)).await; // Very long operation
+                        Ok::<(), AppError>(())
+                    })
+                },
+            );
+
+            sleep(Duration::from_millis(50)).await;
+
+            // Verify operation is active
+            let active_ops = task_manager.get_active_operations();
+            assert_eq!(active_ops.len(), 1);
+            assert_eq!(active_ops[0], operation_id);
+
+            // Cancel the operation
+            task_manager.cancel_operation(operation_id);
+
+            // Wait a bit for cancellation to take effect
+            sleep(Duration::from_millis(100)).await;
+
+            // Verify operation is no longer active
+            let active_ops = task_manager.get_active_operations();
+            assert_eq!(active_ops.len(), 0);
+        }
+
+        #[tokio::test]
+        async fn test_progress_reporter() {
+            let (task_manager, rx) = create_test_setup();
+
+            task_manager.execute_with_progress(
+                "Progress test operation",
+                "progress_test",
+                move |progress| {
+                    Box::pin(async move {
+                        progress.report_progress("Step 1 of 3");
+                        sleep(Duration::from_millis(10)).await;
+                        progress.report_progress("Step 2 of 3");
+                        sleep(Duration::from_millis(10)).await;
+                        progress.report_progress("Step 3 of 3");
+                        Ok::<(), AppError>(())
+                    })
+                },
+            );
+
+            sleep(Duration::from_millis(200)).await;
+            let messages = collect_messages_with_timeout(&rx, 8, 2000);
+
+            // Should have: Start, ShowCancelButton, Update x3, HideCancelButton, Stop
+            assert!(messages.len() >= 7);
+
+            // Find progress updates
+            let progress_updates: Vec<&String> = messages
+                .iter()
+                .filter_map(|msg| match msg {
+                    Msg::LoadingActivity(LoadingActivityMsg::Update(msg)) => Some(msg),
+                    _ => None,
+                })
+                .collect();
+
+            assert_eq!(progress_updates.len(), 3);
+            assert_eq!(progress_updates[0], "Step 1 of 3");
+            assert_eq!(progress_updates[1], "Step 2 of 3");
+            assert_eq!(progress_updates[2], "Step 3 of 3");
         }
     }
 }
