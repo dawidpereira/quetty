@@ -1,6 +1,6 @@
 use crate::components::common::{Msg, PopupActivityMsg};
 use crate::components::state::ComponentState;
-use crate::error::AppError;
+use crate::components::validation_patterns::{NumericRangeValidator, ValidationState};
 use crate::theme::ThemeManager;
 use crate::validation::Validator;
 use tuirealm::{
@@ -16,90 +16,34 @@ use tuirealm::{
     },
 };
 
-/// Validation errors for number inputs
-#[derive(Debug, Clone)]
-pub enum NumberValidationError {
-    Empty,
-    InvalidFormat {
-        input: String,
-    },
-    OutOfRange {
-        value: usize,
-        min: usize,
-        max: usize,
-    },
-}
-
-impl NumberValidationError {
-    pub fn user_message(&self) -> String {
-        match self {
-            NumberValidationError::Empty => {
-                "Please enter a number or press Enter for default value.".to_string()
-            }
-            NumberValidationError::InvalidFormat { input } => {
-                format!(
-                    "'{}' is not a valid number. Please enter only digits.",
-                    input
-                )
-            }
-            NumberValidationError::OutOfRange { value, min, max } => {
-                format!(
-                    "Number {} is out of range. Please enter a value between {} and {}.",
-                    value, min, max
-                )
-            }
-        }
-    }
-}
-
-impl From<NumberValidationError> for AppError {
-    fn from(error: NumberValidationError) -> Self {
-        AppError::Config(error.user_message())
-    }
-}
-
-/// Validator for numeric range validation
-pub struct NumericRangeValidator {
-    min_value: usize,
-    max_value: usize,
-}
-
-impl NumericRangeValidator {
-    pub fn new(min_value: usize, max_value: usize) -> Self {
-        Self {
-            min_value,
-            max_value,
-        }
-    }
-}
-
-impl Validator<str> for NumericRangeValidator {
-    type Error = NumberValidationError;
-
-    fn validate(&self, input: &str) -> Result<(), Self::Error> {
-        if input.trim().is_empty() {
-            return Err(NumberValidationError::Empty);
-        }
-
-        match input.parse::<usize>() {
-            Ok(value) => {
-                if value >= self.min_value && value <= self.max_value {
-                    Ok(())
-                } else {
-                    Err(NumberValidationError::OutOfRange {
-                        value,
-                        min: self.min_value,
-                        max: self.max_value,
-                    })
-                }
-            }
-            Err(_) => Err(NumberValidationError::InvalidFormat {
-                input: input.to_string(),
-            }),
-        }
-    }
-}
-
+/// A popup component for numeric input with validation.
+///
+/// This component provides a user-friendly interface for entering numeric values
+/// within a specified range, with real-time validation feedback and default value support.
+///
+/// # Usage
+///
+/// ```rust
+/// use quetty::components::number_input_popup::NumberInputPopup;
+///
+/// let popup = NumberInputPopup::new(
+///     "Enter Count".to_string(),
+///     "How many messages to process?".to_string(),
+///     1,
+///     100
+/// );
+/// ```
+///
+/// # Events
+///
+/// - `KeyEvent::Enter` - Submits the input (uses default if empty)
+/// - `KeyEvent::Esc` - Cancels the input
+/// - Character keys - Updates the input value
+/// - `KeyEvent::Backspace` - Removes last character
+///
+/// # Messages
+///
+/// Emits `Msg::PopupActivity(PopupActivityMsg::NumberInputResult(value))` on successful input.
 pub struct NumberInputPopup {
     title: String,
     message: String,
@@ -111,6 +55,18 @@ pub struct NumberInputPopup {
 }
 
 impl NumberInputPopup {
+    /// Creates a new number input popup with the specified parameters.
+    ///
+    /// # Arguments
+    ///
+    /// * `title` - The popup title displayed in the border
+    /// * `message` - Descriptive text explaining what to enter
+    /// * `min_value` - Minimum allowed value (inclusive)
+    /// * `max_value` - Maximum allowed value (inclusive)
+    ///
+    /// # Returns
+    ///
+    /// A new `NumberInputPopup` instance ready for mounting.
     pub fn new(title: String, message: String, min_value: usize, max_value: usize) -> Self {
         Self {
             title,
@@ -118,33 +74,86 @@ impl NumberInputPopup {
             min_value,
             max_value,
             current_input: String::new(),
-            validator: NumericRangeValidator::new(min_value, max_value),
+            validator: NumericRangeValidator::new("number")
+                .with_range(min_value as i64, max_value as i64),
             is_mounted: false,
         }
     }
 
+    /// Validates the current input and returns the parsed number if valid.
+    ///
+    /// Returns the default value (clamped to range) if input is empty.
+    ///
+    /// # Returns
+    ///
+    /// `Some(number)` if valid, `None` if invalid.
     fn validate_and_get_number(&self) -> Option<usize> {
         if self.current_input.is_empty() {
-            // Return default value if empty
+            // Return default value if empty (10 clamped to valid range)
             return Some(10.max(self.min_value).min(self.max_value));
         }
 
-        // Use the validator to check the input
         match self.validator.validate(&self.current_input) {
             Ok(_) => self.current_input.parse().ok(),
             Err(_) => None,
         }
     }
 
-    fn get_validation_status(&self) -> (bool, Option<String>) {
+    /// Gets the current validation state for UI feedback.
+    ///
+    /// # Returns
+    ///
+    /// `ValidationState` containing validity and error message.
+    fn get_validation_state(&self) -> ValidationState {
         if self.current_input.is_empty() {
-            return (true, None); // Empty is valid (uses default)
+            return ValidationState::valid(); // Empty is valid (uses default)
         }
 
-        match self.validator.validate(&self.current_input) {
-            Ok(_) => (true, None),
-            Err(error) => (false, Some(error.user_message())),
+        ValidationState::from_result(self.validator.validate(&self.current_input))
+    }
+
+    /// Calculates the default value within the specified range.
+    fn get_default_value(&self) -> usize {
+        10.max(self.min_value).min(self.max_value)
+    }
+
+    /// Renders the input field with appropriate styling based on validation state.
+    fn render_input_field(&self) -> Line {
+        let input_text = if self.current_input.is_empty() {
+            "Type a number..."
+        } else {
+            &self.current_input
+        };
+
+        let validation_state = self.get_validation_state();
+
+        let input_style = if self.current_input.is_empty() {
+            Style::default().fg(Color::Gray)
+        } else if validation_state.is_valid {
+            Style::default().fg(ThemeManager::status_success())
+        } else {
+            Style::default().fg(ThemeManager::status_error())
+        };
+
+        Line::from(vec![
+            Span::styled("Input: ", Style::default().fg(ThemeManager::text_primary())),
+            Span::styled(input_text, input_style),
+        ])
+    }
+
+    /// Renders validation feedback if there's an error.
+    fn render_validation_feedback(&self) -> Option<Line> {
+        let validation_state = self.get_validation_state();
+
+        if !validation_state.is_valid {
+            if let Some(error_message) = validation_state.error_message {
+                return Some(Line::from(Span::styled(
+                    format!("⚠ {}", error_message),
+                    Style::default().fg(ThemeManager::status_error()),
+                )));
+            }
         }
+        None
     }
 }
 
@@ -176,41 +185,19 @@ impl MockComponent for NumberInputPopup {
             "Range: {} to {} (Enter for default: {})",
             self.min_value,
             self.max_value,
-            10.max(self.min_value).min(self.max_value)
+            self.get_default_value()
         )));
 
         lines.push(Line::from(""));
 
         // Add input field
-        let input_text = if self.current_input.is_empty() {
-            "Type a number..."
-        } else {
-            &self.current_input
-        };
-
-        let (is_valid, validation_message) = self.get_validation_status();
-
-        let input_style = if self.current_input.is_empty() {
-            Style::default().fg(Color::Gray)
-        } else if is_valid {
-            Style::default().fg(ThemeManager::status_success())
-        } else {
-            Style::default().fg(ThemeManager::status_error())
-        };
-
-        lines.push(Line::from(vec![
-            Span::raw("Input: ["),
-            Span::styled(input_text, input_style.add_modifier(Modifier::BOLD)),
-            Span::raw("]"),
-        ]));
+        let input_field = self.render_input_field();
+        lines.push(input_field);
 
         // Add validation error if present
-        if let Some(error_msg) = validation_message {
+        if let Some(error_msg) = self.render_validation_feedback() {
             lines.push(Line::from(""));
-            lines.push(Line::from(vec![
-                Span::styled("⚠️ ", Style::default().fg(ThemeManager::status_error())),
-                Span::styled(error_msg, Style::default().fg(ThemeManager::status_error())),
-            ]));
+            lines.push(error_msg);
         }
 
         lines.push(Line::from(""));
@@ -346,144 +333,97 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_numeric_range_validator_valid_inputs() {
-        let validator = NumericRangeValidator::new(5, 20);
+    fn test_number_input_popup_creation() {
+        let popup =
+            NumberInputPopup::new("Test Title".to_string(), "Test message".to_string(), 1, 100);
 
-        // Valid values within range
-        assert!(validator.validate("5").is_ok());
-        assert!(validator.validate("10").is_ok());
-        assert!(validator.validate("20").is_ok());
-        assert!(validator.validate("15").is_ok());
+        assert_eq!(popup.title, "Test Title");
+        assert_eq!(popup.message, "Test message");
+        assert_eq!(popup.min_value, 1);
+        assert_eq!(popup.max_value, 100);
+        assert!(popup.current_input.is_empty());
+        assert!(!popup.is_mounted);
     }
 
     #[test]
-    fn test_numeric_range_validator_empty_input() {
-        let validator = NumericRangeValidator::new(1, 100);
+    fn test_default_value_calculation() {
+        let popup = NumberInputPopup::new("Test".to_string(), "Test".to_string(), 5, 15);
+        assert_eq!(popup.get_default_value(), 10); // 10 is within range
 
-        // Empty input should return specific error
-        let result = validator.validate("");
-        assert!(result.is_err());
-        if let Err(NumberValidationError::Empty) = result {
-            // Expected error type
-        } else {
-            panic!("Expected Empty error for empty input");
-        }
+        let popup_low_range = NumberInputPopup::new("Test".to_string(), "Test".to_string(), 20, 30);
+        assert_eq!(popup_low_range.get_default_value(), 20); // Clamped to min
 
-        // Whitespace-only input should also be empty
-        let result = validator.validate("   ");
-        assert!(result.is_err());
-        if let Err(NumberValidationError::Empty) = result {
-            // Expected error type
-        } else {
-            panic!("Expected Empty error for whitespace input");
-        }
+        let popup_high_range = NumberInputPopup::new("Test".to_string(), "Test".to_string(), 1, 5);
+        assert_eq!(popup_high_range.get_default_value(), 5); // Clamped to max
     }
 
     #[test]
-    fn test_numeric_range_validator_invalid_format() {
-        let validator = NumericRangeValidator::new(1, 100);
+    fn test_validation_with_empty_input() {
+        let popup = NumberInputPopup::new("Test".to_string(), "Test".to_string(), 1, 100);
 
-        // Non-numeric inputs
-        assert!(validator.validate("abc").is_err());
-        assert!(validator.validate("12.5").is_err());
-        assert!(validator.validate("1a2").is_err());
-        assert!(validator.validate("-5").is_err());
+        // Empty input should be valid and return default value
+        let validation_state = popup.get_validation_state();
+        assert!(validation_state.is_valid);
+        assert!(validation_state.error_message.is_none());
 
-        // Verify error type and message
-        let result = validator.validate("abc");
-        if let Err(NumberValidationError::InvalidFormat { input }) = result {
-            assert_eq!(input, "abc");
-        } else {
-            panic!("Expected InvalidFormat error");
-        }
+        assert_eq!(popup.validate_and_get_number(), Some(10));
     }
 
     #[test]
-    fn test_numeric_range_validator_out_of_range() {
-        let validator = NumericRangeValidator::new(10, 50);
+    fn test_validation_with_valid_input() {
+        let mut popup = NumberInputPopup::new("Test".to_string(), "Test".to_string(), 1, 100);
+        popup.current_input = "50".to_string();
 
-        // Below minimum
-        let result = validator.validate("5");
-        assert!(result.is_err());
-        if let Err(NumberValidationError::OutOfRange { value, min, max }) = result {
-            assert_eq!(value, 5);
-            assert_eq!(min, 10);
-            assert_eq!(max, 50);
-        } else {
-            panic!("Expected OutOfRange error for value below minimum");
-        }
+        let validation_state = popup.get_validation_state();
+        assert!(validation_state.is_valid);
+        assert!(validation_state.error_message.is_none());
 
-        // Above maximum
-        let result = validator.validate("100");
-        assert!(result.is_err());
-        if let Err(NumberValidationError::OutOfRange { value, min, max }) = result {
-            assert_eq!(value, 100);
-            assert_eq!(min, 10);
-            assert_eq!(max, 50);
-        } else {
-            panic!("Expected OutOfRange error for value above maximum");
-        }
+        assert_eq!(popup.validate_and_get_number(), Some(50));
     }
 
     #[test]
-    fn test_numeric_range_validator_edge_cases() {
-        let validator = NumericRangeValidator::new(0, 1);
+    fn test_validation_with_invalid_input() {
+        let mut popup = NumberInputPopup::new("Test".to_string(), "Test".to_string(), 1, 100);
+        popup.current_input = "abc".to_string();
 
-        // Test minimum and maximum edge values
-        assert!(validator.validate("0").is_ok());
-        assert!(validator.validate("1").is_ok());
+        let validation_state = popup.get_validation_state();
+        assert!(!validation_state.is_valid);
+        assert!(validation_state.error_message.is_some());
 
-        // Test just outside boundaries
-        let result = validator.validate("2");
-        assert!(result.is_err());
+        assert_eq!(popup.validate_and_get_number(), None);
     }
 
     #[test]
-    fn test_number_validation_error_user_messages() {
-        // Test Empty error message
-        let error = NumberValidationError::Empty;
-        let message = error.user_message();
-        assert!(message.contains("Enter for default"));
+    fn test_validation_with_out_of_range_input() {
+        let mut popup = NumberInputPopup::new("Test".to_string(), "Test".to_string(), 10, 20);
+        popup.current_input = "5".to_string();
 
-        // Test InvalidFormat error message
-        let error = NumberValidationError::InvalidFormat {
-            input: "abc".to_string(),
-        };
-        let message = error.user_message();
-        assert!(message.contains("abc"));
-        assert!(message.contains("not a valid number"));
+        let validation_state = popup.get_validation_state();
+        assert!(!validation_state.is_valid);
+        assert!(validation_state.error_message.is_some());
 
-        // Test OutOfRange error message
-        let error = NumberValidationError::OutOfRange {
-            value: 150,
-            min: 10,
-            max: 100,
-        };
-        let message = error.user_message();
-        assert!(message.contains("150"));
-        assert!(message.contains("10"));
-        assert!(message.contains("100"));
-        assert!(message.contains("out of range"));
+        assert_eq!(popup.validate_and_get_number(), None);
     }
 
     #[test]
-    fn test_validator_integration_with_app_error() {
-        let validator = NumericRangeValidator::new(1, 10);
+    fn test_render_input_field() {
+        let popup = NumberInputPopup::new("Test".to_string(), "Test".to_string(), 1, 100);
+        let input_line = popup.render_input_field();
 
-        // Test that validation errors can be converted to AppError
-        let validation_result = validator.validate("abc");
-        assert!(validation_result.is_err());
+        // Should contain placeholder text for empty input
+        assert!(format!("{:?}", input_line).contains("Type a number"));
+    }
 
-        if let Err(validation_error) = validation_result {
-            let app_error: AppError = validation_error.into();
-            // Verify the conversion works and contains user-friendly message
-            match app_error {
-                AppError::Config(message) => {
-                    assert!(message.contains("not a valid number"));
-                }
-                _ => panic!("Expected Config error type"),
-            }
-        }
+    #[test]
+    fn test_render_validation_feedback() {
+        let mut popup = NumberInputPopup::new("Test".to_string(), "Test".to_string(), 1, 100);
+
+        // Valid input should have no feedback
+        assert!(popup.render_validation_feedback().is_none());
+
+        // Invalid input should have feedback
+        popup.current_input = "invalid".to_string();
+        assert!(popup.render_validation_feedback().is_some());
     }
 
     #[test]

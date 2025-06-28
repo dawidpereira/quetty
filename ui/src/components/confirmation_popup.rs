@@ -1,41 +1,56 @@
+use crate::components::base_popup::PopupBuilder;
 use crate::components::common::{Msg, PopupActivityMsg};
 use crate::components::state::ComponentState;
 use crate::config;
-use crate::theme::ThemeManager;
-use tui_realm_stdlib::Paragraph;
 use tuirealm::{
     Component, Event, MockComponent, NoUserEvent,
+    command::{Cmd, CmdResult},
     event::{Key, KeyEvent},
-    props::{Alignment, BorderType, Borders, TextModifiers, TextSpan},
-    ratatui::{
-        Frame,
-        layout::Rect,
-        text::{Line, Span, Text},
-        widgets::{Block, Paragraph as RatatuiParagraph},
-    },
+    ratatui::{Frame, layout::Rect},
 };
 
+/// Confirmation popup component that displays yes/no prompts to the user.
+///
+/// This component provides a consistent confirmation interface using the
+/// PopupBuilder pattern for standardized styling while preserving dynamic
+/// key binding functionality from the configuration.
+///
+/// # Usage
+///
+/// ```rust
+/// use quetty::components::confirmation_popup::ConfirmationPopup;
+///
+/// let popup = ConfirmationPopup::new("Save Changes", "Do you want to save your changes?");
+/// ```
+///
+/// # Events
+///
+/// - Configured yes key (default 'Y') - Confirms the action
+/// - Configured no key (default 'N') - Cancels the action  
+/// - `KeyEvent::Esc` - Cancels the action
+///
+/// # Messages
+///
+/// Emits `Msg::PopupActivity(PopupActivityMsg::ConfirmationResult(bool))` with the result.
 pub struct ConfirmationPopup {
-    component: Paragraph,
     title: String,
     message: String,
     is_mounted: bool,
 }
 
 impl ConfirmationPopup {
+    /// Creates a new confirmation popup with the specified title and message.
+    ///
+    /// # Arguments
+    ///
+    /// * `title` - The popup title displayed in the border
+    /// * `message` - The confirmation message to display
+    ///
+    /// # Returns
+    ///
+    /// A new `ConfirmationPopup` instance ready for mounting.
     pub fn new(title: &str, message: &str) -> Self {
         Self {
-            component: Paragraph::default()
-                .borders(
-                    Borders::default()
-                        .color(ThemeManager::primary_accent())
-                        .modifiers(BorderType::Rounded),
-                )
-                .title(format!(" {} ", title), Alignment::Center)
-                .foreground(ThemeManager::popup_text())
-                .modifiers(TextModifiers::BOLD)
-                .alignment(Alignment::Center)
-                .text([TextSpan::from(message)]),
             title: title.to_string(),
             message: message.to_string(),
             is_mounted: false,
@@ -45,76 +60,30 @@ impl ConfirmationPopup {
 
 impl MockComponent for ConfirmationPopup {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        // Create the border block with dynamic title
-        let block = Block::default()
-            .borders(tuirealm::ratatui::widgets::Borders::ALL)
-            .border_type(tuirealm::ratatui::widgets::BorderType::Rounded)
-            .border_style(
-                tuirealm::ratatui::style::Style::default().fg(ThemeManager::primary_accent()),
-            )
-            .title(format!(" {} ", self.title))
-            .title_alignment(tuirealm::ratatui::layout::Alignment::Center);
-
-        // Split the message into lines and create text
-        let mut lines = Vec::new();
-
-        // Add empty line at the top for better spacing
-        lines.push(Line::from(""));
-
-        for line in self.message.lines() {
-            lines.push(Line::from(line));
-        }
-
-        // Add empty line for spacing
-        lines.push(Line::from(""));
-
         let keys = config::get_config_or_panic().keys();
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("[{}] Yes", keys.confirm_yes().to_uppercase()),
-                tuirealm::ratatui::style::Style::default()
-                    .fg(ThemeManager::status_success())
-                    .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
-            ),
-            Span::raw("    "),
-            Span::styled(
-                format!("[{}] No", keys.confirm_no().to_uppercase()),
-                tuirealm::ratatui::style::Style::default()
-                    .fg(ThemeManager::status_error())
-                    .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
-            ),
-        ]));
-
-        let text = Text::from(lines);
-
-        // Create the paragraph with custom text and word wrapping
-        let paragraph = RatatuiParagraph::new(text)
-            .block(block)
-            .alignment(tuirealm::ratatui::layout::Alignment::Center)
-            .wrap(tuirealm::ratatui::widgets::Wrap { trim: true })
-            .style(
-                tuirealm::ratatui::style::Style::default()
-                    .fg(ThemeManager::popup_text())
-                    .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
-            );
-
-        frame.render_widget(paragraph, area);
+        PopupBuilder::new(&self.title)
+            .add_multiline_text(&self.message)
+            .with_confirmation_instructions(
+                &keys.confirm_yes().to_string(),
+                &keys.confirm_no().to_string(),
+            )
+            .render(frame, area);
     }
 
-    fn query(&self, attr: tuirealm::Attribute) -> Option<tuirealm::AttrValue> {
-        self.component.query(attr)
+    fn query(&self, _attr: tuirealm::Attribute) -> Option<tuirealm::AttrValue> {
+        None
     }
 
-    fn attr(&mut self, attr: tuirealm::Attribute, value: tuirealm::AttrValue) {
-        self.component.attr(attr, value);
+    fn attr(&mut self, _attr: tuirealm::Attribute, _value: tuirealm::AttrValue) {
+        // No attributes supported
     }
 
     fn state(&self) -> tuirealm::State {
-        self.component.state()
+        tuirealm::State::None
     }
 
-    fn perform(&mut self, cmd: tuirealm::command::Cmd) -> tuirealm::command::CmdResult {
-        self.component.perform(cmd)
+    fn perform(&mut self, _cmd: Cmd) -> CmdResult {
+        CmdResult::None
     }
 }
 
@@ -167,7 +136,6 @@ impl ComponentState for ConfirmationPopup {
         }
 
         self.is_mounted = true;
-
         log::debug!("ConfirmationPopup component mounted successfully");
         Ok(())
     }

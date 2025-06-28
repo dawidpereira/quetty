@@ -114,14 +114,17 @@ where
             message.push_str("\n\n⚠️  WARNING: Message order may change in the main queue!");
         }
 
-        Some(Msg::PopupActivity(PopupActivityMsg::ShowConfirmation {
+        // Use regular confirmation for all resend operations
+        let popup_msg = PopupActivityMsg::ShowConfirmation {
             title,
             message,
             on_confirm: Box::new(Msg::MessageActivity(MessageActivityMsg::BulkResendFromDLQ(
                 message_ids,
                 delete_from_dlq,
             ))),
-        }))
+        };
+
+        Some(Msg::PopupActivity(popup_msg))
     }
 
     /// Handle bulk delete for currently selected messages or current message

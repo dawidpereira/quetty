@@ -1,32 +1,23 @@
+use crate::components::validation_patterns::{CommonValidationError, StringLengthValidator};
 use crate::error::AppError;
 use crate::validation::Validator;
 use serde_json::Value;
 
-/// Validation errors specific to message content operations
+/// Specialized validation errors for message operations that extend common patterns
 #[derive(Debug, Clone)]
 pub enum MessageValidationError {
-    EmptyContent,
-    TooLarge { size: usize, limit: usize },
+    /// Common validation errors (delegated to CommonValidationError)
+    Common(CommonValidationError),
+    /// JSON-specific validation error
     InvalidJson { reason: String },
+    /// Text encoding validation error
     InvalidCharacters { characters: String },
 }
 
 impl MessageValidationError {
     pub fn user_message(&self) -> String {
         match self {
-            MessageValidationError::EmptyContent => {
-                "Message content cannot be empty.\n\nPlease add some content before sending."
-                    .to_string()
-            }
-            MessageValidationError::TooLarge { size, limit } => {
-                format!(
-                    "Message content is too large!\n\n\
-                    Current size: {} bytes\n\
-                    Maximum allowed: {} bytes\n\n\
-                    Please reduce the message size.",
-                    size, limit
-                )
-            }
+            MessageValidationError::Common(common_error) => common_error.user_message(),
             MessageValidationError::InvalidJson { reason } => {
                 format!(
                     "Invalid JSON format!\n\n\
@@ -45,6 +36,26 @@ impl MessageValidationError {
             }
         }
     }
+
+    /// Create a JSON validation error
+    pub fn invalid_json(reason: impl Into<String>) -> Self {
+        Self::InvalidJson {
+            reason: reason.into(),
+        }
+    }
+
+    /// Create an invalid characters error
+    pub fn invalid_characters(characters: impl Into<String>) -> Self {
+        Self::InvalidCharacters {
+            characters: characters.into(),
+        }
+    }
+}
+
+impl From<CommonValidationError> for MessageValidationError {
+    fn from(error: CommonValidationError) -> Self {
+        MessageValidationError::Common(error)
+    }
 }
 
 impl From<MessageValidationError> for AppError {
@@ -53,28 +64,45 @@ impl From<MessageValidationError> for AppError {
     }
 }
 
-/// Validator for message content emptiness
-pub struct MessageContentValidator;
+/// Validator for message content using common patterns
+pub struct MessageContentValidator {
+    validator: StringLengthValidator,
+}
+
+impl Default for MessageContentValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MessageContentValidator {
+    pub fn new() -> Self {
+        Self {
+            validator: StringLengthValidator::new("message content").with_min_length(1), // Must have at least 1 character after trimming
+        }
+    }
+}
 
 impl Validator<str> for MessageContentValidator {
     type Error = MessageValidationError;
 
     fn validate(&self, input: &str) -> Result<(), Self::Error> {
-        if input.trim().is_empty() {
-            return Err(MessageValidationError::EmptyContent);
-        }
-        Ok(())
+        // Trim input for validation but don't modify the original
+        let trimmed = input.trim();
+        self.validator.validate(trimmed).map_err(Into::into)
     }
 }
 
-/// Validator for message size limits
+/// Validator for message size limits using common patterns
 pub struct MessageSizeValidator {
-    max_size: usize,
+    validator: StringLengthValidator,
 }
 
 impl MessageSizeValidator {
     pub fn new(max_size: usize) -> Self {
-        Self { max_size }
+        Self {
+            validator: StringLengthValidator::new("message content").with_max_length(max_size),
+        }
     }
 }
 
@@ -82,14 +110,7 @@ impl Validator<str> for MessageSizeValidator {
     type Error = MessageValidationError;
 
     fn validate(&self, input: &str) -> Result<(), Self::Error> {
-        let size = input.len();
-        if size > self.max_size {
-            return Err(MessageValidationError::TooLarge {
-                size,
-                limit: self.max_size,
-            });
-        }
-        Ok(())
+        self.validator.validate(input).map_err(Into::into)
     }
 }
 
@@ -105,9 +126,7 @@ impl Validator<str> for JsonFormatValidator {
         // All messages must be valid JSON when sending/updating
         match serde_json::from_str::<Value>(input) {
             Ok(_) => Ok(()),
-            Err(e) => Err(MessageValidationError::InvalidJson {
-                reason: e.to_string(),
-            }),
+            Err(e) => Err(MessageValidationError::invalid_json(e.to_string())),
         }
     }
 }
@@ -122,9 +141,10 @@ impl Validator<str> for MessageEncodingValidator {
         // Check for invalid UTF-8 sequences or control characters
         for (i, ch) in input.char_indices() {
             if ch.is_control() && ch != '\n' && ch != '\r' && ch != '\t' {
-                return Err(MessageValidationError::InvalidCharacters {
-                    characters: format!("Control character at position {}: {:?}", i, ch),
-                });
+                return Err(MessageValidationError::invalid_characters(format!(
+                    "Control character at position {}: {:?}",
+                    i, ch
+                )));
             }
         }
         Ok(())
@@ -142,7 +162,7 @@ pub struct CompleteMessageValidator {
 impl CompleteMessageValidator {
     pub fn new(max_size: usize) -> Self {
         Self {
-            content_validator: MessageContentValidator,
+            content_validator: MessageContentValidator::new(),
             size_validator: MessageSizeValidator::new(max_size),
             json_validator: JsonFormatValidator,
             encoding_validator: MessageEncodingValidator,
@@ -173,7 +193,7 @@ mod tests {
 
     #[test]
     fn test_message_content_validator() {
-        let validator = MessageContentValidator;
+        let validator = MessageContentValidator::new();
 
         // Valid content
         assert!(validator.validate("Hello world").is_ok());
@@ -203,50 +223,46 @@ mod tests {
 
         // Valid JSON
         assert!(validator.validate(r#"{"key": "value"}"#).is_ok());
-        assert!(validator.validate(r#"[1, 2, 3]"#).is_ok());
-        assert!(validator.validate(r#""plain text""#).is_ok()); // Valid JSON string
-        assert!(validator.validate("42").is_ok()); // Valid JSON number
-        assert!(validator.validate("true").is_ok()); // Valid JSON boolean
-        assert!(validator.validate("null").is_ok()); // Valid JSON null
+        assert!(validator.validate("[]").is_ok());
+        assert!(validator.validate("null").is_ok());
+        assert!(validator.validate("true").is_ok());
+        assert!(validator.validate("42").is_ok());
 
-        // Invalid JSON (plain text is not valid JSON)
-        assert!(validator.validate("plain text").is_err());
-        assert!(validator.validate("not json").is_err());
-        assert!(validator.validate(r#"{"key": invalid}"#).is_err());
-        assert!(validator.validate(r#"[1, 2, 3"#).is_err());
+        // Invalid JSON
+        assert!(validator.validate("{key: value}").is_err()); // Unquoted keys
+        assert!(validator.validate("{'key': 'value'}").is_err()); // Single quotes
+        assert!(validator.validate("undefined").is_err()); // JavaScript undefined
     }
 
     #[test]
     fn test_message_encoding_validator() {
         let validator = MessageEncodingValidator;
 
-        // Valid content
+        // Valid encoding
         assert!(validator.validate("Hello world").is_ok());
-        assert!(validator.validate("Line 1\nLine 2").is_ok());
-        assert!(validator.validate("Tab\tseparated").is_ok());
+        assert!(validator.validate("Unicode: 🚀 ñ ü").is_ok());
+        assert!(validator.validate("Newlines\nand\ttabs\rare\rok").is_ok());
 
-        // Invalid content with control characters would need special test setup
-        // as Rust strings are UTF-8 by default
+        // Invalid encoding (control characters)
+        assert!(validator.validate("Bell\x07character").is_err());
+        assert!(validator.validate("Null\x00character").is_err());
     }
 
     #[test]
     fn test_complete_message_validator() {
         let validator = CompleteMessageValidator::new(100);
 
-        // Valid message (must be valid JSON)
-        assert!(validator.validate(r#""Hello world""#).is_ok());
-        assert!(validator.validate(r#"{"valid": "json"}"#).is_ok());
+        // Valid message
+        assert!(validator.validate(r#"{"message": "Hello world"}"#).is_ok());
 
-        // Invalid - empty
+        // Invalid: empty
         assert!(validator.validate("").is_err());
 
-        // Invalid - too large
-        assert!(validator.validate(&"x".repeat(101)).is_err());
+        // Invalid: too large
+        let large_json = format!(r#"{{"data": "{}"}}"#, "x".repeat(200));
+        assert!(validator.validate(&large_json).is_err());
 
-        // Invalid - malformed JSON
-        assert!(validator.validate(r#"{"invalid": json}"#).is_err());
-
-        // Invalid - plain text (not valid JSON)
-        assert!(validator.validate("Hello world").is_err());
+        // Invalid: not JSON
+        assert!(validator.validate("not json").is_err());
     }
 }

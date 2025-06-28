@@ -1,121 +1,54 @@
+use crate::components::base_popup::PopupLayout;
 use crate::components::common::{ComponentId, Msg};
 use crate::error::AppError;
 use tuirealm::ratatui::layout::{Constraint, Direction, Layout, Rect};
 use tuirealm::{Application, Frame, NoUserEvent};
 
-// Render the error popup centered on the screen
+// Render the error popup centered on the screen using standardized sizing
 pub fn view_error_popup(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,
     f: &mut Frame,
 ) -> Result<(), AppError> {
-    // Create a centered box for the error popup with larger size for config errors
-    let popup_width = 80;
-    let popup_height = 15;
-    let area = f.area();
-
-    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-
-    let popup_area = Rect::new(
-        popup_x,
-        popup_y,
-        popup_width.min(area.width),
-        popup_height.min(area.height),
-    );
-
+    let popup_area = PopupLayout::large(f.area());
     app.view(&ComponentId::ErrorPopup, f, popup_area);
-
-    // Make sure the popup has focus
     app.active(&ComponentId::ErrorPopup)
         .map_err(|e| AppError::Component(e.to_string()))?;
-
     Ok(())
 }
 
-// Render the confirmation popup centered on the screen
+// Render the confirmation popup centered on the screen using extra wide sizing
 pub fn view_confirmation_popup(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,
     f: &mut Frame,
 ) -> Result<(), AppError> {
-    // Create a centered box for the confirmation popup with better sizing
-    let popup_width = 90; // Increased width for longer messages
-    let popup_height = 12; // Increased height for multi-line messages
-    let area = f.area();
-
-    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-
-    let popup_area = Rect::new(
-        popup_x,
-        popup_y,
-        popup_width.min(area.width),
-        popup_height.min(area.height),
-    );
-
+    let popup_area = PopupLayout::extra_wide(f.area());
     app.view(&ComponentId::ConfirmationPopup, f, popup_area);
-
-    // Make sure the popup has focus
     app.active(&ComponentId::ConfirmationPopup)
         .map_err(|e| AppError::Component(e.to_string()))?;
-
     Ok(())
 }
 
-// Render the success popup centered on the screen
+// Render the success popup centered on the screen using standardized sizing
 pub fn view_success_popup(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,
     f: &mut Frame,
 ) -> Result<(), AppError> {
-    // Create a centered box for the success popup
-    let popup_width = 60;
-    let popup_height = 10;
-    let area = f.area();
-
-    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-
-    let popup_area = Rect::new(
-        popup_x,
-        popup_y,
-        popup_width.min(area.width),
-        popup_height.min(area.height),
-    );
-
+    let popup_area = PopupLayout::medium(f.area());
     app.view(&ComponentId::SuccessPopup, f, popup_area);
-
-    // Make sure the popup has focus
     app.active(&ComponentId::SuccessPopup)
         .map_err(|e| AppError::Component(e.to_string()))?;
-
     Ok(())
 }
 
-// Render the number input popup centered on the screen
+// Render the number input popup centered on the screen using standardized sizing
 pub fn view_number_input_popup(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,
     f: &mut Frame,
 ) -> Result<(), AppError> {
-    // Create a centered box for the number input popup
-    let popup_width = 70;
-    let popup_height = 14;
-    let area = f.area();
-
-    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-
-    let popup_area = Rect::new(
-        popup_x,
-        popup_y,
-        popup_width.min(area.width),
-        popup_height.min(area.height),
-    );
-
+    let popup_area = PopupLayout::medium(f.area());
     app.view(&ComponentId::NumberInputPopup, f, popup_area);
-
-    // Make sure the popup has focus
     app.active(&ComponentId::NumberInputPopup)
         .map_err(|e| AppError::Component(e.to_string()))?;
-
     Ok(())
 }
 
@@ -227,82 +160,38 @@ pub fn view_message_details(
     Ok(())
 }
 
-// View function for loading indicator
+// View function for loading indicator using standardized sizing
 pub fn view_loading(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,
     f: &mut Frame,
     _chunks: &[Rect],
 ) -> Result<(), AppError> {
-    // Create a centered area for the loading indicator
-    let area = f.area();
-    let popup_width = 60;
-    let popup_height = 5;
-
-    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-
-    let popup_area = Rect::new(
-        popup_x,
-        popup_y,
-        popup_width.min(area.width),
-        popup_height.min(area.height),
-    );
-
-    // Draw the loading indicator in the popup area
+    let popup_area = PopupLayout::small(f.area());
     app.view(&ComponentId::LoadingIndicator, f, popup_area);
-
     Ok(())
 }
 
-// View function for help screen
+// View function for help screen using responsive sizing
 pub fn view_help_screen(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,
     f: &mut Frame,
     _chunks: &[Rect],
 ) -> Result<(), AppError> {
-    // Create a centered box for the help screen
-    let area = f.area();
-    let popup_width = area.width.saturating_sub(10);
-    let popup_height = area.height.saturating_sub(6);
-
-    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-
-    let popup_area = Rect::new(
-        popup_x,
-        popup_y,
-        popup_width.min(area.width),
-        popup_height.min(area.height),
-    );
-
+    // Help screen needs nearly full screen, so use custom sizing
+    let popup_area = PopupLayout::centered(f.area(), 90, 85);
     app.view(&ComponentId::HelpScreen, f, popup_area);
     app.active(&ComponentId::HelpScreen)
         .map_err(|e| AppError::Component(e.to_string()))?;
-
     Ok(())
 }
 
-// View function for theme picker
+// View function for theme picker using standardized sizing
 pub fn view_theme_picker(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,
     f: &mut Frame,
     _chunks: &[Rect],
 ) -> Result<(), AppError> {
-    // Create a centered box for the theme picker
-    let popup_width = 60;
-    let popup_height = 20;
-    let area = f.area();
-
-    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-
-    let popup_area = Rect::new(
-        popup_x,
-        popup_y,
-        popup_width.min(area.width),
-        popup_height.min(area.height),
-    );
-
+    let popup_area = PopupLayout::medium(f.area());
     app.view(&ComponentId::ThemePicker, f, popup_area);
     app.active(&ComponentId::ThemePicker)
         .map_err(|e| AppError::Component(e.to_string()))?;

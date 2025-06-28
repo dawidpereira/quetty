@@ -1,18 +1,36 @@
+use crate::components::base_popup::PopupBuilder;
 use crate::components::common::Msg;
 use crate::components::help::{HelpContent, HelpRenderer};
 use crate::config;
-use crate::theme::ThemeManager;
 use tuirealm::{
     Component, Event, Frame, MockComponent, NoUserEvent,
     event::{Key, KeyEvent},
-    props::BorderType,
-    ratatui::{
-        layout::{Alignment, Rect},
-        style::Style,
-        widgets::Block,
-    },
+    ratatui::layout::{Alignment, Rect},
 };
 
+/// Help screen component that displays keyboard shortcuts and usage information.
+///
+/// This component provides a full-screen help interface using the PopupBuilder
+/// pattern for consistent styling and theming.
+///
+/// # Usage
+///
+/// ```rust
+/// use quetty::components::help_screen::HelpScreen;
+///
+/// let help_screen = HelpScreen::new();
+/// ```
+///
+/// # Events
+///
+/// - `KeyEvent::Esc` - Closes the help screen and returns to main interface
+///
+/// # Features
+///
+/// - **Responsive layout** - Automatically adjusts to terminal size
+/// - **Two-column display** - Organized shortcuts grouped by category
+/// - **Consistent theming** - Uses PopupBuilder for standardized appearance
+/// - **Configuration-driven** - Shortcuts automatically reflect user's key bindings
 pub struct HelpScreen {
     renderer: HelpRenderer,
 }
@@ -33,12 +51,8 @@ impl Default for HelpScreen {
 
 impl MockComponent for HelpScreen {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        let block = Block::default()
-            .title("  📖 Keyboard Shortcuts Help  ")
-            .borders(tuirealm::ratatui::widgets::Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(ThemeManager::primary_accent()))
-            .title_style(Style::default().fg(ThemeManager::title_accent()));
+        // Use PopupBuilder for consistent styling
+        let popup_content = PopupBuilder::new("Help Screen");
 
         // Get help content from configuration
         let keys = config::get_config_or_panic().keys();
@@ -46,6 +60,9 @@ impl MockComponent for HelpScreen {
 
         // Layout the screen areas
         let (header_area, left_area, right_area) = self.renderer.layout_help_screen(area);
+
+        // Render the popup block using PopupBuilder
+        let block = popup_content.create_block_with_title("  📖 Keyboard Shortcuts Help  ");
 
         // Render header with instructions and warnings
         let header_text = self.renderer.render_header(&help_content);
