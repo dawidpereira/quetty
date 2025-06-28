@@ -129,6 +129,10 @@ pub enum MessageActivityMsg {
 pub enum LoadingActivityMsg {
     Start(String),
     Stop,
+    Update(String),
+    Cancel,
+    ShowCancelButton(String), // Show cancel button with operation ID
+    HideCancelButton,
 }
 
 #[derive(Debug)]

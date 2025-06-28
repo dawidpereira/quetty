@@ -20,6 +20,7 @@ pub struct StateManager {
     pub redraw: bool,
     pub selected_namespace: Option<String>,
     pub loading_message: Option<(String, AppState)>,
+    pub loading_cancel_button: Option<String>, // operation_id for cancel button
     pub previous_state: Option<AppState>,
     pub pending_confirmation_action: Option<Box<Msg>>,
     pub is_editing_message: bool,
@@ -36,6 +37,7 @@ impl StateManager {
             redraw: true,
             selected_namespace: None,
             loading_message: None,
+            loading_cancel_button: None,
             previous_state: None,
             pending_confirmation_action: None,
             is_editing_message: false,

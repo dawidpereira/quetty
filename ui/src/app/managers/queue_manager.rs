@@ -32,10 +32,11 @@ impl QueueManager {
         }
     }
 
-    /// Load namespaces using TaskManager
+    /// Load namespaces using TaskManager with timeout
     pub fn load_namespaces(&self) {
         let tx_to_main = self.tx_to_main.clone();
 
+        // Use execute with built-in timeout for namespace loading
         self.task_manager
             .execute("Loading namespaces...", async move {
                 log::debug!("Requesting namespaces from Azure AD");
@@ -63,10 +64,11 @@ impl QueueManager {
             });
     }
 
-    /// Load queues using TaskManager
+    /// Load queues using TaskManager with timeout
     pub fn load_queues(&self) {
         let tx_to_main = self.tx_to_main.clone();
 
+        // Use execute with built-in timeout for queue loading
         self.task_manager.execute("Loading queues...", async move {
             log::debug!("Requesting queues from Azure AD");
 
@@ -106,60 +108,79 @@ impl QueueManager {
         // Determine the correct queue type from the queue name
         let queue_type = QueueType::from_queue_name(&queue_name);
 
-        self.task_manager.execute(
+        // Generate unique operation ID for cancellation support
+        let operation_id = format!(
+            "switch_queue_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+        );
+
+        self.task_manager.execute_with_progress(
             format!("Connecting to queue {}...", queue_name),
-            async move {
-                log::debug!(
-                    "Switching to queue: {} (type: {:?})",
-                    queue_name,
-                    queue_type
-                );
+            operation_id,
+            move |progress: crate::app::task_manager::ProgressReporter| {
+                Box::pin(async move {
+                    log::debug!(
+                        "Switching to queue: {} (type: {:?})",
+                        queue_name,
+                        queue_type
+                    );
 
-                // Use the service bus manager to switch queues with correct type
-                let command = ServiceBusCommand::SwitchQueue {
-                    queue_name: queue_name.clone(),
-                    queue_type,
-                };
+                    progress.report_progress("Establishing connection...");
 
-                let response = service_bus_manager
-                    .lock()
-                    .await
-                    .execute_command(command)
-                    .await;
+                    // Use the service bus manager to switch queues with correct type
+                    let command = ServiceBusCommand::SwitchQueue {
+                        queue_name: queue_name.clone(),
+                        queue_type,
+                    };
 
-                let queue_info = match response {
-                    ServiceBusResponse::QueueSwitched { queue_info } => {
-                        log::info!("Successfully switched to queue: {}", queue_info.name);
-                        queue_info
+                    progress.report_progress("Switching to queue...");
+
+                    let response = service_bus_manager
+                        .lock()
+                        .await
+                        .execute_command(command)
+                        .await;
+
+                    let queue_info = match response {
+                        ServiceBusResponse::QueueSwitched { queue_info } => {
+                            progress.report_progress("Queue switch successful!");
+                            log::info!("Successfully switched to queue: {}", queue_info.name);
+                            queue_info
+                        }
+                        ServiceBusResponse::Error { error } => {
+                            log::error!("Failed to switch to queue {}: {}", queue_name, error);
+                            return Err(AppError::ServiceBus(error.to_string()));
+                        }
+                        _ => {
+                            return Err(AppError::ServiceBus(
+                                "Unexpected response for switch queue".to_string(),
+                            ));
+                        }
+                    };
+
+                    progress.report_progress("Updating UI state...");
+
+                    // Send queue switched message via MessageActivity
+                    if let Err(e) = tx_to_main.send(Msg::MessageActivity(
+                        MessageActivityMsg::QueueSwitched(queue_info),
+                    )) {
+                        log::error!("Failed to send queue switched message: {}", e);
+                        return Err(AppError::Component(e.to_string()));
                     }
-                    ServiceBusResponse::Error { error } => {
-                        log::error!("Failed to switch to queue {}: {}", queue_name, error);
-                        return Err(AppError::ServiceBus(error.to_string()));
+
+                    // Send a separate message to update the current queue name
+                    if let Err(e) = tx_to_main.send(Msg::MessageActivity(
+                        MessageActivityMsg::QueueNameUpdated(queue_name_for_update),
+                    )) {
+                        log::error!("Failed to send queue name updated message: {}", e);
+                        return Err(AppError::Component(e.to_string()));
                     }
-                    _ => {
-                        return Err(AppError::ServiceBus(
-                            "Unexpected response for switch queue".to_string(),
-                        ));
-                    }
-                };
 
-                // Send queue switched message via MessageActivity
-                if let Err(e) = tx_to_main.send(Msg::MessageActivity(
-                    MessageActivityMsg::QueueSwitched(queue_info),
-                )) {
-                    log::error!("Failed to send queue switched message: {}", e);
-                    return Err(AppError::Component(e.to_string()));
-                }
-
-                // Send a separate message to update the current queue name
-                if let Err(e) = tx_to_main.send(Msg::MessageActivity(
-                    MessageActivityMsg::QueueNameUpdated(queue_name_for_update),
-                )) {
-                    log::error!("Failed to send queue name updated message: {}", e);
-                    return Err(AppError::Component(e.to_string()));
-                }
-
-                Ok(())
+                    Ok(())
+                })
             },
         );
     }

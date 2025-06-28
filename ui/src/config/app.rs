@@ -20,6 +20,7 @@ pub struct AppConfig {
     queue_stats_display_enabled: Option<bool>,
     queue_stats_cache_ttl_seconds: Option<u64>,
     queue_stats_use_management_api: Option<bool>,
+
     #[serde(flatten)]
     dlq: DLQConfig,
     #[serde(flatten)]

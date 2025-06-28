@@ -1,4 +1,4 @@
-use crate::components::common::Msg;
+use crate::components::common::{LoadingActivityMsg, Msg};
 use crate::components::state::ComponentState;
 use crate::config;
 use crate::theme::ThemeManager;
@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use tui_realm_stdlib::Label;
 use tuirealm::{
     Component, Event, MockComponent,
-    event::NoUserEvent,
+    event::{Key, KeyEvent, NoUserEvent},
     props::{Alignment, AttrValue, Attribute},
 };
 
@@ -17,9 +17,12 @@ const SPINNER_FRAMES: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "�
 pub struct LoadingIndicator {
     component: Label,
     message: String,
+    progress_message: Option<String>,
     frame_index: usize,
     last_frame_time: Instant,
     is_mounted: bool,
+    show_cancel_button: bool,
+    operation_id: Option<String>,
 }
 
 impl LoadingIndicator {
@@ -49,10 +52,26 @@ impl LoadingIndicator {
         Self {
             component,
             message: message.to_string(),
+            progress_message: None,
             frame_index: 0,
             last_frame_time: Instant::now(),
             is_mounted: false,
+            show_cancel_button: false,
+            operation_id: None,
         }
+    }
+
+    /// Update progress message
+    pub fn update_progress(&mut self, progress: String) {
+        self.progress_message = Some(progress);
+        self.update_display_text();
+    }
+
+    /// Show cancel button for operation
+    pub fn show_cancel_button(&mut self, operation_id: String) {
+        self.show_cancel_button = true;
+        self.operation_id = Some(operation_id);
+        self.update_display_text();
     }
 
     // Update the animation frame
@@ -67,12 +86,26 @@ impl LoadingIndicator {
             // Move to next frame
             self.frame_index = (self.frame_index + 1) % SPINNER_FRAMES.len();
             self.last_frame_time = now;
-
-            // Update the text with new animation frame
-            let display_text = format!("{} {}", SPINNER_FRAMES[self.frame_index], self.message);
-            self.component
-                .attr(Attribute::Text, AttrValue::String(display_text));
+            self.update_display_text();
         }
+    }
+
+    /// Update the display text with current state
+    fn update_display_text(&mut self) {
+        let spinner = SPINNER_FRAMES[self.frame_index];
+
+        let display_text = if self.show_cancel_button {
+            // Clean format with empty line between message and cancel instruction
+            format!("{} {}\n\nPress 'c' to cancel", spinner, self.message)
+        } else if let Some(ref progress) = self.progress_message {
+            // Show progress only when no cancel button (for non-cancellable operations)
+            format!("{} {} • {}", spinner, self.message, progress)
+        } else {
+            format!("{} {}", spinner, self.message)
+        };
+
+        self.component
+            .attr(Attribute::Text, AttrValue::String(display_text));
     }
 }
 
@@ -83,6 +116,13 @@ impl Component<Msg, NoUserEvent> for LoadingIndicator {
                 // Update animation on tick
                 self.update_animation();
                 Some(Msg::ForceRedraw)
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('c'),
+                ..
+            }) if self.show_cancel_button => {
+                log::info!("User requested cancellation via 'c' key");
+                Some(Msg::LoadingActivity(LoadingActivityMsg::Cancel))
             }
             _ => None,
         }
@@ -103,9 +143,7 @@ impl ComponentState for LoadingIndicator {
         self.last_frame_time = Instant::now();
 
         // Update initial display
-        let display_text = format!("{} {}", SPINNER_FRAMES[0], self.message);
-        self.component
-            .attr(Attribute::Text, AttrValue::String(display_text));
+        self.update_display_text();
 
         self.is_mounted = true;
         log::debug!("LoadingIndicator component mounted successfully");
