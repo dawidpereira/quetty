@@ -127,6 +127,10 @@ where
         Ok(())
     }
 
+    pub fn remount_messages(&mut self) -> AppResult<()> {
+        self.remount_messages_with_focus(true)
+    }
+
     pub fn remount_messages_with_focus(&mut self, is_focused: bool) -> AppResult<()> {
         self.remount_messages_with_cursor_and_focus_control(true, is_focused)
     }
@@ -212,13 +216,56 @@ where
             .get_current_page_messages(page_size);
         let current_page_size = current_page_messages.len();
 
+        // Calculate correct pagination values based on actual loaded messages
+        let total_messages_loaded = self
+            .queue_state()
+            .message_pagination
+            .all_loaded_messages
+            .len();
+
+        let total_pages_loaded = if total_messages_loaded == 0 {
+            0
+        } else {
+            total_messages_loaded.div_ceil(page_size as usize)
+        };
+
+        log::debug!(
+            "create_pagination_info: total_messages_loaded={}, total_pages_loaded={}, current_page={}, page_size={}",
+            total_messages_loaded,
+            total_pages_loaded,
+            self.queue_manager
+                .queue_state
+                .message_pagination
+                .current_page,
+            page_size
+        );
+
         // Extract queue statistics from cache if available
-        let (queue_total_messages, queue_stats_age_seconds) = 
-            if let Some(cache) = self.queue_state().message_pagination.get_cached_stats() {
-                (cache.active_message_count, Some(cache.age_seconds()))
+        let (queue_total_messages, queue_stats_age_seconds) = {
+            let mut current_name = self
+                .queue_manager
+                .queue_state
+                .current_queue_name
+                .clone()
+                .unwrap_or_default();
+            if current_name.ends_with("/$deadletterqueue") {
+                current_name = current_name
+                    .trim_end_matches("/$deadletterqueue")
+                    .to_string();
+            }
+            let current_type = &self.queue_manager.queue_state.current_queue_type;
+
+            if let Some(cache) = self
+                .queue_state()
+                .stats_manager
+                .get_cached_stats(&current_name)
+            {
+                let count = cache.get_count_for_type(current_type);
+                (Some(count), Some(cache.age_seconds()))
             } else {
                 (None, None)
-            };
+            }
+        };
 
         PaginationInfo {
             current_page: self
@@ -226,16 +273,8 @@ where
                 .queue_state
                 .message_pagination
                 .current_page,
-            total_pages_loaded: self
-                .queue_manager
-                .queue_state
-                .message_pagination
-                .total_pages_loaded,
-            total_messages_loaded: self
-                .queue_state()
-                .message_pagination
-                .all_loaded_messages
-                .len(),
+            total_pages_loaded, // Use calculated value, not stored value
+            total_messages_loaded,
             current_page_size,
             has_next_page: self
                 .queue_manager

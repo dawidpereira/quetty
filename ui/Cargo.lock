@@ -2451,6 +2451,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "azservicebus",
+ "azure_core 0.25.0",
  "chrono",
  "claims",
  "config",
@@ -2458,11 +2459,13 @@ dependencies = [
  "dotenv",
  "env_logger",
  "fern",
+ "futures",
  "log",
  "once_cell",
  "serde",
  "serde_json",
  "server",
+ "tempfile",
  "thiserror 2.0.12",
  "time",
  "tokio",
@@ -3090,8 +3093,10 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-util",
+ "urlencoding",
  "uuid",
 ]
 

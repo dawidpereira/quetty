@@ -3,20 +3,67 @@ use super::app::AppConfig;
 /// Configuration validation errors
 #[derive(Debug)]
 pub enum ConfigValidationError {
-    BatchSize { configured: u32, limit: u32 },
-    OperationTimeout { configured: u64, limit: u64 },
-    DlqBatchSize { configured: u32, limit: u32 },
-    BufferPercentage { configured: f64, limit: f64 },
-    MinBufferSize { configured: usize, limit: usize },
-    BulkOperationMaxCount { configured: usize, limit: usize },
-    AutoReloadThreshold { configured: usize, limit: usize },
-    SmallDeletionThreshold { configured: usize, limit: usize },
-    BulkChunkSize { configured: usize, limit: usize },
-    BulkProcessingTime { configured: u64, limit: u64 },
-    LockTimeout { configured: u64, limit: u64 },
-    MessagesMultiplier { configured: usize, limit: usize },
-    MinMessagesToProcess { configured: usize, limit: usize },
-    MaxMessagesToProcess { configured: usize, limit: usize },
+    BatchSize {
+        configured: u32,
+        limit: u32,
+    },
+    OperationTimeout {
+        configured: u64,
+        limit: u64,
+    },
+    DlqBatchSize {
+        configured: u32,
+        limit: u32,
+    },
+    BufferPercentage {
+        configured: f64,
+        limit: f64,
+    },
+    MinBufferSize {
+        configured: usize,
+        limit: usize,
+    },
+    BulkOperationMaxCount {
+        configured: usize,
+        limit: usize,
+    },
+    AutoReloadThreshold {
+        configured: usize,
+        limit: usize,
+    },
+    SmallDeletionThreshold {
+        configured: usize,
+        limit: usize,
+    },
+    BulkChunkSize {
+        configured: usize,
+        limit: usize,
+    },
+    BulkProcessingTime {
+        configured: u64,
+        limit: u64,
+    },
+    LockTimeout {
+        configured: u64,
+        limit: u64,
+    },
+    MessagesMultiplier {
+        configured: usize,
+        limit: usize,
+    },
+    MinMessagesToProcess {
+        configured: usize,
+        limit: usize,
+    },
+    MaxMessagesToProcess {
+        configured: usize,
+        limit: usize,
+    },
+    QueueStatsCacheTtl {
+        configured: u64,
+        min_limit: u64,
+        max_limit: u64,
+    },
 }
 
 impl ConfigValidationError {
@@ -147,6 +194,19 @@ impl ConfigValidationError {
                     Recommended maximum: {}\n\n\
                     Please update max_messages_to_process in config.toml.",
                     configured, limit
+                )
+            }
+            ConfigValidationError::QueueStatsCacheTtl {
+                configured,
+                min_limit,
+                max_limit,
+            } => {
+                format!(
+                    "Queue statistics cache TTL out of range!\n\n\
+                    Your configured value: {} seconds\n\
+                    Valid range: {} - {} seconds\n\n\
+                    Please update queue_stats_cache_ttl_seconds in config.toml to a value between {} and {} seconds.",
+                    configured, min_limit, max_limit, min_limit, max_limit
                 )
             }
         }

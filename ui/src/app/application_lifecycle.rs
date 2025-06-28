@@ -135,7 +135,7 @@ impl ApplicationLifecycle {
 
         let config = Self::load_configuration()?;
         let theme_init_result = Self::initialize_theme(&config.theme())?;
-        Self::validate_configuration(&config).await?;
+        Self::validate_configuration(config).await?;
 
         info!("Configuration loaded and validated successfully");
 

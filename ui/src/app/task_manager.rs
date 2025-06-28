@@ -94,6 +94,20 @@ impl TaskManager {
             error_reporter.report_send_error(context, e);
         }
     }
+
+    pub fn execute_background<F, R>(&self, operation: F)
+    where
+        F: Future<Output = Result<R, AppError>> + Send + 'static,
+        R: Send + 'static,
+    {
+        let error_reporter = self.error_reporter.clone();
+        self.taskpool.execute(async move {
+            if let Err(error) = operation.await {
+                error_reporter.report_simple(error, "TaskManager", "async_operation_bg");
+            }
+            // no loading indicator messages
+        });
+    }
 }
 
 #[cfg(test)]

@@ -30,3 +30,6 @@ fern = { version = "0.7", features = ["colored"] }
 
 [dev-dependencies]
 claims = "0.8"
+tempfile = "3.8"
+futures = "0.3"
+azure_core = "0.25.0"

@@ -1,3 +1,4 @@
+use crate::app::managers::queue_stats_manager::QueueStatsManager;
 use crate::app::updates::messages::MessagePaginationState;
 use server::bulk_operations::MessageIdentifier;
 use server::model::MessageModel;
@@ -96,6 +97,8 @@ pub struct QueueState {
     pub messages: Option<Vec<MessageModel>>,
     /// Message pagination state
     pub message_pagination: MessagePaginationState,
+    /// Queue statistics manager
+    pub stats_manager: QueueStatsManager,
     /// Bulk selection state
     pub bulk_selection: BulkSelectionState,
     /// Message repeat count for bulk sending (1-1000)
@@ -110,6 +113,7 @@ impl Default for QueueState {
             current_queue_type: QueueType::Main,
             messages: None,
             message_pagination: MessagePaginationState::default(),
+            stats_manager: QueueStatsManager::new(),
             bulk_selection: BulkSelectionState::default(),
             message_repeat_count: 1, // Default to sending once
         }
