@@ -1,3 +1,4 @@
+use crate::components::base_popup::PopupBuilder;
 use crate::components::common::{Msg, QueueType};
 use crate::components::messages::rendering::{
     build_table_from_messages, calculate_responsive_layout, format_delivery_count_responsive,
@@ -12,10 +13,7 @@ use tuirealm::command::{Cmd, CmdResult};
 use tuirealm::props::{Alignment, BorderType, Borders, Color, Style};
 use tuirealm::ratatui::layout::{Alignment as RatatuiAlignment, Constraint, Rect};
 use tuirealm::ratatui::style::{Color as RatatuiColor, Modifier, Style as RatatuiStyle};
-use tuirealm::ratatui::widgets::{
-    Block, BorderType as RatatuiBorderType, Borders as RatatuiBorders, Cell, Paragraph, Row,
-    Table as RatatuiTable, TableState,
-};
+use tuirealm::ratatui::widgets::{Cell, Paragraph, Row, Table as RatatuiTable, TableState};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, NoUserEvent, State, StateValue,
 };
@@ -330,21 +328,13 @@ impl MockComponent for Messages {
         )
         .header(header)
         .block(
-            Block::default()
-                .borders(RatatuiBorders::ALL)
-                .border_type(RatatuiBorderType::Rounded)
-                .border_style(RatatuiStyle::default().fg(if self.is_focused() {
-                    ThemeManager::primary_accent() // Teal when focused
-                } else {
-                    RatatuiColor::White // White when not focused
-                }))
-                .title(self.title().as_str())
-                .title_alignment(RatatuiAlignment::Center)
-                .title_style(
-                    RatatuiStyle::default()
-                        .fg(ThemeManager::title_accent()) // Use pink to match message details title
-                        .add_modifier(Modifier::BOLD),
-                ),
+            // Use PopupBuilder for consistent styling with conditional focus state
+            PopupBuilder::new("Messages Table").create_conditional_block(
+                self.title().as_str(),
+                self.is_focused(),
+                ThemeManager::primary_accent(), // Teal when focused
+                RatatuiColor::White,            // White when not focused
+            ),
         )
         .column_spacing(2)
         .row_highlight_style(

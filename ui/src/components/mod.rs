@@ -1,17 +1,33 @@
+// Core components
 pub mod common;
+pub mod state;
+
+// Reusable patterns and utilities
+pub mod base_popup;
+pub mod validation_patterns;
+
+// UI Components organized by category
+// Input components
+pub mod namespace_picker;
+pub mod queue_picker;
+pub mod theme_picker;
+
+// Popup components
 pub mod confirmation_popup;
 pub mod error_popup;
-pub mod global_key_watcher;
+pub mod number_input_popup;
+pub mod success_popup;
+
+// Display components
 pub mod help;
 pub mod help_bar;
 pub mod help_screen;
 pub mod loading_indicator;
+pub mod text_label;
+
+// Complex components
 pub mod message_details;
 pub mod messages;
-pub mod namespace_picker;
-pub mod number_input_popup;
-pub mod queue_picker;
-pub mod state;
-pub mod success_popup;
-pub mod text_label;
-pub mod theme_picker;
+
+// System components
+pub mod global_key_watcher;

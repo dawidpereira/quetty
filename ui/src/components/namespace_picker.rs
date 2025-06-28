@@ -1,9 +1,10 @@
+use crate::components::base_popup::PopupBuilder;
 use crate::components::common::{Msg, NamespaceActivityMsg};
 use crate::config::{self};
 use crate::theme::ThemeManager;
 use tuirealm::command::{Cmd, CmdResult};
 use tuirealm::event::{Event, Key, KeyEvent, NoUserEvent};
-use tuirealm::props::{Alignment, TextModifiers};
+use tuirealm::props::TextModifiers;
 use tuirealm::ratatui::layout::Rect;
 use tuirealm::ratatui::style::Style;
 use tuirealm::ratatui::widgets::{List, ListItem};
@@ -63,19 +64,12 @@ impl MockComponent for NamespacePicker {
                 item
             })
             .collect();
+        // Use PopupBuilder for consistent styling
+        let popup_block = PopupBuilder::new("Namespace Picker")
+            .create_block_with_title("  🌐 Select a Namespace  ");
+
         let list = List::new(items)
-            .block(
-                tuirealm::ratatui::widgets::Block::default()
-                    .borders(tuirealm::ratatui::widgets::Borders::ALL)
-                    .border_style(Style::default().fg(ThemeManager::primary_accent()))
-                    .title("  🌐 Select a Namespace  ")
-                    .title_alignment(Alignment::Center)
-                    .title_style(
-                        Style::default()
-                            .fg(ThemeManager::title_accent())
-                            .add_modifier(TextModifiers::BOLD),
-                    ),
-            )
+            .block(popup_block)
             .highlight_style(
                 Style::default()
                     .fg(ThemeManager::namespace_list_item())

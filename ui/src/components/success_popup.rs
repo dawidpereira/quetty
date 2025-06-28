@@ -1,39 +1,51 @@
+use crate::components::base_popup::PopupBuilder;
 use crate::components::common::{Msg, PopupActivityMsg};
 use crate::components::state::ComponentState;
-use crate::theme::ThemeManager;
-use tui_realm_stdlib::Paragraph;
 use tuirealm::{
     Component, Event, MockComponent, NoUserEvent,
+    command::{Cmd, CmdResult},
     event::{Key, KeyEvent},
-    props::{Alignment, BorderType, Borders, TextModifiers, TextSpan},
-    ratatui::{
-        Frame,
-        layout::Rect,
-        text::{Line, Text},
-        widgets::{Block, Paragraph as RatatuiParagraph, Wrap},
-    },
+    ratatui::{Frame, layout::Rect},
 };
 
+/// Success popup component that displays success messages to the user.
+///
+/// This component provides a consistent success display interface using the
+/// PopupBuilder pattern for standardized styling and behavior.
+///
+/// # Usage
+///
+/// ```rust
+/// use quetty::components::success_popup::SuccessPopup;
+///
+/// let popup = SuccessPopup::new("Operation completed successfully!");
+/// ```
+///
+/// # Events
+///
+/// - `KeyEvent::Enter` - Closes the success popup
+/// - `KeyEvent::Esc` - Closes the success popup
+///
+/// # Messages
+///
+/// Emits `Msg::PopupActivity(PopupActivityMsg::CloseSuccess)` when closed.
 pub struct SuccessPopup {
-    component: Paragraph,
     message: String,
     is_mounted: bool,
 }
 
 impl SuccessPopup {
+    /// Creates a new success popup with the specified message.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - The success message to display
+    ///
+    /// # Returns
+    ///
+    /// A new `SuccessPopup` instance ready for mounting.
     pub fn new(message: &str) -> Self {
         Self {
-            component: Paragraph::default()
-                .borders(
-                    Borders::default()
-                        .color(ThemeManager::status_success())
-                        .modifiers(BorderType::Rounded),
-                )
-                .title(" ✅ Success ", Alignment::Center)
-                .foreground(ThemeManager::status_success())
-                .modifiers(TextModifiers::BOLD)
-                .alignment(Alignment::Center)
-                .text([TextSpan::from(message)]),
             message: message.to_string(),
             is_mounted: false,
         }
@@ -42,61 +54,26 @@ impl SuccessPopup {
 
 impl MockComponent for SuccessPopup {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        // Create the border block
-        let block = Block::default()
-            .borders(tuirealm::ratatui::widgets::Borders::ALL)
-            .border_type(tuirealm::ratatui::widgets::BorderType::Rounded)
-            .border_style(
-                tuirealm::ratatui::style::Style::default().fg(ThemeManager::status_success()),
-            )
-            .title(" ✅ Success ")
-            .title_alignment(tuirealm::ratatui::layout::Alignment::Center)
-            .title_style(
-                tuirealm::ratatui::style::Style::default()
-                    .fg(ThemeManager::status_success())
-                    .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
-            );
-
-        // Split the message into lines and create centered text
-        let mut lines = Vec::new();
-
-        // Add empty line at the top for better spacing
-        lines.push(Line::from(""));
-
-        for line in self.message.lines() {
-            lines.push(Line::from(line).alignment(tuirealm::ratatui::layout::Alignment::Center));
-        }
-
-        let text = Text::from(lines);
-
-        // Create the paragraph with custom text and word wrapping
-        let paragraph = RatatuiParagraph::new(text)
-            .block(block)
-            .alignment(tuirealm::ratatui::layout::Alignment::Center)
-            .wrap(Wrap { trim: true })
-            .style(
-                tuirealm::ratatui::style::Style::default()
-                    .fg(ThemeManager::status_success())
-                    .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
-            );
-
-        frame.render_widget(paragraph, area);
+        PopupBuilder::success("✅ Success")
+            .add_multiline_text(&self.message)
+            .with_instructions("Press Enter or Esc to close")
+            .render(frame, area);
     }
 
-    fn query(&self, attr: tuirealm::Attribute) -> Option<tuirealm::AttrValue> {
-        self.component.query(attr)
+    fn query(&self, _attr: tuirealm::Attribute) -> Option<tuirealm::AttrValue> {
+        None
     }
 
-    fn attr(&mut self, attr: tuirealm::Attribute, value: tuirealm::AttrValue) {
-        self.component.attr(attr, value);
+    fn attr(&mut self, _attr: tuirealm::Attribute, _value: tuirealm::AttrValue) {
+        // No attributes supported
     }
 
     fn state(&self) -> tuirealm::State {
-        self.component.state()
+        tuirealm::State::None
     }
 
-    fn perform(&mut self, cmd: tuirealm::command::Cmd) -> tuirealm::command::CmdResult {
-        self.component.perform(cmd)
+    fn perform(&mut self, _cmd: Cmd) -> CmdResult {
+        CmdResult::None
     }
 }
 
@@ -122,7 +99,6 @@ impl ComponentState for SuccessPopup {
         }
 
         self.is_mounted = true;
-
         log::debug!("SuccessPopup component mounted successfully");
         Ok(())
     }

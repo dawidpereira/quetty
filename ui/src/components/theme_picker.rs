@@ -1,3 +1,4 @@
+use crate::components::base_popup::PopupBuilder;
 use crate::components::common::{Msg, ThemeActivityMsg};
 use crate::components::state::ComponentState;
 use crate::error::AppResult;
@@ -145,19 +146,11 @@ impl MockComponent for ThemePicker {
             PickerMode::SelectingFlavor => "↑/↓/j/k: Navigate, Enter: Apply, Backspace/Esc: Back",
         };
 
+        // Use PopupBuilder for consistent styling
+        let popup_block = PopupBuilder::new("Theme Picker").create_block_with_title(title);
+
         let list = List::new(items)
-            .block(
-                tuirealm::ratatui::widgets::Block::default()
-                    .borders(tuirealm::ratatui::widgets::Borders::ALL)
-                    .border_style(Style::default().fg(ThemeManager::primary_accent()))
-                    .title(title)
-                    .title_alignment(Alignment::Center)
-                    .title_style(
-                        Style::default()
-                            .fg(ThemeManager::title_accent())
-                            .add_modifier(TextModifiers::BOLD),
-                    ),
-            )
+            .block(popup_block)
             .highlight_style(
                 Style::default()
                     .fg(ThemeManager::selection_fg())
