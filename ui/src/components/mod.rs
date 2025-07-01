@@ -16,6 +16,7 @@ pub mod theme_picker;
 pub mod confirmation_popup;
 pub mod error_popup;
 pub mod number_input_popup;
+pub mod page_size_popup;
 pub mod success_popup;
 
 // Display components

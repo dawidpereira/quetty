@@ -198,9 +198,7 @@ where
 
         // Show confirmation dialog with delivery count warning if not at the beginning
         let title = "Replace Message".to_string();
-        let mut message = format!(
-            "You are about to replace a message in the queue.\n\n📤 Action: Send new message with edited content\n🗑️  Result: Delete original message from queue\n⚠️   Warning: This action CANNOT be undone!"
-        );
+        let mut message = "You are about to replace a message in the queue.\n\n📤 Action: Send new message with edited content\n🗑️  Result: Delete original message from queue\n⚠️   Warning: This action CANNOT be undone!".to_string();
 
         // Add delivery count warning if the message is not at the beginning
         if !is_message_at_start {

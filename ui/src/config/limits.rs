@@ -17,6 +17,13 @@ pub const MAX_LOCK_TIMEOUT_SECS: u64 = 30;
 /// Maximum messages to process in bulk operations
 pub const MAX_MESSAGES_TO_PROCESS_LIMIT: usize = 10_000;
 
+/// Page size configuration limits
+/// Minimum page size for message display
+pub const MIN_PAGE_SIZE: u32 = 100;
+
+/// Maximum page size for message display
+pub const MAX_PAGE_SIZE: u32 = 1000;
+
 /// Queue statistics configuration limits
 /// Minimum TTL for queue statistics cache (30 seconds)
 pub const MIN_QUEUE_STATS_CACHE_TTL_SECONDS: u64 = 30;

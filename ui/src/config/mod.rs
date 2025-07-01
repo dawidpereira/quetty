@@ -16,6 +16,10 @@ pub use validation::{ConfigLoadResult, ConfigValidationError};
 /// Global configuration loading and access
 static CONFIG: std::sync::OnceLock<ConfigLoadResult> = std::sync::OnceLock::new();
 
+/// Global current page size that can be changed during runtime
+static CURRENT_PAGE_SIZE: std::sync::OnceLock<std::sync::Mutex<Option<u32>>> =
+    std::sync::OnceLock::new();
+
 fn load_config() -> ConfigLoadResult {
     dotenv::dotenv().ok();
     let env_source = Environment::default().separator("__");
@@ -59,6 +63,26 @@ pub fn get_config_or_panic() -> &'static AppConfig {
         ConfigLoadResult::DeserializeError(e) => {
             panic!("Failed to deserialize config: {}", e);
         }
+    }
+}
+
+/// Get the current page size, falling back to config if not set
+pub fn get_current_page_size() -> u32 {
+    let current_page_size = CURRENT_PAGE_SIZE.get_or_init(|| std::sync::Mutex::new(None));
+    if let Ok(guard) = current_page_size.lock() {
+        if let Some(size) = *guard {
+            return size;
+        }
+    }
+    // Fall back to config value
+    get_config_or_panic().max_messages()
+}
+
+/// Set the current page size
+pub fn set_current_page_size(page_size: u32) {
+    let current_page_size = CURRENT_PAGE_SIZE.get_or_init(|| std::sync::Mutex::new(None));
+    if let Ok(mut guard) = current_page_size.lock() {
+        *guard = Some(page_size);
     }
 }
 

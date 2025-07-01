@@ -300,7 +300,7 @@ impl<T: TerminalAdapter> ValidatedBulkOperation<T> {
         let current_message_count = model
             .queue_state()
             .message_pagination
-            .get_current_page_messages(crate::config::get_config_or_panic().max_messages())
+            .get_current_page_messages(crate::config::get_current_page_size())
             .len();
 
         let selected_from_current_page = self

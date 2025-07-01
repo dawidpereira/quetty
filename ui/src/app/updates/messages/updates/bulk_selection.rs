@@ -17,7 +17,7 @@ where
         let current_messages = self
             .queue_state()
             .message_pagination
-            .get_current_page_messages(config::get_config_or_panic().max_messages());
+            .get_current_page_messages(config::get_current_page_size());
 
         if index >= current_messages.len() {
             return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(
@@ -93,7 +93,7 @@ where
         let current_messages = self
             .queue_state()
             .message_pagination
-            .get_current_page_messages(config::get_config_or_panic().max_messages());
+            .get_current_page_messages(config::get_current_page_size());
 
         if current_messages.is_empty() {
             return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(

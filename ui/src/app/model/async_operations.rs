@@ -24,11 +24,6 @@ where
         }
     }
 
-    /// Load messages from current queue using MessageManager
-    pub fn load_messages(&self) {
-        self.message_manager.load_messages();
-    }
-
     /// Force reload messages - useful after bulk operations that modify the queue
     pub fn handle_force_reload_messages(&mut self) -> Option<Msg> {
         log::info!("Force reloading messages after bulk operation - resetting pagination state");

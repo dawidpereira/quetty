@@ -3,6 +3,12 @@ use super::app::AppConfig;
 /// Configuration validation errors
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigValidationError {
+    #[error("Invalid page_size: {configured} (min: {min_limit}, max: {max_limit})")]
+    PageSize {
+        configured: u32,
+        min_limit: u32,
+        max_limit: u32,
+    },
     #[error("Invalid batch_size: {configured} (limit: {limit})")]
     BatchSize { configured: u32, limit: u32 },
     #[error("Invalid operation_timeout_secs: {configured} (limit: {limit})")]
@@ -28,6 +34,19 @@ pub enum ConfigValidationError {
 impl ConfigValidationError {
     pub fn user_message(&self) -> String {
         match self {
+            ConfigValidationError::PageSize {
+                configured,
+                min_limit,
+                max_limit,
+            } => {
+                format!(
+                    "Page size out of range!\n\n\
+                    Your configured value: {}\n\
+                    Valid range: {} - {}\n\n\
+                    Please update page_size in config.toml to a value between {} and {}.",
+                    configured, min_limit, max_limit, min_limit, max_limit
+                )
+            }
             ConfigValidationError::MaxMessagesToProcess { configured, limit } => {
                 format!(
                     "Maximum messages to process too high!\n\n\

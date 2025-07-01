@@ -5,6 +5,7 @@ use crate::components::error_popup::ErrorPopup;
 use crate::components::global_key_watcher::GlobalKeyWatcher;
 use crate::components::loading_indicator::LoadingIndicator;
 use crate::components::number_input_popup::NumberInputPopup;
+use crate::components::page_size_popup::PageSizePopup;
 use crate::components::state::ComponentStateMount;
 use crate::components::success_popup::SuccessPopup;
 use crate::components::theme_picker::ThemePicker;
@@ -140,6 +141,20 @@ where
         Ok(())
     }
 
+    pub fn mount_page_size_popup(&mut self) -> AppResult<()> {
+        self.app.remount_with_state(
+            ComponentId::PageSizePopup,
+            PageSizePopup::new(),
+            Vec::default(),
+        )?;
+
+        self.app
+            .active(&ComponentId::PageSizePopup)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        Ok(())
+    }
+
     pub fn unmount_confirmation_popup(&mut self) -> AppResult<()> {
         self.app
             .umount(&ComponentId::ConfirmationPopup)
@@ -154,6 +169,17 @@ where
     pub fn unmount_number_input_popup(&mut self) -> AppResult<()> {
         self.app
             .umount(&ComponentId::NumberInputPopup)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        // Return to appropriate state
+        self.activate_component_for_current_state()?;
+        self.set_redraw(true);
+        Ok(())
+    }
+
+    pub fn unmount_page_size_popup(&mut self) -> AppResult<()> {
+        self.app
+            .umount(&ComponentId::PageSizePopup)
             .map_err(|e| AppError::Component(e.to_string()))?;
 
         // Return to appropriate state

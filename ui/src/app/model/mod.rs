@@ -155,6 +155,11 @@ where
     pub fn set_active_component(&mut self, component: ComponentId) {
         self.state_manager.set_active_component(component);
     }
+
+    /// Get current page size (dynamic or from config)
+    pub fn get_current_page_size(&self) -> u32 {
+        self.state_manager.get_current_page_size()
+    }
 }
 
 impl<T> Update<Msg> for Model<T>

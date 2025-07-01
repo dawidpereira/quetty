@@ -84,7 +84,7 @@ where
         let current_messages = self
             .queue_state()
             .message_pagination
-            .get_current_page_messages(config::get_config_or_panic().max_messages());
+            .get_current_page_messages(config::get_current_page_size());
 
         // Only auto-reload if the queue appears to be empty (0 messages shown)
         // This is the only case where auto-reload makes sense with Azure Service Bus
@@ -130,7 +130,7 @@ where
         use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 
         let command = ServiceBusCommand::PeekMessages {
-            max_count: config::get_config_or_panic().max_messages(),
+            max_count: config::get_current_page_size(),
             from_sequence: None,
         };
 
