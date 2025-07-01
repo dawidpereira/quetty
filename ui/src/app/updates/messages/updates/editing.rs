@@ -184,6 +184,7 @@ where
         &self,
         content: String,
         message_id: MessageIdentifier,
+        max_position: usize,
     ) -> Option<Msg> {
         let queue_name = match self.get_current_queue() {
             Ok(name) => name,
@@ -224,8 +225,10 @@ where
 
                         // Step 2: Delete original message using service bus manager
                         progress.report_progress("Deleting original message...");
+
                         let delete_command = ServiceBusCommand::BulkDelete {
                             message_ids: vec![message_id],
+                            max_position,
                         };
 
                         let delete_response = service_bus_manager.lock().await.execute_command(delete_command).await;

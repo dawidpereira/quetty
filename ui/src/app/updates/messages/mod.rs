@@ -70,7 +70,15 @@ where
                 self.handle_send_edited_message(content)
             }
             MessageActivityMsg::ReplaceEditedMessage(content, message_id) => {
-                self.handle_replace_edited_message(content, message_id)
+                // Calculate max position for stopping condition
+                let page_size = crate::config::get_config_or_panic().max_messages() as usize;
+                let total_loaded_messages = self
+                    .queue_state()
+                    .message_pagination
+                    .all_loaded_messages
+                    .len();
+                let max_position = std::cmp::max(total_loaded_messages, page_size);
+                self.handle_replace_edited_message(content, message_id, max_position)
             }
             _ => None,
         }
@@ -102,7 +110,6 @@ where
             MessageActivityMsg::BulkDeleteMessages(message_ids) => {
                 bulk_execution::delete_operations::handle_bulk_delete_execution(self, message_ids)
             }
-
             MessageActivityMsg::BulkSendToDLQWithDelete(message_ids) => {
                 bulk_execution::send_operations::handle_bulk_send_to_dlq_with_delete_execution(
                     self,

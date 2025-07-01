@@ -2,12 +2,15 @@ use super::consumer_manager::ConsumerManager;
 use super::producer_manager::ProducerManager;
 use super::queue_statistics_service::QueueStatisticsService;
 use super::types::{QueueInfo, QueueType};
-use crate::bulk_operations::{BulkOperationHandler, MessageIdentifier};
+
+use crate::bulk_operations::BulkOperationResult;
+use crate::bulk_operations::{BulkOperationHandler, MessageIdentifier, types::BatchConfig};
 use crate::service_bus_manager::{
     errors::ServiceBusError, responses::ServiceBusResponse, types::MessageData,
 };
-use azservicebus::{ServiceBusClient, core::BasicRetryPolicy};
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 
 /// Result type for service bus operations
@@ -17,8 +20,6 @@ type ServiceBusResult<T> = Result<T, ServiceBusError>;
 const ERROR_INDIVIDUAL_MSG_OPERATIONS: &str =
     "Individual message operations by ID require message to be received first";
 const ERROR_BULK_OPERATIONS: &str = "Bulk operations require message to be received first";
-const ERROR_PEEKED_TO_REGULAR_QUEUE: &str =
-    "Sending peeked messages to regular queues (non-DLQ) is not supported";
 
 /// Handles queue-related commands
 pub struct QueueCommandHandler {
@@ -153,19 +154,22 @@ impl MessageCommandHandler {
 pub struct BulkCommandHandler {
     bulk_handler: Arc<BulkOperationHandler>,
     consumer_manager: Arc<Mutex<ConsumerManager>>,
-    service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+    producer_manager: Arc<Mutex<ProducerManager>>,
+    batch_config: BatchConfig,
 }
 
 impl BulkCommandHandler {
     pub fn new(
         bulk_handler: Arc<BulkOperationHandler>,
         consumer_manager: Arc<Mutex<ConsumerManager>>,
-        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+        producer_manager: Arc<Mutex<ProducerManager>>,
+        batch_config: BatchConfig,
     ) -> Self {
         Self {
             bulk_handler,
             consumer_manager,
-            service_bus_client,
+            producer_manager,
+            batch_config,
         }
     }
 
@@ -181,38 +185,48 @@ impl BulkCommandHandler {
     pub async fn handle_bulk_delete(
         &self,
         message_ids: Vec<MessageIdentifier>,
+        max_position: usize,
     ) -> ServiceBusResult<ServiceBusResponse> {
         log::info!(
             "Starting bulk delete operation for {} messages",
             message_ids.len()
         );
 
-        let consumer = {
+        let (consumer, queue_name) = {
             let manager = self.consumer_manager.lock().await;
-            manager
+            let consumer_arc = manager
                 .get_raw_consumer()
                 .ok_or(ServiceBusError::ConsumerNotFound)?
-                .clone()
+                .clone();
+            let queue = manager
+                .current_queue()
+                .ok_or(ServiceBusError::ConsumerNotFound)?
+                .name
+                .clone();
+            (consumer_arc, queue)
         };
 
-        let context = crate::bulk_operations::BulkOperationContext::new(
-            consumer,
-            self.service_bus_client.clone(),
-            String::new(),
-        );
+        // Validate that we have messages to work with
+        if message_ids.is_empty() {
+            log::warn!("Bulk delete called with no message IDs");
+            let result = BulkOperationResult::new(0);
+            return Ok(ServiceBusResponse::BulkOperationCompleted { result });
+        }
 
-        let params = crate::bulk_operations::BulkSendParams::with_retrieval(
-            String::new(),
-            false,
-            message_ids,
-        );
+        // Log which queue we're deleting from for debugging
+        log::info!("Bulk delete operating on queue: {}", queue_name);
 
-        match self.bulk_handler.bulk_delete(context, &params).await {
+        match self
+            .bulk_handler
+            .delete_messages(consumer, queue_name, message_ids, max_position)
+            .await
+        {
             Ok(result) => {
                 log::info!(
-                    "Bulk delete completed: {} successful, {} failed",
+                    "Bulk delete completed: {} successful, {} failed, {} not found",
                     result.successful,
-                    result.failed
+                    result.failed,
+                    result.not_found
                 );
                 Ok(ServiceBusResponse::BulkOperationCompleted { result })
             }
@@ -252,16 +266,21 @@ impl BulkCommandHandler {
         target_queue: String,
         should_delete_source: bool,
         repeat_count: usize,
+        max_position: usize,
     ) -> ServiceBusResult<ServiceBusResponse> {
         log::info!(
-            "Starting bulk send operation for {} messages to queue '{}' (delete_source: {}, repeat: {})",
+            "Starting bulk send: {} -> {}, delete_source={}, repeat={}",
             message_ids.len(),
             target_queue,
             should_delete_source,
             repeat_count
         );
 
-        let consumer = {
+        // Check if this is a DLQ operation
+        let is_dlq_operation = target_queue.ends_with("/$deadletterqueue");
+
+        // Acquire consumer for receiving original messages
+        let consumer_arc = {
             let manager = self.consumer_manager.lock().await;
             manager
                 .get_raw_consumer()
@@ -269,109 +288,175 @@ impl BulkCommandHandler {
                 .clone()
         };
 
-        let operation_type =
-            crate::bulk_operations::QueueOperationType::from_queue_name(&target_queue);
-        log::debug!(
-            "Determined operation type: {:?} for target queue: {}",
-            operation_type,
-            target_queue
-        );
+        // Create lookup for quick match
+        let mut remaining: HashMap<String, MessageIdentifier> = message_ids
+            .iter()
+            .map(|m| (m.id.clone(), m.clone()))
+            .collect();
 
-        let context = crate::bulk_operations::BulkOperationContext::new(
-            consumer,
-            self.service_bus_client.clone(),
-            target_queue.clone(),
-        );
+        let mut matched_messages = Vec::<azservicebus::ServiceBusReceivedMessage>::new();
+        let mut message_bytes = Vec::<Vec<u8>>::new();
 
-        let params = crate::bulk_operations::BulkSendParams::with_retrieval(
-            target_queue,
-            should_delete_source,
-            message_ids.clone(),
-        );
+        {
+            // Lock consumer for receive operations
+            let mut consumer = consumer_arc.lock().await;
 
-        match self.bulk_handler.bulk_send(context, params).await {
-            Ok(result) => {
-                log::info!(
-                    "Bulk send completed: {} successful, {} failed",
-                    result.successful,
-                    result.failed
-                );
-                Ok(ServiceBusResponse::BulkOperationCompleted { result })
-            }
-            Err(e) => {
-                log::error!("Bulk send failed: {}", e);
-                Err(ServiceBusError::BulkOperationFailed(format!(
-                    "Bulk send failed: {}",
-                    e
-                )))
+            let batch_size = self.batch_config.bulk_chunk_size() as u32;
+            let mut processed_count = 0;
+            while !remaining.is_empty() && processed_count < max_position {
+                let batch = match consumer
+                    .receive_messages_with_timeout(
+                        batch_size,
+                        Duration::from_secs(self.batch_config.operation_timeout_secs()),
+                    )
+                    .await
+                {
+                    Ok(msgs) => msgs,
+                    Err(e) => {
+                        log::error!("Receive error during bulk send: {}", e);
+                        break;
+                    }
+                };
+
+                if batch.is_empty() {
+                    log::debug!(
+                        "Receive batch empty after processing {} messages",
+                        processed_count
+                    );
+                    break;
+                }
+
+                let batch_len = batch.len();
+                for msg in batch.into_iter() {
+                    let msg_id = msg.message_id().map(|s| s.to_string()).unwrap_or_default();
+
+                    if remaining.remove(&msg_id).is_some() {
+                        if !is_dlq_operation {
+                            // For regular send operations, extract body bytes
+                            let body_bytes = match msg.body() {
+                                Ok(bytes) => bytes.to_vec(),
+                                Err(_) => Vec::new(),
+                            };
+                            message_bytes.push(body_bytes);
+                        }
+                        matched_messages.push(msg);
+                    } else {
+                        // Not a target, abandon it immediately
+                        if let Err(e) = consumer.abandon_message(&msg).await {
+                            log::warn!("Failed to abandon non-target message: {}", e);
+                        }
+                    }
+                }
+
+                processed_count += batch_len;
             }
         }
+
+        if is_dlq_operation {
+            // For DLQ operations, use dead_letter_message on each matched message
+            let mut successful_count = 0;
+            let mut failed_count = 0;
+
+            {
+                let mut consumer = consumer_arc.lock().await;
+                for msg in &matched_messages {
+                    match consumer
+                        .dead_letter_message(msg, Some("Bulk moved to DLQ".to_string()), None)
+                        .await
+                    {
+                        Ok(()) => {
+                            successful_count += 1;
+                            log::debug!(
+                                "Successfully dead lettered message: {:?}",
+                                msg.message_id()
+                            );
+                        }
+                        Err(e) => {
+                            failed_count += 1;
+                            log::error!("Failed to dead letter message: {}", e);
+                        }
+                    }
+                }
+            }
+
+            // Build BulkOperationResult for DLQ operation
+            let mut result = BulkOperationResult::new(message_ids.len());
+            result.successful = successful_count;
+            result.not_found = remaining.len();
+            result.failed = failed_count;
+
+            return Ok(ServiceBusResponse::BulkOperationCompleted { result });
+        }
+
+        // For regular send operations (not DLQ), use producer manager
+        let mut producer_mgr = self.producer_manager.lock().await;
+        let stats = producer_mgr
+            .send_raw_messages(&target_queue, message_bytes.clone(), repeat_count)
+            .await
+            .map_err(|e| {
+                ServiceBusError::BulkOperationFailed(format!("Bulk send failed: {}", e))
+            })?;
+
+        // Complete or abandon original messages as required
+        {
+            let mut consumer = consumer_arc.lock().await;
+            for msg in &matched_messages {
+                let res = if should_delete_source {
+                    consumer.complete_message(msg).await
+                } else {
+                    consumer.abandon_message(msg).await
+                };
+                if let Err(e) = res {
+                    log::warn!(
+                        "Failed to finalise message {}: {}",
+                        msg.sequence_number(),
+                        e
+                    );
+                }
+            }
+        }
+
+        // Build BulkOperationResult
+        let mut result = BulkOperationResult::new(message_ids.len());
+        result.successful = matched_messages.len();
+        result.not_found = remaining.len();
+        result.failed = stats.failed / repeat_count; // approximate failures per original message
+
+        Ok(ServiceBusResponse::BulkOperationCompleted { result })
     }
 
     pub async fn handle_bulk_send_peeked(
         &self,
         messages_data: Vec<(MessageIdentifier, Vec<u8>)>,
         target_queue: String,
-        should_delete_source: bool,
-        _repeat_count: usize,
+        repeat_count: usize,
     ) -> ServiceBusResult<ServiceBusResponse> {
         log::info!(
-            "Starting bulk send peeked operation for {} messages to queue '{}'",
+            "Bulk send (peeked) {} messages to {} (repeat={})",
             messages_data.len(),
-            target_queue
+            target_queue,
+            repeat_count
         );
 
-        let operation_type =
-            crate::bulk_operations::QueueOperationType::from_queue_name(&target_queue);
-        log::debug!(
-            "Determined operation type: {:?} for target queue: {}",
-            operation_type,
-            target_queue
-        );
+        // Extract raw bytes
+        let raw_vec: Vec<Vec<u8>> = messages_data
+            .iter()
+            .map(|(_id, data)| data.clone())
+            .collect();
 
-        if let crate::bulk_operations::QueueOperationType::SendToDLQ = operation_type {
-            let consumer = {
-                let manager = self.consumer_manager.lock().await;
-                manager
-                    .get_raw_consumer()
-                    .ok_or(ServiceBusError::ConsumerNotFound)?
-                    .clone()
-            };
+        let mut producer_mgr = self.producer_manager.lock().await;
+        let stats = producer_mgr
+            .send_raw_messages(&target_queue, raw_vec, repeat_count)
+            .await
+            .map_err(|e| {
+                ServiceBusError::BulkOperationFailed(format!("Bulk send failed: {}", e))
+            })?;
 
-            let context = crate::bulk_operations::BulkOperationContext::new(
-                consumer,
-                self.service_bus_client.clone(),
-                target_queue.clone(),
-            );
-
-            let params = crate::bulk_operations::BulkSendParams::with_message_data(
-                target_queue.clone(),
-                should_delete_source,
-                messages_data,
-            );
-
-            match self.bulk_handler.bulk_send(context, params).await {
-                Ok(result) => {
-                    log::info!(
-                        "Bulk send peeked completed: {} successful, {} failed",
-                        result.successful,
-                        result.failed
-                    );
-                    Ok(ServiceBusResponse::BulkOperationCompleted { result })
-                }
-                Err(e) => {
-                    log::error!("Bulk send peeked failed: {}", e);
-                    Err(ServiceBusError::BulkOperationFailed(format!(
-                        "Bulk send peeked failed: {}",
-                        e
-                    )))
-                }
-            }
-        } else {
-            Err(ServiceBusError::InternalError(
-                ERROR_PEEKED_TO_REGULAR_QUEUE.to_string(),
-            ))
-        }
+        Ok(ServiceBusResponse::MessagesSent {
+            queue_name: target_queue,
+            count: stats.total,
+            stats,
+        })
     }
 }
 
@@ -505,7 +590,6 @@ mod tests {
         // Test that error messages are descriptive
         assert!(ERROR_INDIVIDUAL_MSG_OPERATIONS.contains("require message to be received"));
         assert!(ERROR_BULK_OPERATIONS.contains("require message to be received"));
-        assert!(ERROR_PEEKED_TO_REGULAR_QUEUE.contains("not supported"));
     }
 
     #[test]
@@ -528,11 +612,9 @@ mod tests {
     fn test_error_message_consistency() {
         // Test that error constants are used consistently
         assert_ne!(ERROR_INDIVIDUAL_MSG_OPERATIONS, ERROR_BULK_OPERATIONS);
-        assert_ne!(ERROR_BULK_OPERATIONS, ERROR_PEEKED_TO_REGULAR_QUEUE);
 
         // Ensure all error messages provide helpful context
         assert!(ERROR_INDIVIDUAL_MSG_OPERATIONS.len() > 10);
         assert!(ERROR_BULK_OPERATIONS.len() > 10);
-        assert!(ERROR_PEEKED_TO_REGULAR_QUEUE.len() > 10);
     }
 }

@@ -42,6 +42,7 @@ pub enum ServiceBusCommand {
     },
     BulkDelete {
         message_ids: Vec<MessageIdentifier>,
+        max_position: usize,
     },
     BulkAbandon {
         message_ids: Vec<MessageIdentifier>,
@@ -58,11 +59,11 @@ pub enum ServiceBusCommand {
         target_queue: String,
         should_delete_source: bool,
         repeat_count: usize,
+        max_position: usize,
     },
     BulkSendPeeked {
         messages_data: Vec<(MessageIdentifier, Vec<u8>)>,
         target_queue: String,
-        should_delete_source: bool,
         repeat_count: usize,
     },
 

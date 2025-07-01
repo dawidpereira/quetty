@@ -210,6 +210,7 @@ fn start_bulk_send_generic<T: TerminalAdapter>(
     model: &Model<T>,
     bulk_data: BulkSendData,
     operation_params: BulkSendParams,
+    max_position: usize,
 ) -> Option<Msg> {
     let task_manager = BulkTaskManager::new(model.taskpool.clone(), model.tx_to_main().clone());
 
@@ -221,6 +222,7 @@ fn start_bulk_send_generic<T: TerminalAdapter>(
         model.tx_to_main().clone(),
         model.queue_state().message_repeat_count,
         model.error_reporter.clone(),
+        max_position,
     );
 
     // Execute the task
@@ -234,11 +236,38 @@ fn start_bulk_send_operation<T: TerminalAdapter>(
     message_ids: Vec<MessageIdentifier>,
     params: BulkSendParams,
 ) -> Option<Msg> {
-    // Use message IDs for retrieval-based operations (allows deletion)
+    // Use actual highest selected index if available, otherwise get current message index
+    let max_position = if let Some(highest_index) = model
+        .queue_state()
+        .bulk_selection
+        .get_highest_selected_index()
+    {
+        highest_index
+    } else if message_ids.len() == 1 {
+        // Single message operation - get current message index from UI state
+        if let Ok(tuirealm::State::One(tuirealm::StateValue::Usize(selected_index))) = model
+            .app
+            .state(&crate::components::common::ComponentId::Messages)
+        {
+            selected_index + 1 // Convert to 1-based position
+        } else {
+            // Fallback to page-based estimation
+            let page_size = crate::config::get_config_or_panic().max_messages() as usize;
+            let current_page = model.queue_state().message_pagination.current_page;
+            (current_page + 1) * page_size
+        }
+    } else {
+        // Fallback to page-based estimation
+        let page_size = crate::config::get_config_or_panic().max_messages() as usize;
+        let current_page = model.queue_state().message_pagination.current_page;
+        (current_page + 1) * page_size
+    };
+
     start_bulk_send_generic(
         model,
         BulkSendData::MessageIds(message_ids.iter().map(|id| id.to_string()).collect()),
         params,
+        max_position,
     )
 }
 
@@ -248,6 +277,34 @@ fn start_bulk_send_with_data_operation<T: TerminalAdapter>(
     messages_data: Vec<(MessageIdentifier, Vec<u8>)>,
     params: BulkSendParams,
 ) -> Option<Msg> {
+    // Use actual highest selected index if available, otherwise get current message index
+    let max_position = if let Some(highest_index) = model
+        .queue_state()
+        .bulk_selection
+        .get_highest_selected_index()
+    {
+        // get_highest_selected_index now returns 1-based position
+        highest_index
+    } else if messages_data.len() == 1 {
+        // Single message operation - get current message index from UI state
+        if let Ok(tuirealm::State::One(tuirealm::StateValue::Usize(selected_index))) = model
+            .app
+            .state(&crate::components::common::ComponentId::Messages)
+        {
+            selected_index + 1 // Convert to 1-based position
+        } else {
+            // Fallback to page-based estimation
+            let page_size = crate::config::get_config_or_panic().max_messages() as usize;
+            let current_page = model.queue_state().message_pagination.current_page;
+            (current_page + 1) * page_size
+        }
+    } else {
+        // Fallback to page-based estimation
+        let page_size = crate::config::get_config_or_panic().max_messages() as usize;
+        let current_page = model.queue_state().message_pagination.current_page;
+        (current_page + 1) * page_size
+    };
+
     start_bulk_send_generic(
         model,
         BulkSendData::MessageData(
@@ -257,5 +314,6 @@ fn start_bulk_send_with_data_operation<T: TerminalAdapter>(
                 .collect(),
         ),
         params,
+        max_position,
     )
 }

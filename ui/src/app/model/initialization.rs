@@ -106,9 +106,6 @@ impl Model<CrosstermTerminalAdapter> {
         .await
         .map_err(|e| AppError::ServiceBus(e.to_string()))?;
 
-        // Create service bus manager with configuration from UI config
-        // Now using the unified BatchConfig that includes all necessary configuration
-        let batch_config = config.batch().clone();
         let azure_ad_config = config.azure_ad().clone();
         let statistics_config =
             server::service_bus_manager::azure_management_client::StatisticsConfig::new(
@@ -118,9 +115,9 @@ impl Model<CrosstermTerminalAdapter> {
             );
         let service_bus_manager = Arc::new(Mutex::new(ServiceBusManager::new(
             Arc::new(Mutex::new(azure_service_bus_client)),
-            batch_config,
             azure_ad_config,
             statistics_config,
+            config.batch().clone(),
         )));
 
         let (tx_to_main, rx_to_main) = mpsc::channel();

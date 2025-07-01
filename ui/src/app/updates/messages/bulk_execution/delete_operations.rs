@@ -40,7 +40,7 @@ pub fn handle_bulk_delete_execution<T: TerminalAdapter>(
     let error_reporter = model.error_reporter.clone();
     let message_ids = validated_operation.message_ids().to_vec();
 
-    // Log message order warning
+    let max_position = context.max_position;
     Model::<T>::log_message_order_warning(message_ids.len(), "delete");
 
     // Generate unique operation ID for cancellation support
@@ -66,9 +66,10 @@ pub fn handle_bulk_delete_execution<T: TerminalAdapter>(
                 // Report initial progress
                 progress.report_progress("Initializing...");
 
-                // Execute bulk delete using service bus manager
+                // Execute bulk delete using service bus manager with max position
                 let command = ServiceBusCommand::BulkDelete {
                     message_ids: message_ids.clone(),
+                    max_position,
                 };
 
                 progress.report_progress("Executing delete operation...");

@@ -5,22 +5,24 @@
 //!
 //! - `types`: Common types and data structures
 //! - `resource_guard`: RAII resource management utilities  
-//! - `collector`: Message collection from queues
-//! - `sender`: Message sending operations
 //! - `deleter`: Message deletion operations
 //! - `handler`: Main coordinator that orchestrates operations
 
-pub mod collector;
 pub mod deleter;
 pub mod handler;
 pub mod resource_guard;
-pub mod sender;
 pub mod types;
 
-// Re-export the main public API
+// Re-export the main types and components
+pub use deleter::{BulkDeleter, MessageDeleter};
 pub use handler::BulkOperationHandler;
-pub use resource_guard::{acquire_lock_with_timeout, ServiceBusResourceGuard};
 pub use types::{
-    BatchConfig, BulkOperationContext, BulkOperationResult, BulkSendParams, MessageIdentifier,
-    ProcessTargetMessagesParams, QueueOperationType, ServiceBusOperationContext,
-}; 
+    BatchConfig, // Keep for backward compatibility
+    BulkOperationContext,
+    BulkOperationResult,
+    BulkSendParams,
+    MessageIdentifier,
+};
+
+// Re-export resource guard utilities
+pub use resource_guard::acquire_lock_with_timeout;

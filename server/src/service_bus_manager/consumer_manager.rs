@@ -1,23 +1,30 @@
 use super::errors::{ServiceBusError, ServiceBusResult};
 use super::types::QueueInfo;
+use crate::bulk_operations::types::BatchConfig;
 use crate::consumer::{Consumer, ServiceBusClientExt};
 use crate::model::MessageModel;
 use azservicebus::{ServiceBusClient, ServiceBusReceiverOptions, core::BasicRetryPolicy};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 
 pub struct ConsumerManager {
     current_consumer: Option<Arc<Mutex<Consumer>>>,
     current_queue: Option<QueueInfo>,
     service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+    batch_config: BatchConfig,
 }
 
 impl ConsumerManager {
-    pub fn new(service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>) -> Self {
+    pub fn new(
+        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+        batch_config: BatchConfig,
+    ) -> Self {
         Self {
             current_consumer: None,
             current_queue: None,
             service_bus_client,
+            batch_config,
         }
     }
 
@@ -107,8 +114,10 @@ impl ConsumerManager {
         let consumer = self.get_consumer()?;
         let mut consumer_guard = consumer.lock().await;
 
+        // Use timeout-based receive for consistency and to prevent indefinite blocking
+        let timeout = Duration::from_secs(self.batch_config.operation_timeout_secs());
         consumer_guard
-            .receive_messages(max_count)
+            .receive_messages_with_timeout(max_count, timeout)
             .await
             .map_err(|e| ServiceBusError::MessageReceiveFailed(e.to_string()))
     }
@@ -190,29 +199,76 @@ impl ConsumerManager {
         &self,
         message_id: &str,
         sequence_number: i64,
+        max_position: Option<usize>,
     ) -> ServiceBusResult<Option<azservicebus::ServiceBusReceivedMessage>> {
         let consumer = self.get_consumer()?;
+        let batch_size = self.batch_config.bulk_chunk_size() as u32;
+        let timeout = Duration::from_secs(self.batch_config.bulk_processing_time_secs());
+        let max_position = max_position.unwrap_or(self.batch_config.max_messages_to_process());
 
-        // This is a simplified implementation - in practice you might want to implement
-        // more sophisticated message finding logic with timeouts and batch processing
-        let messages = {
-            let mut consumer_guard = consumer.lock().await;
-            consumer_guard
-                .receive_messages(100) // Receive a batch
-                .await
-                .map_err(|e| ServiceBusError::MessageReceiveFailed(e.to_string()))?
-        };
+        log::info!(
+            "Searching for message {} (sequence: {}) in batches of {} up to position {}",
+            message_id,
+            sequence_number,
+            batch_size,
+            max_position
+        );
 
-        // Look for the target message
-        for message in messages.into_iter() {
-            let msg_id = message.message_id().unwrap_or_default();
-            let msg_seq = message.sequence_number();
+        let mut processed_count = 0;
 
-            if msg_id == message_id && msg_seq == sequence_number {
-                return Ok(Some(message));
+        while processed_count < max_position {
+            log::debug!(
+                "Search batch: fetching {} messages (processed: {}/{})",
+                batch_size,
+                processed_count,
+                max_position
+            );
+
+            let messages = {
+                let mut consumer_guard = consumer.lock().await;
+                consumer_guard
+                    .receive_messages_with_timeout(batch_size, timeout)
+                    .await
+                    .map_err(|e| ServiceBusError::MessageReceiveFailed(e.to_string()))?
+            };
+
+            if messages.is_empty() {
+                log::debug!("No more messages available - stopping search");
+                break;
+            }
+
+            processed_count += messages.len();
+
+            // Look for the target message in this batch
+            for message in messages.into_iter() {
+                let msg_id = message.message_id().unwrap_or_default();
+                let msg_seq = message.sequence_number();
+
+                if msg_id == message_id && msg_seq == sequence_number {
+                    log::info!(
+                        "Found target message {} (sequence: {}) after processing {} messages",
+                        message_id,
+                        sequence_number,
+                        processed_count
+                    );
+                    return Ok(Some(message));
+                }
+
+                // Abandon non-target messages to keep the queue flowing
+                let mut consumer_guard = consumer.lock().await;
+                if let Err(e) = consumer_guard.abandon_message(&message).await {
+                    log::warn!("Failed to abandon non-target message: {}", e);
+                }
             }
         }
 
+        log::info!(
+            "Message {} (sequence: {}) not found after processing {} messages (max: {})",
+            message_id,
+            sequence_number,
+            processed_count,
+            max_position
+        );
         Ok(None)
     }
 

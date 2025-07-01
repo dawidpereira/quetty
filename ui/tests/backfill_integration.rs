@@ -390,7 +390,7 @@ fn test_backfill_after_resend_with_delete_from_dlq() {
 }
 
 #[test]
-fn test_small_deletion_threshold_logic() {
+fn test_backfill_after_auto_reload_threshold_deletions() {
     let mut queue_state = create_test_queue_state(QueueType::Main);
 
     // Set up messages close to page size
@@ -404,15 +404,15 @@ fn test_small_deletion_threshold_logic() {
 
     setup_pagination_with_messages(&mut queue_state, initial_messages);
 
-    // Get small deletion threshold from config
-    let small_deletion_threshold = config::get_config_or_panic()
+    // Get auto-reload threshold from config (used for determining reload vs local removal)
+    let auto_reload_threshold = config::get_config_or_panic()
         .batch()
-        .small_deletion_threshold();
+        .auto_reload_threshold();
 
-    // Delete exactly the small deletion threshold number of messages
+    // Delete exactly the auto-reload threshold number of messages
     let mut to_remove = Vec::new();
     let mut remove_strings = Vec::new();
-    for i in 1..=small_deletion_threshold {
+    for i in 1..=auto_reload_threshold {
         let remove_string = format!("msg{}", i);
         remove_strings.push(remove_string);
     }
@@ -422,17 +422,20 @@ fn test_small_deletion_threshold_logic() {
 
     let removed_count =
         simulate_bulk_remove_messages(&mut queue_state.message_pagination, &to_remove);
-    assert_eq!(removed_count, small_deletion_threshold);
+    assert_eq!(removed_count, auto_reload_threshold);
 
     // Update pagination state
     update_pagination_after_removal(&mut queue_state.message_pagination);
 
     // Check backfill logic
     let (needs_backfill, _messages_needed) = check_needs_backfill(&queue_state.message_pagination);
-    let remaining_messages = initial_count - small_deletion_threshold;
+    let remaining_messages = initial_count - auto_reload_threshold;
 
     if remaining_messages < page_size {
-        assert!(needs_backfill, "Small deletions should trigger backfill");
+        assert!(
+            needs_backfill,
+            "Deletions should trigger backfill when page is under-filled"
+        );
         assert_eq!(_messages_needed, page_size - remaining_messages);
     }
 }

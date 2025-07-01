@@ -6,18 +6,15 @@
 use crate::app::model::Model;
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
+
 use server::service_bus_manager::QueueType;
 use tuirealm::terminal::TerminalAdapter;
 
 /// Common bulk operation configuration
 #[derive(Debug, Clone)]
 pub struct BulkOperationConfig {
-    /// Minimum number of messages required for operation
-    pub min_count: usize,
     /// Maximum number of messages allowed for operation
     pub max_count: usize,
-    /// Maximum batch size for processing
-    pub max_batch_size: usize,
     /// Auto-reload threshold for UI refresh
     pub auto_reload_threshold: usize,
 }
@@ -27,9 +24,7 @@ impl BulkOperationConfig {
     pub fn from_app_config() -> Self {
         let config = crate::config::get_config_or_panic();
         Self {
-            min_count: config.batch().bulk_operation_min_count(),
-            max_count: config.batch().bulk_operation_max_count(),
-            max_batch_size: config.batch().max_batch_size() as usize,
+            max_count: config.batch().max_messages_to_process(),
             auto_reload_threshold: config.batch().auto_reload_threshold(),
         }
     }
@@ -95,7 +90,7 @@ impl<T: TerminalAdapter> BulkOperationSetup<T> {
         // Validate basic requirements
         self.validate_message_count()?;
         self.validate_queue_type_for_operation(model)?;
-        self.validate_batch_size()?;
+        self.validate_operation_size()?; // Added back validation against max_messages_to_process
 
         // Log validation success
         log::info!(
@@ -122,13 +117,6 @@ impl<T: TerminalAdapter> BulkOperationSetup<T> {
             ));
         }
 
-        if count < self.config.min_count {
-            return Err(AppError::State(format!(
-                "Insufficient messages for bulk operation: {} (minimum: {})",
-                count, self.config.min_count
-            )));
-        }
-
         if count > self.config.max_count {
             return Err(AppError::State(format!(
                 "Too many messages selected: {} (maximum: {})",
@@ -136,6 +124,21 @@ impl<T: TerminalAdapter> BulkOperationSetup<T> {
             )));
         }
 
+        Ok(())
+    }
+
+    /// Validate operation size is within processing limits (max_messages_to_process)
+    fn validate_operation_size(&self) -> Result<(), AppError> {
+        let config = crate::config::get_config_or_panic();
+        let max_messages_to_process = config.batch().max_messages_to_process();
+
+        if self.message_ids.len() > max_messages_to_process {
+            return Err(AppError::State(format!(
+                "Operation size {} exceeds maximum allowed processing limit of {}",
+                self.message_ids.len(),
+                max_messages_to_process
+            )));
+        }
         Ok(())
     }
 
@@ -154,18 +157,14 @@ impl<T: TerminalAdapter> BulkOperationSetup<T> {
             )));
         }
 
-        Ok(())
-    }
-
-    /// Validate batch size is within limits
-    fn validate_batch_size(&self) -> Result<(), AppError> {
-        if self.message_ids.len() > self.config.max_batch_size {
-            return Err(AppError::State(format!(
-                "Batch size {} exceeds maximum allowed size of {}",
-                self.message_ids.len(),
-                self.config.max_batch_size
-            )));
+        // Validate that we have messages loaded to prevent operations on stale cache
+        let messages = model.queue_manager.queue_state.messages.as_ref();
+        if messages.is_none() || messages.map(|m| m.is_empty()).unwrap_or(true) {
+            return Err(AppError::State(
+                "No messages available for operation. Please wait for messages to load after queue switch.".to_string()
+            ));
         }
+
         Ok(())
     }
 
@@ -317,11 +316,84 @@ impl<T: TerminalAdapter> ValidatedBulkOperation<T> {
             })
             .count();
 
+        // Use actual highest selected index if available, otherwise get current message index
+        let max_position = if let Some(highest_index) = model
+            .queue_state()
+            .bulk_selection
+            .get_highest_selected_index()
+        {
+            // get_highest_selected_index now returns 1-based position
+            highest_index
+        } else if self.message_ids.len() == 1 {
+            // Single message operation - get current message index from UI state
+            if let Ok(tuirealm::State::One(tuirealm::StateValue::Usize(selected_index))) = model
+                .app
+                .state(&crate::components::common::ComponentId::Messages)
+            {
+                selected_index + 1 // Convert to 1-based position
+            } else {
+                // Fallback to page-based estimation
+                let page_size = crate::config::get_config_or_panic().max_messages() as usize;
+                let current_page = model.queue_state().message_pagination.current_page;
+                self.calculate_max_position(model, page_size, current_page)
+            }
+        } else {
+            // Fallback to the old calculation method
+            let page_size = crate::config::get_config_or_panic().max_messages() as usize;
+            let current_page = model.queue_state().message_pagination.current_page;
+            self.calculate_max_position(model, page_size, current_page)
+        };
+
         BulkOperationContext {
             auto_reload_threshold: self.config.auto_reload_threshold,
             current_message_count,
             selected_from_current_page,
+            max_position,
         }
+    }
+
+    /// Calculate estimated maximum position of selected messages
+    fn calculate_max_position(
+        &self,
+        model: &Model<T>,
+        page_size: usize,
+        current_page: usize,
+    ) -> usize {
+        let all_loaded_messages = &model.queue_state().message_pagination.all_loaded_messages;
+
+        // Find the highest position among selected messages in loaded data
+        let mut max_loaded_position = 0;
+        for (index, loaded_msg) in all_loaded_messages.iter().enumerate() {
+            if self
+                .message_ids
+                .iter()
+                .any(|msg_id| msg_id.id == loaded_msg.id)
+            {
+                max_loaded_position = std::cmp::max(max_loaded_position, index + 1);
+            }
+        }
+
+        // If we found positions in loaded data, use that
+        if max_loaded_position > 0 {
+            log::info!(
+                "Found selected messages in loaded data, highest position: {}",
+                max_loaded_position
+            );
+            return max_loaded_position;
+        }
+
+        // Fallback: estimate based on current page
+        // If user is on page 30 selecting messages, those messages are likely around position 30 * page_size
+        let page_based_estimate = (current_page + 1) * page_size;
+
+        log::info!(
+            "Using page-based estimation: page {} * page_size {} = estimated position {}",
+            current_page + 1,
+            page_size,
+            page_based_estimate
+        );
+
+        page_based_estimate
     }
 }
 
@@ -331,6 +403,7 @@ pub struct BulkOperationContext {
     pub auto_reload_threshold: usize,
     pub current_message_count: usize,
     pub selected_from_current_page: usize,
+    pub max_position: usize,
 }
 
 /// Get human-readable queue type name

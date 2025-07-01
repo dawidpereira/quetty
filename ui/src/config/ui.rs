@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 /// UI-specific configuration
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct UIConfig {
     /// Duration between animation frames for loading indicators (default: 100ms)
     ui_loading_frame_duration_ms: Option<u64>,

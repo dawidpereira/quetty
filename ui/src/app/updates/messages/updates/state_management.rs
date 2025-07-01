@@ -508,7 +508,6 @@ where
             return Ok(false);
         }
 
-        let is_small_deletion = self.is_small_deletion(page_size, current_page_size);
         let has_messages_beyond_page =
             self.has_messages_beyond_current_page(page_size, current_page);
 
@@ -517,12 +516,11 @@ where
             .queue_state
             .message_pagination
             .has_next_page
-            || is_small_deletion
             || has_messages_beyond_page;
 
         if !should_fill {
             log::debug!(
-                "Page {} has {} messages but no more messages available from API and not a small deletion - no auto-loading needed (has_next_page: {}, total_loaded: {})",
+                "Page {} has {} messages but no more messages available from API - no auto-loading needed (has_next_page: {}, total_loaded: {})",
                 current_page + 1,
                 current_page_size,
                 self.queue_manager
@@ -538,16 +536,6 @@ where
         }
 
         Ok(should_fill)
-    }
-
-    /// Check if this is a small deletion that should trigger backfill
-    fn is_small_deletion(&self, page_size: u32, current_page_size: usize) -> bool {
-        let small_deletion_threshold = config::get_config_or_panic()
-            .batch()
-            .small_deletion_threshold();
-
-        current_page_size < page_size as usize
-            && (page_size as usize - current_page_size) <= small_deletion_threshold
     }
 
     /// Check if there are loaded messages beyond the current page
@@ -575,10 +563,8 @@ where
         let current_page_size = current_page_messages.len();
         let messages_needed = page_size as usize - current_page_size;
 
-        let is_small_deletion = self.is_small_deletion(page_size, current_page_size);
-
         log::info!(
-            "Page {} is under-filled with {} messages (expected {}), auto-loading {} more (has_next_page: {}, is_small_deletion: {}, total_loaded: {})",
+            "Page {} is under-filled with {} messages (expected {}), auto-loading {} more (has_next_page: {}, total_loaded: {})",
             current_page + 1,
             current_page_size,
             page_size,
@@ -587,7 +573,6 @@ where
                 .queue_state
                 .message_pagination
                 .has_next_page,
-            is_small_deletion,
             self.queue_manager
                 .queue_state
                 .message_pagination
@@ -767,7 +752,37 @@ where
             server::service_bus_manager::QueueType::DeadLetter => "dead letter queue",
         };
 
-        let success_message = if failed_count == 0 {
+        let not_found_count = total_count.saturating_sub(successful_count + failed_count);
+
+        let success_message = if successful_count == 0 {
+            // No messages were actually deleted
+            if failed_count > 0 {
+                format!(
+                    "❌ Bulk delete failed: No messages were deleted from {}\n\n\
+                    📊 Results:\n\
+                    • ❌ Failed: {} messages\n\
+                    • ⚠️  Not found: {} messages\n\
+                    • 📦 Total requested: {}\n\n\
+                    💡 Messages may have been already processed, moved, or deleted by another process.",
+                    queue_name, failed_count, not_found_count, total_count
+                )
+            } else {
+                format!(
+                    "⚠️  No messages were deleted from {}\n\n\
+                    📊 Results:\n\
+                    • ⚠️  Not found: {} messages\n\
+                    • 📦 Total requested: {}\n\n\
+                    💡 The {} messages you selected were not available for deletion.\n\
+                    This typically happens when:\n\
+                    • Messages were processed by another consumer\n\
+                    • Messages were moved or deleted by another process\n\
+                    • Selected messages are only visible in preview but not available for consumption\n\n\
+                    🔄 Try refreshing the queue to see the current available messages.",
+                    queue_name, not_found_count, total_count, total_count
+                )
+            }
+        } else if failed_count == 0 && not_found_count == 0 {
+            // Complete success
             format!(
                 "✅ Successfully deleted {} message{} from {}",
                 successful_count,
@@ -775,9 +790,16 @@ where
                 queue_name
             )
         } else {
+            // Partial success
             format!(
-                "⚠️ Bulk delete completed: {} successful, {} failed from {} (total: {})",
-                successful_count, failed_count, queue_name, total_count
+                "⚠️ Bulk delete completed with mixed results from {}\n\n\
+                📊 Results:\n\
+                • ✅ Successfully deleted: {} messages\n\
+                • ❌ Failed: {} messages\n\
+                • ⚠️  Not found: {} messages\n\
+                • 📦 Total requested: {}\n\n\
+                💡 Some messages may have been processed by another process during the operation.",
+                queue_name, successful_count, failed_count, not_found_count, total_count
             )
         };
 

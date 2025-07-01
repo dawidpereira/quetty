@@ -41,17 +41,15 @@ where
 
     /// Handle setting the repeat count for bulk message sending
     pub fn handle_set_message_repeat_count(&self) -> Option<Msg> {
-        let bulk_config = config::get_config_or_panic().batch();
-
+        let max_batch_size = config::get_config_or_panic().batch().max_batch_size() as usize;
         Some(Msg::PopupActivity(PopupActivityMsg::ShowNumberInput {
             title: "Set Repeat Count".to_string(),
             message: format!(
-                "Enter the number of times to repeat sending selected messages (Min: {}, Max: {})",
-                bulk_config.bulk_operation_min_count(),
-                bulk_config.bulk_operation_max_count()
+                "Enter the number of times to repeat sending selected messages (Min: 1, Max: {})",
+                max_batch_size
             ),
-            min_value: bulk_config.bulk_operation_min_count(),
-            max_value: bulk_config.bulk_operation_max_count(),
+            min_value: 1,
+            max_value: max_batch_size,
         }))
     }
 

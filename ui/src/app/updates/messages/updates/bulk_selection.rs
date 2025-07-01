@@ -37,7 +37,7 @@ where
         let was_selected = self
             .queue_state_mut()
             .bulk_selection
-            .toggle_selection(message_id);
+            .toggle_selection(message_id, index);
 
         if was_selected {
             log::debug!("Selected message: {}", message.id);

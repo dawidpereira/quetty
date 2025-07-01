@@ -8,7 +8,7 @@ use super::producer_manager::ProducerManager;
 use super::queue_statistics_service::QueueStatisticsService;
 use super::responses::ServiceBusResponse;
 use super::types::QueueInfo;
-use crate::bulk_operations::{BatchConfig, BulkOperationHandler};
+use crate::bulk_operations::{BulkOperationHandler, types::BatchConfig};
 use azservicebus::{ServiceBusClient, core::BasicRetryPolicy};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -34,15 +34,19 @@ impl ServiceBusManager {
     /// Create a new ServiceBusManager
     pub fn new(
         service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
-        batch_config: BatchConfig,
         azure_ad_config: AzureAdConfig,
         statistics_config: StatisticsConfig,
+        batch_config: BatchConfig,
     ) -> Self {
-        let consumer_manager =
-            Arc::new(Mutex::new(ConsumerManager::new(service_bus_client.clone())));
-        let producer_manager =
-            Arc::new(Mutex::new(ProducerManager::new(service_bus_client.clone())));
-        let bulk_handler_inner = Arc::new(BulkOperationHandler::new(batch_config));
+        let consumer_manager = Arc::new(Mutex::new(ConsumerManager::new(
+            service_bus_client.clone(),
+            batch_config.clone(),
+        )));
+        let producer_manager = Arc::new(Mutex::new(ProducerManager::new(
+            service_bus_client.clone(),
+            batch_config.clone(),
+        )));
+        let bulk_handler_inner = Arc::new(BulkOperationHandler::new(batch_config.clone()));
         let statistics_service = Arc::new(QueueStatisticsService::new(
             statistics_config,
             azure_ad_config,
@@ -59,7 +63,8 @@ impl ServiceBusManager {
             bulk_handler: BulkCommandHandler::new(
                 bulk_handler_inner,
                 consumer_manager.clone(),
-                service_bus_client.clone(),
+                producer_manager.clone(),
+                batch_config.clone(),
             ),
             resource_handler: ResourceCommandHandler::new(
                 consumer_manager.clone(),
@@ -157,8 +162,13 @@ impl ServiceBusManager {
             ServiceBusCommand::BulkComplete { message_ids } => {
                 self.bulk_handler.handle_bulk_complete(message_ids).await
             }
-            ServiceBusCommand::BulkDelete { message_ids } => {
-                self.bulk_handler.handle_bulk_delete(message_ids).await
+            ServiceBusCommand::BulkDelete {
+                message_ids,
+                max_position,
+            } => {
+                self.bulk_handler
+                    .handle_bulk_delete(message_ids, max_position)
+                    .await
             }
             ServiceBusCommand::BulkAbandon { message_ids } => {
                 self.bulk_handler.handle_bulk_abandon(message_ids).await
@@ -177,6 +187,7 @@ impl ServiceBusManager {
                 target_queue,
                 should_delete_source,
                 repeat_count,
+                max_position,
             } => {
                 self.bulk_handler
                     .handle_bulk_send(
@@ -184,22 +195,17 @@ impl ServiceBusManager {
                         target_queue,
                         should_delete_source,
                         repeat_count,
+                        max_position,
                     )
                     .await
             }
             ServiceBusCommand::BulkSendPeeked {
                 messages_data,
                 target_queue,
-                should_delete_source,
                 repeat_count,
             } => {
                 self.bulk_handler
-                    .handle_bulk_send_peeked(
-                        messages_data,
-                        target_queue,
-                        should_delete_source,
-                        repeat_count,
-                    )
+                    .handle_bulk_send_peeked(messages_data, target_queue, repeat_count)
                     .await
             }
 
