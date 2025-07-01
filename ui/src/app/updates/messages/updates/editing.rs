@@ -186,6 +186,51 @@ where
         message_id: MessageIdentifier,
         max_position: usize,
     ) -> Option<Msg> {
+        // Check if the message being replaced is at the beginning of the queue
+        let is_message_at_start =
+            if let Ok(tuirealm::State::One(tuirealm::StateValue::Usize(selected_index))) =
+                self.app.state(&ComponentId::Messages)
+            {
+                selected_index == 0 // True if it's the first message (index 0)
+            } else {
+                false // Can't determine, assume it's not at start
+            };
+
+        // Show confirmation dialog with delivery count warning if not at the beginning
+        let title = "Replace Message".to_string();
+        let mut message = format!(
+            "You are about to replace a message in the queue.\n\n📤 Action: Send new message with edited content\n🗑️  Result: Delete original message from queue\n⚠️   Warning: This action CANNOT be undone!"
+        );
+
+        // Add delivery count warning if the message is not at the beginning
+        if !is_message_at_start {
+            message.push_str("\n\n🚨 DELIVERY COUNT WARNING:\n");
+            message
+                .push_str("The message being replaced is not from the beginning of the queue.\n");
+            message
+                .push_str("This operation may increase delivery count of messages in between,\n");
+            message
+                .push_str("potentially moving them to the Dead Letter Queue if count exceeds 9.");
+        }
+
+        let on_confirm = Box::new(Msg::MessageActivity(
+            MessageActivityMsg::ReplaceEditedMessageConfirmed(content, message_id, max_position),
+        ));
+
+        Some(Msg::PopupActivity(PopupActivityMsg::ShowConfirmation {
+            title,
+            message,
+            on_confirm,
+        }))
+    }
+
+    /// Handle confirmed replace edited message operation
+    pub fn handle_replace_edited_message_confirmed(
+        &self,
+        content: String,
+        message_id: MessageIdentifier,
+        max_position: usize,
+    ) -> Option<Msg> {
         let queue_name = match self.get_current_queue() {
             Ok(name) => name,
             Err(e) => return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(e))),

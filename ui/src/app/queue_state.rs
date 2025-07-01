@@ -87,6 +87,32 @@ impl BulkSelectionState {
         self.last_selected_index.map(|index| index + 1)
     }
 
+    /// Check if selected messages are contiguous from the beginning (index 0)
+    /// This helps determine if we need to show delivery count warnings
+    pub fn are_selections_contiguous_from_start(&self) -> bool {
+        if self.selected_indices.is_empty() {
+            return true; // No selections means no gaps
+        }
+
+        // Get the minimum and maximum selected indices
+        let min_index = self.selected_indices.iter().min().unwrap_or(&0);
+        let max_index = self.selected_indices.iter().max().unwrap_or(&0);
+
+        // If we don't start from index 0, there are gaps
+        if *min_index != 0 {
+            return false;
+        }
+
+        // Check if all indices from 0 to max_index are selected
+        for i in 0..=*max_index {
+            if !self.selected_indices.contains(&i) {
+                return false; // Found a gap
+            }
+        }
+
+        true // All indices from 0 to max are selected (contiguous)
+    }
+
     /// Remove messages from selection (used when messages are deleted/moved)
     pub fn remove_messages(&mut self, message_ids: &[MessageIdentifier]) {
         for id in message_ids {

@@ -34,11 +34,43 @@ where
 
         let count = message_ids.len();
         let title = "Delete Messages".to_string();
-        let message = format!(
+
+        // Check if selections are contiguous from the beginning
+        let selections_contiguous = self
+            .queue_state()
+            .bulk_selection
+            .are_selections_contiguous_from_start();
+
+        // For single message operations, check if it's the first message (index 0)
+        let is_single_message_at_start = if count == 1 && selections_contiguous {
+            // Get current message index to check if it's at the beginning
+            if let Ok(tuirealm::State::One(tuirealm::StateValue::Usize(selected_index))) =
+                self.app.state(&ComponentId::Messages)
+            {
+                selected_index == 0 // True if it's the first message (index 0)
+            } else {
+                false // Can't determine, assume it's not at start
+            }
+        } else {
+            false // Not a single message or not contiguous
+        };
+
+        let mut message = format!(
             "You are about to delete {} message{} from the queue.\n\n🗑️  Action: Messages will be permanently removed\n⚠️   Warning: This action CANNOT be undone!",
             count,
             if count == 1 { "" } else { "s" }
         );
+
+        // Add delivery count warning if selections are not contiguous from the beginning
+        // or if it's a single message that's not at the beginning
+        if !selections_contiguous || (count == 1 && !is_single_message_at_start) {
+            message.push_str("\n\n🚨 DELIVERY COUNT WARNING:\n");
+            message.push_str("Selected messages are not from the beginning of the queue.\n");
+            message
+                .push_str("This operation may increase delivery count of messages in between,\n");
+            message
+                .push_str("potentially moving them to the Dead Letter Queue if count exceeds 9.");
+        }
 
         Some(Msg::PopupActivity(PopupActivityMsg::ShowConfirmation {
             title,
@@ -60,11 +92,43 @@ where
 
         let count = message_ids.len();
         let title = "Move to Dead Letter Queue".to_string();
-        let message = format!(
+
+        // Check if selections are contiguous from the beginning
+        let selections_contiguous = self
+            .queue_state()
+            .bulk_selection
+            .are_selections_contiguous_from_start();
+
+        // For single message operations, check if it's the first message (index 0)
+        let is_single_message_at_start = if count == 1 && selections_contiguous {
+            // Get current message index to check if it's at the beginning
+            if let Ok(tuirealm::State::One(tuirealm::StateValue::Usize(selected_index))) =
+                self.app.state(&ComponentId::Messages)
+            {
+                selected_index == 0 // True if it's the first message (index 0)
+            } else {
+                false // Can't determine, assume it's not at start
+            }
+        } else {
+            false // Not a single message or not contiguous
+        };
+
+        let mut message = format!(
             "You are about to move {} message{} to the dead letter queue.\n\n📤 Action: Messages will be moved to the DLQ\n🗑️  Result: Messages will be DELETED from the main queue",
             count,
             if count == 1 { "" } else { "s" }
         );
+
+        // Add delivery count warning if selections are not contiguous from the beginning
+        // or if it's a single message that's not at the beginning
+        if !selections_contiguous || (count == 1 && !is_single_message_at_start) {
+            message.push_str("\n\n🚨 DELIVERY COUNT WARNING:\n");
+            message.push_str("Selected messages are not from the beginning of the queue.\n");
+            message
+                .push_str("This operation may increase delivery count of messages in between,\n");
+            message
+                .push_str("potentially moving them to the Dead Letter Queue if count exceeds 9.");
+        }
 
         Some(Msg::PopupActivity(PopupActivityMsg::ShowConfirmation {
             title,
