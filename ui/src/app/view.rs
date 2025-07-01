@@ -52,6 +52,18 @@ pub fn view_number_input_popup(
     Ok(())
 }
 
+// Render the page size popup centered on the screen using standardized sizing
+pub fn view_page_size_popup(
+    app: &mut Application<ComponentId, Msg, NoUserEvent>,
+    f: &mut Frame,
+) -> Result<(), AppError> {
+    let popup_area = PopupLayout::medium(f.area());
+    app.view(&ComponentId::PageSizePopup, f, popup_area);
+    app.active(&ComponentId::PageSizePopup)
+        .map_err(|e| AppError::Component(e.to_string()))?;
+    Ok(())
+}
+
 // Higher-order function to wrap view functions with popup handling
 pub fn with_popup<F>(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,
@@ -66,7 +78,12 @@ where
         &[Rect],
     ) -> Result<(), AppError>,
 {
-    // First, try to render the number input popup if it exists (highest priority)
+    // First, try to render the page size popup if it exists (highest priority)
+    if app.mounted(&ComponentId::PageSizePopup) {
+        return view_page_size_popup(app, f);
+    }
+
+    // Then, try to render the number input popup if it exists
     if app.mounted(&ComponentId::NumberInputPopup) {
         return view_number_input_popup(app, f);
     }

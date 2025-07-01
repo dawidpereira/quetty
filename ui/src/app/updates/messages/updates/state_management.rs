@@ -24,8 +24,10 @@ where
         self.queue_state_mut().messages = Some(messages);
 
         // Update pagination state to calculate has_next_page properly
-        let page_size = config::get_config_or_panic().max_messages();
-        self.queue_state_mut().message_pagination.update(page_size);
+        let page_size = config::get_current_page_size() as usize;
+        self.queue_state_mut()
+            .message_pagination
+            .update(page_size as u32);
 
         if let Err(e) = self.remount_messages_with_focus(true) {
             self.error_reporter
@@ -63,8 +65,11 @@ where
         // Reset pagination state for new queue
         self.queue_state_mut().message_pagination.reset();
 
-        // Load messages for the new queue
-        self.load_messages();
+        // Load messages for the new queue using the current page size
+        let page_size = config::get_current_page_size();
+        if let Err(e) = self.load_messages_from_api_with_count(page_size) {
+            log::error!("Failed to load messages after queue switch: {}", e);
+        }
 
         None
     }
@@ -98,7 +103,7 @@ where
             .append_messages(messages);
 
         // Check if we should advance page after loading
-        let page_size = config::get_config_or_panic().max_messages() as usize;
+        let page_size = config::get_current_page_size() as usize;
         let current_page = self.queue_state().message_pagination.current_page;
         let total_messages = self.queue_state().message_pagination.total_messages();
         let should_advance = self.queue_state().message_pagination.advance_after_load;
@@ -127,7 +132,7 @@ where
         }
 
         // Update pagination state
-        let page_size_u32 = config::get_config_or_panic().max_messages();
+        let page_size_u32 = config::get_current_page_size();
         self.queue_state_mut()
             .message_pagination
             .update(page_size_u32);
@@ -269,7 +274,7 @@ where
     /// Update pagination and view after state changes
     pub fn update_pagination_and_view(&mut self) -> Option<Msg> {
         // Update the pagination state and messages data
-        let page_size = config::get_config_or_panic().max_messages();
+        let page_size = config::get_current_page_size();
         let current_page_messages = self
             .queue_state()
             .message_pagination
@@ -298,7 +303,7 @@ where
         let current_messages = self
             .queue_state()
             .message_pagination
-            .get_current_page_messages(config::get_config_or_panic().max_messages());
+            .get_current_page_messages(config::get_current_page_size());
 
         let index = if current_messages.is_empty() {
             0
@@ -337,7 +342,7 @@ where
         let current_messages = self
             .queue_state()
             .message_pagination
-            .get_current_page_messages(config::get_config_or_panic().max_messages());
+            .get_current_page_messages(config::get_current_page_size());
         let remaining_on_current_page = current_messages.len();
 
         // If current page is empty and we have other pages, move to previous page
@@ -486,7 +491,7 @@ where
 
     /// Determine if auto-fill should be executed based on current state
     fn should_auto_fill(&self) -> Result<bool, AppError> {
-        let page_size = config::get_config_or_panic().max_messages();
+        let page_size = config::get_current_page_size();
         let current_page = self
             .queue_manager
             .queue_state
@@ -550,7 +555,7 @@ where
 
     /// Execute auto-fill by loading additional messages
     fn execute_auto_fill(&mut self) -> Result<bool, AppError> {
-        let page_size = config::get_config_or_panic().max_messages();
+        let page_size = config::get_current_page_size();
         let current_page = self
             .queue_manager
             .queue_state
@@ -586,7 +591,7 @@ where
 
     /// Update pagination state after message removal (called before auto-loading decisions)
     fn update_pagination_state_after_removal(&mut self) {
-        let messages_per_page = config::get_config_or_panic().max_messages();
+        let messages_per_page = config::get_current_page_size();
         let total_messages = self
             .queue_state()
             .message_pagination
@@ -662,7 +667,7 @@ where
 
     /// Finalize bulk removal pagination
     pub fn finalize_bulk_removal_pagination(&mut self) {
-        let messages_per_page = config::get_config_or_panic().max_messages();
+        let messages_per_page = config::get_current_page_size();
 
         let total_messages = self
             .queue_state()

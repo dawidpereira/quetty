@@ -32,7 +32,8 @@ impl MessageManager {
     pub fn load_messages(&self) {
         let service_bus_manager = self.service_bus_manager.clone();
         let tx_to_main = self.tx_to_main.clone();
-        let max_messages = config::get_config_or_panic().max_messages();
+        // Use the dynamic page size that can be changed during runtime
+        let max_messages = config::get_current_page_size();
 
         self.task_manager
             .execute("Loading messages...", async move {

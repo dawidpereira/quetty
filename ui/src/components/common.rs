@@ -19,6 +19,7 @@ pub enum ComponentId {
     SuccessPopup,
     ConfirmationPopup,
     NumberInputPopup,
+    PageSizePopup,
     HelpScreen,
     ThemePicker,
     TextLabel,
@@ -39,6 +40,7 @@ impl fmt::Display for ComponentId {
             ComponentId::SuccessPopup => write!(f, "SuccessPopup"),
             ComponentId::HelpScreen => write!(f, "HelpScreen"),
             ComponentId::NumberInputPopup => write!(f, "NumberInputPopup"),
+            ComponentId::PageSizePopup => write!(f, "PageSizePopup"),
             ComponentId::ThemePicker => write!(f, "ThemePicker"),
         }
     }
@@ -154,8 +156,11 @@ pub enum PopupActivityMsg {
         min_value: usize,
         max_value: usize,
     },
+    ShowPageSizePopup,
     NumberInputResult(usize),
+    PageSizeResult(usize),
     ConfirmationResult(bool),
+    ClosePageSize,
 }
 
 impl PartialEq for PopupActivityMsg {
@@ -166,6 +171,7 @@ impl PartialEq for PopupActivityMsg {
             (PopupActivityMsg::ShowWarning(w1), PopupActivityMsg::ShowWarning(w2)) => w1 == w2,
             (PopupActivityMsg::ShowSuccess(s1), PopupActivityMsg::ShowSuccess(s2)) => s1 == s2,
             (PopupActivityMsg::CloseSuccess, PopupActivityMsg::CloseSuccess) => true,
+            (PopupActivityMsg::ClosePageSize, PopupActivityMsg::ClosePageSize) => true,
             (
                 PopupActivityMsg::ConfirmationResult(b1),
                 PopupActivityMsg::ConfirmationResult(b2),
@@ -173,7 +179,10 @@ impl PartialEq for PopupActivityMsg {
             (PopupActivityMsg::NumberInputResult(n1), PopupActivityMsg::NumberInputResult(n2)) => {
                 n1 == n2
             }
-            // ShowConfirmation and ShowNumberInput are not compared due to Box types
+            (PopupActivityMsg::PageSizeResult(p1), PopupActivityMsg::PageSizeResult(p2)) => {
+                p1 == p2
+            }
+            // ShowConfirmation, ShowNumberInput, and ShowPageSizePopup are not compared due to Box types
             _ => false,
         }
     }

@@ -73,6 +73,17 @@ pub fn handle_event(messages: &mut Messages, ev: Event<NoUserEvent>) -> Option<M
             return Some(Msg::MessageActivity(MessageActivityMsg::BulkDeleteSelected));
         }
 
+        // Page size selection
+        Event::Keyboard(KeyEvent {
+            code: Key::Char(c),
+            modifiers: KeyModifiers::NONE,
+        }) if c == config::get_config_or_panic().keys().page_size() => {
+            // Open page size selection popup
+            return Some(Msg::PopupActivity(
+                crate::components::common::PopupActivityMsg::ShowPageSizePopup,
+            ));
+        }
+
         // Navigation keys
         Event::Keyboard(KeyEvent {
             code: Key::Down,

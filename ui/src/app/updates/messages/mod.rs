@@ -74,7 +74,7 @@ where
             }
             MessageActivityMsg::ReplaceEditedMessage(content, message_id) => {
                 // Calculate max position for stopping condition
-                let page_size = crate::config::get_config_or_panic().max_messages() as usize;
+                let page_size = self.get_current_page_size() as usize;
                 let total_loaded_messages = self
                     .queue_state()
                     .message_pagination

@@ -80,6 +80,7 @@ where
                 && !self.app.mounted(&ComponentId::SuccessPopup)
                 && !self.app.mounted(&ComponentId::ConfirmationPopup)
                 && !self.app.mounted(&ComponentId::NumberInputPopup)
+                && !self.app.mounted(&ComponentId::PageSizePopup)
                 && !self.app.mounted(&ComponentId::ThemePicker)
             {
                 // Create a temporary help bar with the active component

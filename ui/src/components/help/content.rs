@@ -101,6 +101,10 @@ impl HelpContent {
                     "Previous page",
                 )
                 .add_single_key(
+                    format!("[{}]", keys.page_size()),
+                    "Select page size (100-1000)",
+                )
+                .add_single_key(
                     format!("[{}]", keys.toggle_dlq()),
                     "Toggle Main ↔ Dead Letter Queue",
                 )

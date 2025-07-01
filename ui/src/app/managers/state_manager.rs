@@ -25,6 +25,7 @@ pub struct StateManager {
     pub pending_confirmation_action: Option<Box<Msg>>,
     pub is_editing_message: bool,
     pub tx_to_main: Sender<Msg>,
+    pub current_page_size: Option<u32>, // Dynamic page size that can be changed during runtime
 }
 
 impl StateManager {
@@ -42,6 +43,7 @@ impl StateManager {
             pending_confirmation_action: None,
             is_editing_message: false,
             tx_to_main,
+            current_page_size: None,
         }
     }
 
@@ -91,5 +93,11 @@ impl StateManager {
     /// Mark redraw as complete
     pub fn redraw_complete(&mut self) {
         self.redraw = false;
+    }
+
+    /// Get the current page size, falling back to config if not set
+    pub fn get_current_page_size(&self) -> u32 {
+        self.current_page_size
+            .unwrap_or_else(|| crate::config::get_config_or_panic().max_messages())
     }
 }

@@ -51,6 +51,7 @@ cargo run
 - **Message Pagination**
   - **n/]**: Go to next page of messages
   - **p/[**: Go to previous page of messages
+  - **z**: Select page size (100-1000 messages per page)
 - **Message Operations**
   - **Delete/Ctrl+X**: Delete selected message from queue (with confirmation)
 - **Dead Letter Queue**

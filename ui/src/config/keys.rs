@@ -41,6 +41,9 @@ pub struct KeyBindingsConfig {
     key_compose_multiple: Option<char>,
     key_compose_single: Option<char>,
 
+    // Page size selection
+    key_page_size: Option<char>,
+
     // Confirmation keys
     key_confirm_yes: Option<char>,
     key_confirm_no: Option<char>,
@@ -131,16 +134,16 @@ impl KeyBindingsConfig {
 
     // Queue/Namespace selection
     pub fn queue_select(&self) -> char {
-        self.key_queue_select.unwrap_or('Q')
+        self.key_queue_select.unwrap_or('o')
     }
 
     pub fn namespace_select(&self) -> char {
-        self.key_namespace_select.unwrap_or('u')
+        self.key_namespace_select.unwrap_or('o')
     }
 
     // Message composition keys
     pub fn toggle_dlq(&self) -> char {
-        self.key_toggle_dlq.unwrap_or('l')
+        self.key_toggle_dlq.unwrap_or('d')
     }
 
     pub fn compose_multiple(&self) -> char {
@@ -148,7 +151,12 @@ impl KeyBindingsConfig {
     }
 
     pub fn compose_single(&self) -> char {
-        self.key_compose_single.unwrap_or('e')
+        self.key_compose_single.unwrap_or('M')
+    }
+
+    // Page size selection
+    pub fn page_size(&self) -> char {
+        self.key_page_size.unwrap_or('z')
     }
 
     // Confirmation keys

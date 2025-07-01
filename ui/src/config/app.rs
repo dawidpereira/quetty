@@ -41,6 +41,23 @@ impl AppConfig {
     pub fn validate(&self) -> Result<(), Vec<ConfigValidationError>> {
         let mut errors = Vec::new();
 
+        // Check page size limits
+        let page_size = self.page_size();
+        if page_size < MIN_PAGE_SIZE {
+            errors.push(ConfigValidationError::PageSize {
+                configured: page_size,
+                min_limit: MIN_PAGE_SIZE,
+                max_limit: MAX_PAGE_SIZE,
+            });
+        }
+        if page_size > MAX_PAGE_SIZE {
+            errors.push(ConfigValidationError::PageSize {
+                configured: page_size,
+                min_limit: MIN_PAGE_SIZE,
+                max_limit: MAX_PAGE_SIZE,
+            });
+        }
+
         // Check batch configuration limits
         if self.batch.max_batch_size() > AZURE_SERVICE_BUS_MAX_BATCH_SIZE {
             errors.push(ConfigValidationError::BatchSize {

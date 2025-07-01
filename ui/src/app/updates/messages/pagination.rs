@@ -234,7 +234,7 @@ impl MessagePaginationState {
         self.update_last_loaded_sequence(&messages);
 
         // Update pagination state to reflect new messages
-        let page_size = crate::config::get_config_or_panic().max_messages() as usize;
+        let page_size = config::get_current_page_size() as usize;
         let new_total_pages = if self.all_loaded_messages.is_empty() {
             0
         } else {
@@ -348,7 +348,7 @@ where
 
     // Simple pagination navigation
     pub fn handle_next_page(&mut self) -> AppResult<()> {
-        let page_size = config::get_config_or_panic().max_messages() as usize;
+        let page_size = config::get_current_page_size() as usize;
         let current_page = self.queue_state().message_pagination.current_page;
         let total_messages = self
             .queue_state()
@@ -398,7 +398,7 @@ where
             );
             // Set a flag to indicate we want to advance after loading
             self.queue_state_mut().message_pagination.advance_after_load = true;
-            self.load_messages_from_api_with_count(config::get_config_or_panic().max_messages())?;
+            self.load_messages_from_api_with_count(config::get_current_page_size())?;
         } else {
             log::debug!("Already at end of queue, cannot go to next page");
         }
@@ -418,7 +418,7 @@ where
                 self.queue_state().message_pagination.current_page - 1
             );
             self.queue_state_mut().message_pagination.current_page -= 1;
-            let page_size = config::get_config_or_panic().max_messages() as u32;
+            let page_size = config::get_current_page_size();
             self.queue_state_mut().message_pagination.update(page_size);
 
             log::debug!(
@@ -443,7 +443,7 @@ where
 
     pub fn update_current_page_view(&mut self) -> AppResult<()> {
         // Update the current page messages in queue state before remounting
-        let page_size = config::get_config_or_panic().max_messages();
+        let page_size = config::get_current_page_size();
         let current_page_messages = self
             .queue_state()
             .message_pagination

@@ -71,6 +71,8 @@ impl HelpBar {
                     shortcuts.push((" Bulk ".to_string(), false));
                     shortcuts.push((format!("[{}/{}]", keys.next_page(), keys.prev_page()), true));
                     shortcuts.push((" Page ".to_string(), false));
+                    shortcuts.push((format!("[{}]", keys.page_size()), true));
+                    shortcuts.push((" Size ".to_string(), false));
                 }
 
                 // Add queue toggle - simplified

@@ -29,6 +29,9 @@ where
                 max_value,
             } => self.handle_show_number_input(title, message, min_value, max_value),
             PopupActivityMsg::NumberInputResult(value) => self.handle_number_input_result(value),
+            PopupActivityMsg::ShowPageSizePopup => self.handle_show_page_size_popup(),
+            PopupActivityMsg::PageSizeResult(size) => self.handle_page_size_result(size),
+            PopupActivityMsg::ClosePageSize => self.handle_close_page_size(),
         }
     }
 
@@ -140,23 +143,55 @@ where
     }
 
     fn handle_number_input_result(&mut self, value: usize) -> Option<Msg> {
-        log::debug!("Handling number input result: value={}", value);
+        log::debug!("Handling number input result: {}", value);
 
-        // Unmount the number input popup
+        // Close the number input popup
         if let Err(e) = self.unmount_number_input_popup() {
             self.error_reporter
                 .report_mount_error("NumberInputPopup", "unmount", e);
         }
 
-        // If value is 0, it means cancel
-        if value == 0 {
-            log::debug!("Number input cancelled");
-            return None;
-        }
-
-        // Convert the number input result to update repeat count
         Some(Msg::MessageActivity(
             crate::components::common::MessageActivityMsg::UpdateRepeatCount(value),
         ))
+    }
+
+    fn handle_show_page_size_popup(&mut self) -> Option<Msg> {
+        if let Err(e) = self.mount_page_size_popup() {
+            self.error_reporter
+                .report_mount_error("PageSizePopup", "mount", e);
+            return None;
+        }
+        None
+    }
+
+    fn handle_page_size_result(&mut self, size: usize) -> Option<Msg> {
+        log::debug!("Handling page size result: {}", size);
+
+        // Close the page size popup
+        if let Err(e) = self.unmount_page_size_popup() {
+            self.error_reporter
+                .report_mount_error("PageSizePopup", "unmount", e);
+        }
+
+        // Update the page size in the application state
+        crate::config::set_current_page_size(size as u32);
+        log::info!("Page size changed to: {} messages per page", size);
+
+        // Reset pagination state and reload messages
+        self.queue_state_mut().message_pagination.reset();
+        self.queue_state_mut().messages = None;
+
+        // Immediately load the first page with the new page size
+        let _ = self.load_messages_from_api_with_count(size as u32);
+        None
+    }
+
+    fn handle_close_page_size(&mut self) -> Option<Msg> {
+        if let Err(e) = self.unmount_page_size_popup() {
+            self.error_reporter
+                .report_mount_error("PageSizePopup", "unmount", e);
+        }
+        None
     }
 }
