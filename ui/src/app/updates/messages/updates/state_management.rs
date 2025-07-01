@@ -285,8 +285,6 @@ where
         // Update pagination state
         self.queue_state_mut().message_pagination.update(page_size);
 
-        // Pagination state is now managed internally, no need to send separate update
-
         // Force cursor reset to position 0 after bulk removal
         // This is different from normal page navigation where we preserve cursor
         if let Err(e) = self.remount_messages_with_cursor_control(false) {
@@ -759,54 +757,15 @@ where
 
         let not_found_count = total_count.saturating_sub(successful_count + failed_count);
 
-        let success_message = if successful_count == 0 {
-            // No messages were actually deleted
-            if failed_count > 0 {
-                format!(
-                    "❌ Bulk delete failed: No messages were deleted from {}\n\n\
-                    📊 Results:\n\
-                    • ❌ Failed: {} messages\n\
-                    • ⚠️  Not found: {} messages\n\
-                    • 📦 Total requested: {}\n\n\
-                    💡 Messages may have been already processed, moved, or deleted by another process.",
-                    queue_name, failed_count, not_found_count, total_count
-                )
-            } else {
-                format!(
-                    "⚠️  No messages were deleted from {}\n\n\
-                    📊 Results:\n\
-                    • ⚠️  Not found: {} messages\n\
-                    • 📦 Total requested: {}\n\n\
-                    💡 The {} messages you selected were not available for deletion.\n\
-                    This typically happens when:\n\
-                    • Messages were processed by another consumer\n\
-                    • Messages were moved or deleted by another process\n\
-                    • Selected messages are only visible in preview but not available for consumption\n\n\
-                    🔄 Try refreshing the queue to see the current available messages.",
-                    queue_name, not_found_count, total_count, total_count
-                )
-            }
-        } else if failed_count == 0 && not_found_count == 0 {
-            // Complete success
-            format!(
-                "✅ Successfully deleted {} message{} from {}",
-                successful_count,
-                if successful_count == 1 { "" } else { "s" },
-                queue_name
-            )
-        } else {
-            // Partial success
-            format!(
-                "⚠️ Bulk delete completed with mixed results from {}\n\n\
-                📊 Results:\n\
-                • ✅ Successfully deleted: {} messages\n\
-                • ❌ Failed: {} messages\n\
-                • ⚠️  Not found: {} messages\n\
-                • 📦 Total requested: {}\n\n\
-                💡 Some messages may have been processed by another process during the operation.",
-                queue_name, successful_count, failed_count, not_found_count, total_count
-            )
-        };
+        let success_message = crate::app::bulk_operation_processor::BulkOperationPostProcessor::format_bulk_operation_result_message(
+            "delete",
+            queue_name,
+            successful_count,
+            failed_count,
+            not_found_count,
+            total_count,
+            true, // is_delete
+        );
 
         Some(Msg::PopupActivity(
             crate::components::common::PopupActivityMsg::ShowSuccess(success_message),

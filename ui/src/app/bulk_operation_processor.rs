@@ -187,6 +187,94 @@ impl BulkOperationPostProcessor {
         Ok(())
     }
 
+    /// Shared: Format detailed result message for bulk operations (delete, send with delete)
+    pub fn format_bulk_operation_result_message(
+        operation: &str,
+        queue_name: &str,
+        successful_count: usize,
+        failed_count: usize,
+        not_found_count: usize,
+        total_count: usize,
+        is_delete: bool,
+    ) -> String {
+        if successful_count == 0 {
+            if failed_count > 0 {
+                format!(
+                    "❌ Bulk {operation} failed: No messages were processed from {queue}\n\n\
+                    📊 Results:\n\
+                    • ❌ Failed: {failed}\n\
+                    • ⚠️  Not found: {not_found}\n\
+                    • 📦 Total requested: {total}\n\n\
+                    💡 Messages may have been already processed, moved, or deleted by another process.",
+                    operation = operation,
+                    queue = queue_name,
+                    failed = failed_count,
+                    not_found = not_found_count,
+                    total = total_count
+                )
+            } else {
+                let unavailable_hint = if is_delete {
+                    format!(
+                        "💡 The {not_found} messages you selected were not available for deletion.\n\
+                        This typically happens when:\n\
+                        • Messages were processed by another consumer\n\
+                        • Messages were moved or deleted by another process\n\
+                        • Selected messages are only visible in preview but not available for consumption\n\n\
+                        🔄 Try refreshing the queue to see the current available messages.",
+                        not_found = not_found_count
+                    )
+                } else {
+                    format!(
+                        "💡 The {not_found} messages you selected were not available for moving.\n\
+                        This typically happens when:\n\
+                        • Messages were processed by another consumer\n\
+                        • Messages were moved or deleted by another process\n\
+                        • Selected messages are only visible in preview but not available for consumption\n\n\
+                        🔄 Try refreshing the queue to see the current available messages.",
+                        not_found = not_found_count
+                    )
+                };
+                format!(
+                    "⚠️  No messages were processed from {queue}\n\n\
+                    📊 Results:\n\
+                    • ⚠️  Not found: {not_found}\n\
+                    • 📦 Total requested: {total}\n\n{hint}",
+                    queue = queue_name,
+                    not_found = not_found_count,
+                    total = total_count,
+                    hint = unavailable_hint
+                )
+            }
+        } else if failed_count > 0 || not_found_count > 0 {
+            // Partial success
+            format!(
+                "⚠️ Bulk {operation} completed with mixed results from {queue}\n\n\
+                📊 Results:\n\
+                • ✅ Successfully processed: {success}\n\
+                • ❌ Failed: {failed}\n\
+                • ⚠️  Not found: {not_found}\n\
+                • 📦 Total requested: {total}\n\n\
+                💡 Some messages may have been processed by another process during the operation.",
+                operation = operation,
+                queue = queue_name,
+                success = successful_count,
+                failed = failed_count,
+                not_found = not_found_count,
+                total = total_count
+            )
+        } else {
+            // Complete success
+            let action = if is_delete { "deleted" } else { "moved" };
+            format!(
+                "✅ Successfully {action} {success} message{plural} from {queue}",
+                action = action,
+                success = successful_count,
+                plural = if successful_count == 1 { "" } else { "s" },
+                queue = queue_name
+            )
+        }
+    }
+
     /// Send the appropriate completion message for the operation type
     fn send_completion_message(
         context: &BulkOperationContext,
@@ -208,69 +296,34 @@ impl BulkOperationPostProcessor {
             }
             BulkOperationType::Send {
                 from_queue_display,
-                to_queue_display,
+                to_queue_display: _,
                 should_delete,
             } => {
-                let success_message = Self::format_send_success_message(
+                // Use detailed message if should_delete (move), else fallback to old summary
+                let not_found_count = context
+                    .total_count
+                    .saturating_sub(context.successful_count + context.failed_count);
+                let queue_name = from_queue_display;
+                let operation = if *should_delete { "move" } else { "copy" };
+                let is_delete = *should_delete;
+                let message = Self::format_bulk_operation_result_message(
+                    operation,
+                    queue_name,
                     context.successful_count,
                     context.failed_count,
+                    not_found_count,
                     context.total_count,
-                    from_queue_display,
-                    to_queue_display,
-                    *should_delete,
+                    is_delete,
                 );
-
-                if let Err(e) = tx_to_main.send(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
-                    success_message,
-                ))) {
+                if let Err(e) =
+                    tx_to_main.send(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(message)))
+                {
                     error_reporter.report_send_error("success popup message", &e);
                     return Err(AppError::Component(e.to_string()));
                 }
             }
         }
-
         Ok(())
-    }
-
-    /// Format success message for bulk send operations
-    fn format_send_success_message(
-        successful_count: usize,
-        failed_count: usize,
-        total_count: usize,
-        from_queue_display: &str,
-        to_queue_display: &str,
-        should_delete: bool,
-    ) -> String {
-        let not_found_count = total_count.saturating_sub(successful_count + failed_count);
-
-        if failed_count > 0 || not_found_count > 0 {
-            // Partial success case
-            format!(
-                "Bulk {} operation completed with mixed results:\n\n\
-                ✅ Successfully processed: {} messages\n\
-                ❌ Failed: {} messages\n\
-                ⚠️  Not found: {} messages\n\n\
-                Direction: {} → {}",
-                if should_delete { "move" } else { "copy" },
-                successful_count,
-                failed_count,
-                not_found_count,
-                from_queue_display,
-                to_queue_display
-            )
-        } else {
-            // Full success case
-            format!(
-                "✅ Bulk {} operation completed successfully!\n\n\
-                📦 {} messages processed from {} to {}\n\n\
-                All messages were {} successfully.",
-                if should_delete { "move" } else { "copy" },
-                successful_count,
-                from_queue_display,
-                to_queue_display,
-                if should_delete { "moved" } else { "copied" }
-            )
-        }
     }
 
     /// Create context from bulk operation result for delete operations
