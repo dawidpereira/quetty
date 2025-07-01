@@ -20,7 +20,10 @@ where
             MessageActivityMsg::EditMessage(_)
             | MessageActivityMsg::CancelEditMessage
             | MessageActivityMsg::SendEditedMessage(_)
-            | MessageActivityMsg::ReplaceEditedMessage(_, _) => self.handle_editing_operations(msg),
+            | MessageActivityMsg::ReplaceEditedMessage(_, _)
+            | MessageActivityMsg::ReplaceEditedMessageConfirmed(_, _, _) => {
+                self.handle_editing_operations(msg)
+            }
 
             // Bulk selection operations
             MessageActivityMsg::ToggleMessageSelectionByIndex(_)
@@ -80,6 +83,11 @@ where
                 let max_position = std::cmp::max(total_loaded_messages, page_size);
                 self.handle_replace_edited_message(content, message_id, max_position)
             }
+            MessageActivityMsg::ReplaceEditedMessageConfirmed(
+                content,
+                message_id,
+                max_position,
+            ) => self.handle_replace_edited_message_confirmed(content, message_id, max_position),
             _ => None,
         }
     }

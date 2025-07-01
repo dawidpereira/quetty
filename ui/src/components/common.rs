@@ -109,6 +109,7 @@ pub enum MessageActivityMsg {
     BulkRemoveMessagesFromState(Vec<String>),
     SendEditedMessage(String),
     ReplaceEditedMessage(String, MessageIdentifier),
+    ReplaceEditedMessageConfirmed(String, MessageIdentifier, usize),
     ComposeNewMessage,
     SetMessageRepeatCount,
     UpdateRepeatCount(usize),
