@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 /// Key bindings configuration
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct KeyBindingsConfig {
     // Global keys
     key_quit: Option<char>,

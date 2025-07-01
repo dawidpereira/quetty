@@ -1,6 +1,7 @@
 use azservicebus::receiver::DeadLetterOptions;
 use azservicebus::{ServiceBusClient, ServiceBusReceiver, ServiceBusReceiverOptions};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 
 use crate::model::MessageModel;
@@ -40,14 +41,24 @@ impl Consumer {
         }
     }
 
-    pub async fn receive_messages(
+    pub async fn receive_messages_with_timeout(
         &mut self,
         max_count: u32,
+        timeout: Duration,
     ) -> Result<Vec<azservicebus::ServiceBusReceivedMessage>, Box<dyn std::error::Error>> {
         let mut guard = self.receiver.lock().await;
         if let Some(receiver) = guard.as_mut() {
-            let messages = receiver.receive_messages(max_count).await?;
-            Ok(messages)
+            match tokio::time::timeout(timeout, receiver.receive_messages(max_count)).await {
+                Ok(result) => result.map_err(|e| e.into()),
+                Err(_) => {
+                    // Timeout occurred - return empty vector instead of error
+                    log::debug!(
+                        "receive_messages timed out after {:?}, returning empty result",
+                        timeout
+                    );
+                    Ok(Vec::new())
+                }
+            }
         } else {
             Err("Receiver already disposed".into())
         }
@@ -177,12 +188,106 @@ impl Consumer {
         }
     }
 
+    /// Renew the lock on a received message to extend processing time
+    pub async fn renew_message_lock(
+        &mut self,
+        message: &mut azservicebus::ServiceBusReceivedMessage,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut guard = self.receiver.lock().await;
+        if let Some(receiver) = guard.as_mut() {
+            receiver.renew_message_lock(message).await?;
+            Ok(())
+        } else {
+            Err("Receiver already disposed".into())
+        }
+    }
+
+    /// Renew locks on multiple messages
+    pub async fn renew_message_locks(
+        &mut self,
+        messages: &mut [azservicebus::ServiceBusReceivedMessage],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut guard = self.receiver.lock().await;
+        if let Some(receiver) = guard.as_mut() {
+            let mut renewed_count = 0;
+            let mut failed_count = 0;
+
+            for message in messages.iter_mut() {
+                let message_id = message
+                    .message_id()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+                let sequence = message.sequence_number();
+
+                match receiver.renew_message_lock(message).await {
+                    Ok(()) => {
+                        renewed_count += 1;
+                        log::debug!(
+                            "Successfully renewed lock for message {} (sequence: {})",
+                            message_id,
+                            sequence
+                        );
+                    }
+                    Err(e) => {
+                        failed_count += 1;
+                        log::warn!(
+                            "Failed to renew lock for message {} (sequence: {}): {}",
+                            message_id,
+                            sequence,
+                            e
+                        );
+                        // Continue trying to renew other locks
+                    }
+                }
+            }
+
+            log::debug!(
+                "Lock renewal result: {} successful, {} failed out of {} messages",
+                renewed_count,
+                failed_count,
+                messages.len()
+            );
+
+            if failed_count > 0 {
+                log::warn!(
+                    "Failed to renew locks for {} out of {} messages - some may expire during processing",
+                    failed_count,
+                    messages.len()
+                );
+            }
+
+            Ok(())
+        } else {
+            Err("Receiver already disposed".into())
+        }
+    }
+
     pub async fn dispose(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut guard = self.receiver.lock().await;
         if let Some(receiver) = guard.take() {
             receiver.dispose().await?;
         }
         Ok(())
+    }
+
+    /// Receive deferred messages by sequence numbers. This allows operations (delete/complete)
+    /// on messages that were previously deferred without re-activating them first.
+    pub async fn receive_deferred_messages(
+        &mut self,
+        sequence_numbers: &[i64],
+    ) -> Result<
+        Vec<azservicebus::ServiceBusReceivedMessage>,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
+        let mut guard = self.receiver.lock().await;
+        if let Some(receiver) = guard.as_mut() {
+            let messages = receiver
+                .receive_deferred_messages(sequence_numbers.to_vec())
+                .await?;
+            Ok(messages)
+        } else {
+            Err("Receiver already disposed".into())
+        }
     }
 }
 

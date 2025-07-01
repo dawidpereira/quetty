@@ -11,13 +11,18 @@ use tokio::sync::Mutex;
 pub struct ProducerManager {
     producers: HashMap<String, Arc<Mutex<Producer>>>,
     service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+    batch_config: crate::bulk_operations::types::BatchConfig,
 }
 
 impl ProducerManager {
-    pub fn new(service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>) -> Self {
+    pub fn new(
+        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+        batch_config: crate::bulk_operations::types::BatchConfig,
+    ) -> Self {
         Self {
             producers: HashMap::new(),
             service_bus_client,
+            batch_config,
         }
     }
 
@@ -91,8 +96,8 @@ impl ProducerManager {
         }
 
         // Send messages in batches
-        const BATCH_SIZE: usize = 100;
-        for batch in service_bus_messages.chunks(BATCH_SIZE) {
+        let batch_size = self.batch_config.bulk_chunk_size();
+        for batch in service_bus_messages.chunks(batch_size) {
             match producer.lock().await.send_messages(batch.to_vec()).await {
                 Ok(()) => {
                     stats.successful += batch.len();
@@ -152,8 +157,8 @@ impl ProducerManager {
         }
 
         // Send messages in batches
-        const BATCH_SIZE: usize = 100;
-        for batch in all_messages.chunks(BATCH_SIZE) {
+        let batch_size = self.batch_config.bulk_chunk_size();
+        for batch in all_messages.chunks(batch_size) {
             match producer.lock().await.send_messages(batch.to_vec()).await {
                 Ok(()) => {
                     stats.successful += batch.len();
@@ -192,6 +197,16 @@ impl ProducerManager {
         let total_messages = messages_data.len() * repeat_count;
         stats.total = total_messages;
 
+        // Check if this is a DLQ operation
+        if queue_name.ends_with("/$deadletterqueue") {
+            // For DLQ operations, we need to handle this differently
+            // We cannot directly send to DLQ - this needs to be done via dead_letter_message operation
+            // on received messages, not by sending new messages
+            log::error!("Cannot send messages directly to DLQ: {}", queue_name);
+            stats.failed = total_messages;
+            return Ok(stats);
+        }
+
         // Get or create producer for the queue
         let producer = self.get_or_create_producer(queue_name).await?;
 
@@ -205,11 +220,11 @@ impl ProducerManager {
         }
 
         // Send messages in batches to avoid timeouts
-        const BATCH_SIZE: usize = 100;
+        let batch_size = self.batch_config.bulk_chunk_size();
         let mut successful_count = 0;
         let mut failed_count = 0;
 
-        for batch in all_messages.chunks(BATCH_SIZE) {
+        for batch in all_messages.chunks(batch_size) {
             match producer.lock().await.send_messages(batch.to_vec()).await {
                 Ok(()) => {
                     successful_count += batch.len();

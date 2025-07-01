@@ -1,6 +1,7 @@
 use crate::app::bulk_operation_processor::BulkOperationPostProcessor;
 use crate::components::common::{LoadingActivityMsg, Msg};
-use crate::error::AppError;
+use crate::error::{AppError, ErrorReporter};
+
 use server::bulk_operations::{BulkOperationResult, MessageIdentifier};
 use server::service_bus_manager::{ServiceBusCommand, ServiceBusManager, ServiceBusResponse};
 use server::taskpool::TaskPool;
@@ -60,6 +61,7 @@ pub struct BulkSendTaskParams {
     pub tx_to_main_err: Sender<Msg>,
     pub repeat_count: usize,
     pub error_reporter: crate::error::ErrorReporter,
+    pub max_position: usize,
 }
 
 impl BulkSendTaskParams {
@@ -69,7 +71,8 @@ impl BulkSendTaskParams {
         service_bus_manager: Arc<Mutex<ServiceBusManager>>,
         tx_to_main: Sender<Msg>,
         repeat_count: usize,
-        error_reporter: crate::error::ErrorReporter,
+        error_reporter: ErrorReporter,
+        max_position: usize,
     ) -> Self {
         let tx_to_main_err = tx_to_main.clone();
         Self {
@@ -80,6 +83,7 @@ impl BulkSendTaskParams {
             tx_to_main_err,
             repeat_count,
             error_reporter,
+            max_position,
         }
     }
 
@@ -150,7 +154,6 @@ pub async fn execute_bulk_send_task(params: BulkSendTaskParams) {
             let command = ServiceBusCommand::BulkSendPeeked {
                 messages_data: messages_data_converted,
                 target_queue: params.operation_params.target_queue.clone(),
-                should_delete_source: params.operation_params.should_delete,
                 repeat_count: params.repeat_count,
             };
 
@@ -191,6 +194,7 @@ pub async fn execute_bulk_send_task(params: BulkSendTaskParams) {
                 target_queue: params.operation_params.target_queue.clone(),
                 should_delete_source: params.operation_params.should_delete,
                 repeat_count: params.repeat_count,
+                max_position: params.max_position,
             };
 
             let response = params

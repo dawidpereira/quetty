@@ -4,7 +4,6 @@ use serde::Deserialize;
 // Re-export all submodules
 pub mod app;
 pub mod azure;
-pub mod bulk_operations;
 pub mod keys;
 pub mod limits;
 pub mod ui;
@@ -20,11 +19,14 @@ static CONFIG: std::sync::OnceLock<ConfigLoadResult> = std::sync::OnceLock::new(
 fn load_config() -> ConfigLoadResult {
     dotenv::dotenv().ok();
     let env_source = Environment::default().separator("__");
+
+    // Configuration file is mandatory now – fail fast when it is missing so the
+    // user is clearly informed that a valid `config.toml` must be provided.
     let file_source = File::with_name("config.toml");
 
     let config = match Config::builder()
         .add_source(file_source)
-        .add_source(env_source)
+        .add_source(env_source) // environment entries still override file values when present
         .build()
     {
         Ok(config) => config,
@@ -61,7 +63,7 @@ pub fn get_config_or_panic() -> &'static AppConfig {
 }
 
 /// Additional logging configuration
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct LoggingConfig {
     level: Option<String>,
     file: Option<String>,

@@ -1,7 +1,7 @@
 use crate::consumer::Consumer;
-use azservicebus::core::BasicRetryPolicy;
 use azservicebus::ServiceBusClient;
-use serde::{Deserialize, Serialize};
+use azservicebus::core::BasicRetryPolicy;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -86,6 +86,11 @@ impl MessageIdentifier {
     pub fn from_string(id: String) -> Self {
         Self { id, sequence: 0 }
     }
+
+    /// Create composite key for exact matching
+    pub fn composite_key(&self) -> String {
+        format!("{}:{}", self.id, self.sequence)
+    }
 }
 
 impl From<String> for MessageIdentifier {
@@ -118,35 +123,23 @@ impl PartialEq<MessageIdentifier> for String {
     }
 }
 
-/// Configuration for batch operations
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Configuration for bulk operation batching and limits
+#[derive(Debug, Deserialize, Default, Clone)]
 pub struct BatchConfig {
-    /// Maximum batch size for bulk operations (default: 2048, Azure Service Bus limit)
+    /// Maximum batch size for bulk operations (default: 200)
     max_batch_size: Option<u32>,
     /// Timeout for bulk operations in seconds (default: 300)
     operation_timeout_secs: Option<u64>,
-    /// Buffer percentage for batch size calculation (default: 0.15 = 15%)
-    buffer_percentage: Option<f64>,
-    /// Minimum buffer size (default: 30)
-    min_buffer_size: Option<usize>,
-    /// Chunk size for bulk processing operations (default: 100)
+    /// Chunk size for bulk processing operations (default: 200, same as max_batch_size)
     bulk_chunk_size: Option<usize>,
     /// Processing time limit for bulk operations in seconds (default: 30)
     bulk_processing_time_secs: Option<u64>,
-    /// Timeout for lock operations in seconds (default: 5)
+    /// Timeout for lock operations in seconds (default: 10)
     lock_timeout_secs: Option<u64>,
-    /// Multiplier for calculating max messages to process (default: 3)
-    max_messages_multiplier: Option<usize>,
-    /// Minimum messages to process in bulk operations (default: 100)
-    min_messages_to_process: Option<usize>,
-    /// Maximum messages to process in bulk operations (default: 1000)
+    /// Maximum messages to process in bulk operations (default: 10,000)
     max_messages_to_process: Option<usize>,
-    /// Maximum number of messages for bulk operations (default: 100)
-    bulk_operation_max_count: Option<usize>,
-    /// Threshold for triggering auto-reload after bulk operations (default: 10)
+    /// Auto-reload threshold for UI refresh after bulk operations (default: 50)
     auto_reload_threshold: Option<usize>,
-    /// Small deletion threshold for backfill operations (default: 5)
-    small_deletion_threshold: Option<usize>,
 }
 
 impl BatchConfig {
@@ -155,23 +148,17 @@ impl BatchConfig {
         Self {
             max_batch_size: Some(max_batch_size),
             operation_timeout_secs: Some(operation_timeout_secs),
-            buffer_percentage: None,
-            min_buffer_size: None,
             bulk_chunk_size: None,
             bulk_processing_time_secs: None,
             lock_timeout_secs: None,
-            max_messages_multiplier: None,
-            min_messages_to_process: None,
             max_messages_to_process: None,
-            bulk_operation_max_count: None,
             auto_reload_threshold: None,
-            small_deletion_threshold: None,
         }
     }
 
     /// Get the maximum batch size for bulk operations
     pub fn max_batch_size(&self) -> u32 {
-        self.max_batch_size.unwrap_or(2048)
+        self.max_batch_size.unwrap_or(200)
     }
 
     /// Get the timeout for bulk operations
@@ -179,24 +166,14 @@ impl BatchConfig {
         self.operation_timeout_secs.unwrap_or(300)
     }
 
-    /// Get the buffer percentage for batch size calculation
-    pub fn buffer_percentage(&self) -> f64 {
-        self.buffer_percentage.unwrap_or(0.15)
-    }
-
-    /// Get the minimum buffer size
-    pub fn min_buffer_size(&self) -> usize {
-        self.min_buffer_size.unwrap_or(30)
-    }
-
     /// Get the chunk size for bulk processing operations
     pub fn bulk_chunk_size(&self) -> usize {
-        self.bulk_chunk_size.unwrap_or(100)
+        self.bulk_chunk_size.unwrap_or(200)
     }
 
     /// Get the processing time limit for bulk operations in seconds
     pub fn bulk_processing_time_secs(&self) -> u64 {
-        self.bulk_processing_time_secs.unwrap_or(30)
+        self.bulk_processing_time_secs.unwrap_or(120)
     }
 
     /// Get the timeout for lock operations in seconds
@@ -204,39 +181,14 @@ impl BatchConfig {
         self.lock_timeout_secs.unwrap_or(5)
     }
 
-    /// Get the multiplier for calculating max messages to process
-    pub fn max_messages_multiplier(&self) -> usize {
-        self.max_messages_multiplier.unwrap_or(3)
-    }
-
-    /// Get the minimum messages to process in bulk operations
-    pub fn min_messages_to_process(&self) -> usize {
-        self.min_messages_to_process.unwrap_or(100)
-    }
-
     /// Get the maximum messages to process in bulk operations
     pub fn max_messages_to_process(&self) -> usize {
-        self.max_messages_to_process.unwrap_or(1000)
-    }
-
-    /// Get the maximum number of messages for bulk operations
-    pub fn bulk_operation_max_count(&self) -> usize {
-        self.bulk_operation_max_count.unwrap_or(100)
-    }
-
-    /// Get the minimum number of messages for bulk operations
-    pub fn bulk_operation_min_count(&self) -> usize {
-        1
+        self.max_messages_to_process.unwrap_or(10_000)
     }
 
     /// Get the threshold for triggering auto-reload after bulk operations
     pub fn auto_reload_threshold(&self) -> usize {
-        self.auto_reload_threshold.unwrap_or(10)
-    }
-
-    /// Get the small deletion threshold for backfill operations
-    pub fn small_deletion_threshold(&self) -> usize {
-        self.small_deletion_threshold.unwrap_or(5)
+        self.auto_reload_threshold.unwrap_or(50)
     }
 }
 
@@ -265,24 +217,14 @@ impl ServiceBusOperationContext {
     }
 }
 
-/// Parameters for processing a single batch of messages
-pub(crate) struct BatchProcessingContext<'a> {
-    pub consumer: Arc<Mutex<Consumer>>,
-    pub batch_size: usize,
-    pub target_messages_found: usize,
-    pub target_map: &'a HashMap<String, MessageIdentifier>,
-    pub messages_processed: usize,
-    pub remaining_targets: &'a mut HashMap<String, MessageIdentifier>,
-    pub target_messages_vec: &'a mut Vec<azservicebus::ServiceBusReceivedMessage>,
-    pub non_target_messages: &'a mut Vec<azservicebus::ServiceBusReceivedMessage>,
-}
-
 /// Parameters for bulk send operations
+#[derive(Debug, Clone)]
 pub struct BulkSendParams {
     pub target_queue: String,
     pub should_delete: bool,
     pub message_identifiers: Vec<MessageIdentifier>,
     pub messages_data: Option<Vec<(MessageIdentifier, Vec<u8>)>>, // For peek-based operations
+    pub max_position: usize,                                      // For dynamic processing limits
 }
 
 impl BulkSendParams {
@@ -291,12 +233,14 @@ impl BulkSendParams {
         target_queue: String,
         should_delete: bool,
         message_identifiers: Vec<MessageIdentifier>,
+        max_position: usize,
     ) -> Self {
         Self {
             target_queue,
             should_delete,
             message_identifiers,
             messages_data: None,
+            max_position,
         }
     }
 
@@ -305,6 +249,7 @@ impl BulkSendParams {
         target_queue: String,
         should_delete: bool,
         messages_data: Vec<(MessageIdentifier, Vec<u8>)>,
+        max_position: usize,
     ) -> Self {
         // Extract identifiers from the data
         let message_identifiers = messages_data.iter().map(|(id, _)| id.clone()).collect();
@@ -314,6 +259,23 @@ impl BulkSendParams {
             should_delete,
             message_identifiers,
             messages_data: Some(messages_data),
+            max_position,
+        }
+    }
+
+    /// Create parameters with max position for better processing limits
+    pub fn with_max_position(
+        target_queue: String,
+        should_delete: bool,
+        message_identifiers: Vec<MessageIdentifier>,
+        max_position: usize,
+    ) -> Self {
+        Self {
+            target_queue,
+            should_delete,
+            message_identifiers,
+            messages_data: None,
+            max_position,
         }
     }
 }
@@ -338,59 +300,13 @@ impl QueueOperationType {
     }
 }
 
-/// Context for bulk operations
+/// Bulk operation context containing shared resources
+#[derive(Clone)]
 pub struct BulkOperationContext {
-    pub consumer: Arc<Mutex<Consumer>>,
-    pub service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
-    pub target_queue: String,
-    pub operation_type: QueueOperationType,
+    pub consumer: Arc<Mutex<crate::consumer::Consumer>>,
     pub cancel_token: CancellationToken,
-}
-
-impl BulkOperationContext {
-    /// Create a new operation context with automatic operation type detection
-    pub fn new(
-        consumer: Arc<Mutex<Consumer>>,
-        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
-        target_queue: String,
-    ) -> Self {
-        let operation_type = QueueOperationType::from_queue_name(&target_queue);
-        Self {
-            consumer,
-            service_bus_client,
-            target_queue,
-            operation_type,
-            cancel_token: CancellationToken::new(),
-        }
-    }
-
-    /// Create a new context with a specific cancellation token
-    pub fn with_cancel_token(
-        consumer: Arc<Mutex<Consumer>>,
-        service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
-        target_queue: String,
-        cancel_token: CancellationToken,
-    ) -> Self {
-        let operation_type = QueueOperationType::from_queue_name(&target_queue);
-        Self {
-            consumer,
-            service_bus_client,
-            target_queue,
-            operation_type,
-            cancel_token,
-        }
-    }
-
-    /// Cancel the operation
-    pub fn cancel(&self) {
-        self.cancel_token.cancel();
-        log::info!("Bulk operation cancelled for queue: {}", self.target_queue);
-    }
-
-    /// Check if the operation has been cancelled
-    pub fn is_cancelled(&self) -> bool {
-        self.cancel_token.is_cancelled()
-    }
+    /// Name of the queue this operation is targeting (used for deferred message persistence)
+    pub queue_name: String,
 }
 
 /// Parameters for process_target_messages method
@@ -418,4 +334,4 @@ impl<'a> ProcessTargetMessagesParams<'a> {
             result,
         }
     }
-} 
+}

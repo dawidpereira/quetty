@@ -138,11 +138,8 @@ impl QueueManager {
 
                     progress.report_progress("Switching to queue...");
 
-                    let response = service_bus_manager
-                        .lock()
-                        .await
-                        .execute_command(command)
-                        .await;
+                    let mgr_lock = service_bus_manager.lock().await;
+                    let response = mgr_lock.execute_command(command).await;
 
                     let queue_info = match response {
                         ServiceBusResponse::QueueSwitched { queue_info } => {

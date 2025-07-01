@@ -175,6 +175,15 @@ impl BulkOperationPostProcessor {
             }
         }
 
+        // After any delete operation, ensure selection state is cleared so UI reflects the changes
+        if matches!(context.operation_type, BulkOperationType::Delete) {
+            if let Err(e) =
+                tx_to_main.send(Msg::MessageActivity(MessageActivityMsg::ClearAllSelections))
+            {
+                error_reporter.report_send_error("clear selections", &e);
+            }
+        }
+
         Ok(())
     }
 

@@ -1,4 +1,5 @@
 use azservicebus::prelude::ServiceBusPeekedMessage;
+use azservicebus::primitives::service_bus_message_state::ServiceBusMessageState;
 use azure_core::date::OffsetDateTime;
 use serde::Serialize;
 use serde::ser::Serializer;
@@ -116,12 +117,19 @@ impl TryFrom<ServiceBusPeekedMessage> for MessageModel {
             .delivery_count()
             .ok_or(MessageModelError::MissingDeliveryCount)? as usize;
 
+        // Map Azure message state to our internal MessageState enum
+        let state = match msg.state() {
+            ServiceBusMessageState::Active => MessageState::Active,
+            ServiceBusMessageState::Deferred => MessageState::Deferred,
+            ServiceBusMessageState::Scheduled => MessageState::Scheduled,
+        };
+
         Ok(Self {
             sequence: msg.sequence_number(),
             id,
             enqueued_at: msg.enqueued_time(),
             delivery_count,
-            state: MessageState::Active,
+            state,
             body,
         })
     }

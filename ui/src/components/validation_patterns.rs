@@ -294,7 +294,6 @@ impl ValidationState {
 }
 
 /// Helper trait for components that need validation
-
 #[cfg(test)]
 mod tests {
     use super::*;

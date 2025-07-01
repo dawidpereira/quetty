@@ -16,7 +16,7 @@ pub mod queue_statistics_service;
 pub mod responses;
 pub mod types;
 
-#[derive(Clone, Debug, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize, Default)]
 pub struct AzureAdConfig {
     tenant_id: Option<String>,
     client_id: Option<String>,

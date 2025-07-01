@@ -13,28 +13,37 @@ pub struct BulkSelectionState {
     pub selected_messages: HashSet<MessageIdentifier>,
     /// Whether we're currently in bulk selection mode
     pub selection_mode: bool,
-    /// Index of the last selected message for range selection (future use)
+    /// Index of the last selected message for range selection and max_position calculation
     pub last_selected_index: Option<usize>,
+    /// Set of all selected indices (for tracking highest index across pages)
+    pub selected_indices: HashSet<usize>,
 }
 
 impl BulkSelectionState {
     /// Toggle selection for a message
-    pub fn toggle_selection(&mut self, message_id: MessageIdentifier) -> bool {
+    pub fn toggle_selection(&mut self, message_id: MessageIdentifier, index: usize) -> bool {
         if self.selected_messages.contains(&message_id) {
             self.selected_messages.remove(&message_id);
+            self.selected_indices.remove(&index);
+            self.last_selected_index = self.selected_indices.iter().max().copied();
             false
         } else {
             self.selected_messages.insert(message_id);
+            self.selected_indices.insert(index);
+            self.last_selected_index = self.selected_indices.iter().max().copied();
             true
         }
     }
 
     /// Select all messages from a given list
     pub fn select_all(&mut self, messages: &[MessageModel]) {
-        for message in messages {
+        for (index, message) in messages.iter().enumerate() {
             self.selected_messages
                 .insert(MessageIdentifier::from_message(message));
+            self.selected_indices.insert(index);
         }
+        // Set last_selected_index to the highest index
+        self.last_selected_index = self.selected_indices.iter().max().copied();
         if !messages.is_empty() {
             self.selection_mode = true;
         }
@@ -43,8 +52,9 @@ impl BulkSelectionState {
     /// Clear all selections
     pub fn clear_all(&mut self) {
         self.selected_messages.clear();
-        self.selection_mode = false;
+        self.selected_indices.clear();
         self.last_selected_index = None;
+        self.selection_mode = false;
     }
 
     /// Get the number of selected messages
@@ -72,14 +82,23 @@ impl BulkSelectionState {
         self.selected_messages.iter().cloned().collect()
     }
 
+    /// Get the highest selected index for max_position calculation
+    pub fn get_highest_selected_index(&self) -> Option<usize> {
+        self.last_selected_index.map(|index| index + 1)
+    }
+
     /// Remove messages from selection (used when messages are deleted/moved)
     pub fn remove_messages(&mut self, message_ids: &[MessageIdentifier]) {
         for id in message_ids {
             self.selected_messages.remove(id);
         }
+        // Note: We can't easily remove specific indices here since we don't have the mapping
+        // The indices will be cleared when selections are cleared or when messages are reloaded
         // Exit selection mode if no messages are selected
         if self.selected_messages.is_empty() {
             self.selection_mode = false;
+            self.last_selected_index = None;
+            self.selected_indices.clear();
         }
     }
 }
@@ -166,11 +185,20 @@ impl QueueState {
             };
 
             self.pending_queue = Some(target_queue.clone());
+            self.current_queue_name = Some(target_queue.clone());
             self.current_queue_type = new_queue_type;
-
-            // Clear current messages and pagination state when switching
             self.messages = None;
             self.message_pagination.reset();
+
+            log::info!(
+                "Queue toggle: cleared all message cache, switching from {:?} to {:?} ({})",
+                match self.current_queue_type {
+                    QueueType::Main => QueueType::DeadLetter,
+                    QueueType::DeadLetter => QueueType::Main,
+                },
+                self.current_queue_type,
+                target_queue
+            );
 
             // Clear selections when switching queues (as per user requirement)
             self.bulk_selection.clear_all();
