@@ -3,13 +3,13 @@ use super::azure_management_client::StatisticsConfig;
 use super::command_handlers::*;
 use super::commands::ServiceBusCommand;
 use super::consumer_manager::ConsumerManager;
-use super::errors::ServiceBusResult;
+use super::errors::{ServiceBusResult, ServiceBusError};
 use super::producer_manager::ProducerManager;
 use super::queue_statistics_service::QueueStatisticsService;
 use super::responses::ServiceBusResponse;
 use super::types::QueueInfo;
 use crate::bulk_operations::{BulkOperationHandler, types::BatchConfig};
-use azservicebus::{ServiceBusClient, core::BasicRetryPolicy};
+use azservicebus::{ServiceBusClient, core::BasicRetryPolicy, ServiceBusClientOptions};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -25,6 +25,10 @@ pub struct ServiceBusManager {
     // Shared state
     consumer_manager: Arc<Mutex<ConsumerManager>>,
     producer_manager: Arc<Mutex<ProducerManager>>,
+    service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+
+    // Connection reset capability
+    connection_string: String,
 
     // Error tracking
     last_error: Arc<Mutex<Option<String>>>,
@@ -37,6 +41,7 @@ impl ServiceBusManager {
         azure_ad_config: AzureAdConfig,
         statistics_config: StatisticsConfig,
         batch_config: BatchConfig,
+        connection_string: String,
     ) -> Self {
         let consumer_manager = Arc::new(Mutex::new(ConsumerManager::new(
             service_bus_client.clone(),
@@ -72,6 +77,8 @@ impl ServiceBusManager {
             ),
             consumer_manager,
             producer_manager,
+            service_bus_client,
+            connection_string,
             last_error: Arc::new(Mutex::new(None)),
         }
     }
@@ -242,6 +249,9 @@ impl ServiceBusManager {
             ServiceBusCommand::DisposeAllResources => {
                 self.resource_handler.handle_dispose_all_resources().await
             }
+            ServiceBusCommand::ResetConnection => {
+                self.handle_reset_connection().await
+            }
         }
     }
 
@@ -284,5 +294,46 @@ impl ServiceBusManager {
     pub async fn get_last_error(&self) -> Option<String> {
         let last_error = self.last_error.lock().await;
         last_error.clone()
+    }
+
+    /// Reset the entire AMQP connection by creating a new ServiceBusClient
+    pub async fn handle_reset_connection(&self) -> ServiceBusResult<ServiceBusResponse> {
+        log::info!("Resetting ServiceBus connection completely");
+
+        // First dispose all existing resources
+        let _ = self.resource_handler.handle_dispose_all_resources().await;
+
+        // Create a new ServiceBusClient from the stored connection string
+        let new_client = ServiceBusClient::new_from_connection_string(
+            &self.connection_string,
+            ServiceBusClientOptions::default(),
+        )
+        .await
+        .map_err(|e| {
+            ServiceBusError::ConnectionFailed(format!(
+                "Failed to create new ServiceBus client: {}",
+                e
+            ))
+        })?;
+
+        // Replace the client in the Arc<Mutex>
+        {
+            let mut client_guard = self.service_bus_client.lock().await;
+            *client_guard = new_client;
+        }
+
+        // Update the consumer and producer managers with the new client
+        {
+            let mut consumer_manager = self.consumer_manager.lock().await;
+            consumer_manager.reset_client(self.service_bus_client.clone()).await?;
+        }
+
+        {
+            let mut producer_manager = self.producer_manager.lock().await;
+            producer_manager.reset_client(self.service_bus_client.clone()).await?;
+        }
+
+        log::info!("ServiceBus connection reset successfully");
+        Ok(ServiceBusResponse::ConnectionReset)
     }
 }

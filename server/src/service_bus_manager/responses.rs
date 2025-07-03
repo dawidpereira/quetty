@@ -83,6 +83,8 @@ pub enum ServiceBusResponse {
     // Resource management responses
     ConsumerDisposed,
     AllResourcesDisposed,
+    ResourcesDisposed,
+    ConnectionReset,
 
     // Operation success (generic)
     Success,

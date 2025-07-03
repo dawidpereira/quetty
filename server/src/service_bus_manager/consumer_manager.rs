@@ -295,4 +295,21 @@ impl ConsumerManager {
     pub fn get_raw_consumer(&self) -> Option<Arc<Mutex<Consumer>>> {
         self.current_consumer.clone()
     }
+
+    /// Reset the ServiceBusClient reference after connection reset
+    pub async fn reset_client(
+        &mut self,
+        new_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+    ) -> ServiceBusResult<()> {
+        log::info!("Resetting ServiceBusClient reference in ConsumerManager");
+        
+        // Dispose existing consumer if any
+        self.dispose_consumer().await?;
+        
+        // Update the client reference
+        self.service_bus_client = new_client;
+        
+        log::info!("ConsumerManager client reference updated successfully");
+        Ok(())
+    }
 }
