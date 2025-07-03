@@ -97,7 +97,7 @@ impl ProducerManager {
 
         // Send messages in batches
         let batch_size = self.batch_config.bulk_chunk_size();
-        for batch in service_bus_messages.chunks(batch_size) {
+        for (batch_index, batch) in service_bus_messages.chunks(batch_size).enumerate() {
             match producer.lock().await.send_messages(batch.to_vec()).await {
                 Ok(()) => {
                     stats.successful += batch.len();
@@ -107,6 +107,12 @@ impl ProducerManager {
                     stats.failed += batch.len();
                     log::error!("Failed to send batch of {} messages: {}", batch.len(), e);
                 }
+            }
+
+            // Brief pause for large operations
+            if messages.len() > 500 && batch_index % 3 == 2 {
+                log::debug!("Brief pause to prevent connection overwhelm");
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
             }
         }
 
@@ -158,7 +164,7 @@ impl ProducerManager {
 
         // Send messages in batches
         let batch_size = self.batch_config.bulk_chunk_size();
-        for batch in all_messages.chunks(batch_size) {
+        for (batch_index, batch) in all_messages.chunks(batch_size).enumerate() {
             match producer.lock().await.send_messages(batch.to_vec()).await {
                 Ok(()) => {
                     stats.successful += batch.len();
@@ -168,6 +174,12 @@ impl ProducerManager {
                     stats.failed += batch.len();
                     log::error!("Failed to send batch of {} messages: {}", batch.len(), e);
                 }
+            }
+
+            // Brief pause for large operations
+            if messages.len() > 500 && batch_index % 3 == 2 {
+                log::debug!("Brief pause to prevent connection overwhelm");
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
             }
         }
 
@@ -219,12 +231,25 @@ impl ProducerManager {
             }
         }
 
-        // Send messages in batches to avoid timeouts
-        let batch_size = self.batch_config.bulk_chunk_size();
+        // Use smaller batch size for bulk operations to prevent Azure Service Bus connection overwhelm
+        // Conservative size to avoid race conditions in AMQP layer
+        let batch_size = if total_messages > 500 {
+            // For large operations, use smaller batches
+            self.batch_config.bulk_chunk_size().min(500)
+        } else {
+            self.batch_config.bulk_chunk_size()
+        };
+
         let mut successful_count = 0;
         let mut failed_count = 0;
 
-        for batch in all_messages.chunks(batch_size) {
+        for (batch_index, batch) in all_messages.chunks(batch_size).enumerate() {
+            log::debug!(
+                "Sending batch {} of {} messages",
+                batch_index + 1,
+                batch.len()
+            );
+
             match producer.lock().await.send_messages(batch.to_vec()).await {
                 Ok(()) => {
                     successful_count += batch.len();
@@ -234,6 +259,12 @@ impl ProducerManager {
                     failed_count += batch.len();
                     log::error!("Failed to send batch of {} messages: {}", batch.len(), e);
                 }
+            }
+
+            // Add a small delay between batches for large operations to prevent overwhelming the connection
+            if total_messages > 1000 && batch_index % 3 == 2 {
+                log::debug!("Brief pause to prevent connection overwhelm");
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             }
         }
 

@@ -31,13 +31,23 @@ where
         let message = &current_messages[index];
         let message_id = MessageIdentifier::from_message(message);
 
-        log::debug!("Toggling selection for message: {:?}", message_id);
+        // Calculate the global index of the message across all loaded pages
+        let page_size = config::get_current_page_size() as usize;
+        let current_page = self.queue_state().message_pagination.current_page;
+        let global_index = current_page * page_size + index;
+
+        log::debug!(
+            "Toggling selection for message: {:?} (local_idx={}, global_idx={})",
+            message_id,
+            index,
+            global_index
+        );
 
         let was_in_bulk_mode = self.queue_manager.queue_state.bulk_selection.selection_mode;
         let was_selected = self
             .queue_state_mut()
             .bulk_selection
-            .toggle_selection(message_id, index);
+            .toggle_selection(message_id, global_index);
 
         if was_selected {
             log::debug!("Selected message: {}", message.id);
@@ -103,9 +113,14 @@ where
 
         let message_count = current_messages.len();
 
+        // Calculate global start index for the current page
+        let page_size = config::get_current_page_size() as usize;
+        let current_page = self.queue_state().message_pagination.current_page;
+        let global_page_start_idx = current_page * page_size;
+
         self.queue_state_mut()
             .bulk_selection
-            .select_all(&current_messages);
+            .select_all_with_offset(&current_messages, global_page_start_idx);
 
         // Also update the messages field to ensure UI consistency
         self.queue_state_mut().messages = Some(current_messages.clone());

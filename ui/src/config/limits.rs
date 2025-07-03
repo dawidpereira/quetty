@@ -2,14 +2,14 @@
 /// Azure Service Bus hard limit for batch operations
 pub const AZURE_SERVICE_BUS_MAX_BATCH_SIZE: u32 = 2048;
 
-/// Maximum reasonable timeout for operations (10 minutes)
-pub const MAX_OPERATION_TIMEOUT_SECS: u64 = 600;
+/// Maximum reasonable timeout for operations (20 minutes for large operations)
+pub const MAX_OPERATION_TIMEOUT_SECS: u64 = 1200;
 
-/// Maximum chunk size for bulk processing
-pub const MAX_BULK_CHUNK_SIZE: usize = 200;
+/// Maximum chunk size for bulk processing (conservative for stability)
+pub const MAX_BULK_CHUNK_SIZE: usize = 500;
 
-/// Maximum processing time for bulk operations (seconds)
-pub const MAX_BULK_PROCESSING_TIME_SECS: u64 = 120;
+/// Maximum processing time for bulk operations (seconds) - increased for large batches
+pub const MAX_BULK_PROCESSING_TIME_SECS: u64 = 300;
 
 /// Maximum lock timeout for lock operations
 pub const MAX_LOCK_TIMEOUT_SECS: u64 = 30;

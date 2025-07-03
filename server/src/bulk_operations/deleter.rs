@@ -7,6 +7,19 @@ use std::error::Error;
 use std::time::Duration;
 use tokio::time::interval;
 
+/// Parameters for batch iteration processing
+#[derive(Debug)]
+struct BatchIterationParams<'a> {
+    context: &'a BulkOperationContext,
+    batch_size: usize,
+    target_map: &'a HashMap<String, MessageIdentifier>,
+    pending_messages: &'a mut Vec<azservicebus::ServiceBusReceivedMessage>,
+    processed_count: &'a mut usize,
+    found_targets: &'a mut usize,
+    highest_sequence_seen: &'a mut i64,
+    result: &'a mut BulkOperationResult,
+}
+
 /// Simple batch-based message deleter
 pub struct BulkDeleter {
     config: BatchConfig,
@@ -34,7 +47,7 @@ impl BulkDeleter {
             targets.len()
         );
 
-        // Use max_position for stopping condition
+        // Use max_position for small batch logic only
         let max_index = params.max_position;
 
         log::info!("Maximum target index: {}", max_index);
@@ -57,7 +70,7 @@ impl BulkDeleter {
             self.delete_small_batch(&context, targets, max_index, &mut result)
                 .await?;
         } else {
-            self.delete_large_batch(&context, targets, max_index, &mut result)
+            self.delete_large_batch(&context, targets, &mut result)
                 .await?;
         }
 
@@ -109,100 +122,58 @@ impl BulkDeleter {
         &self,
         context: &BulkOperationContext,
         targets: Vec<MessageIdentifier>,
-        max_index: usize,
         result: &mut BulkOperationResult,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let batch_size = self.config.bulk_chunk_size();
         log::info!(
-            "Large batch mode: scanning up to index {} in batches of {}",
-            max_index,
+            "Large batch mode: scanning in batches of {} using sequence-based stopping",
             batch_size
         );
 
-        let target_map: HashMap<String, MessageIdentifier> = targets
-            .into_iter()
-            .map(|target| (target.id.clone(), target))
-            .collect();
+        // Setup operation state
+        let (target_map, target_max_sequence, lock_refresh_handle) =
+            self.setup_large_batch_operation(context, targets).await;
 
         let mut pending_messages = Vec::new();
         let mut processed_count = 0;
         let mut found_targets = 0;
+        let mut highest_sequence_seen = 0i64;
 
-        // Start lock refresh task
-        let lock_refresh_handle = self
-            .start_lock_refresh_task(context, &pending_messages)
-            .await;
-
-        while processed_count < max_index && found_targets < target_map.len() {
-            log::info!(
-                "Fetching batch of {} messages (processed: {}/{})",
-                batch_size,
-                processed_count,
-                max_index
-            );
-
-            let messages = self.receive_messages(context, batch_size).await?;
-
-            if messages.is_empty() {
-                log::info!("No more messages available - stopping scan");
-                break;
-            }
-
-            // Check current batch for targets
-            let (targets_in_batch, non_targets): (Vec<_>, Vec<_>) =
-                messages.into_iter().partition(|msg| {
-                    if let Some(msg_id) = msg.message_id() {
-                        target_map.contains_key(msg_id.as_ref())
-                    } else {
-                        false
-                    }
-                });
-
-            // Process target messages immediately
-            if !targets_in_batch.is_empty() {
-                log::info!(
-                    "Found {} target messages in current batch",
-                    targets_in_batch.len()
+        // Main processing loop
+        while self.should_continue_scanning(
+            found_targets,
+            target_map.len(),
+            target_max_sequence,
+            highest_sequence_seen,
+        ) {
+            // Log progress less frequently for large operations
+            if processed_count % (batch_size * 5) == 0 {
+                self.log_bulk_delete_progress(
+                    processed_count,
+                    highest_sequence_seen,
+                    target_max_sequence,
+                    found_targets,
+                    target_map.len(),
+                    pending_messages.len(),
                 );
-                for message in targets_in_batch {
-                    if let Some(msg_id) = message.message_id() {
-                        if let Some(target) = target_map.get(msg_id.as_ref()) {
-                            match self.complete_message(context, &message).await {
-                                Ok(_) => {
-                                    result.add_successful_message(target.clone());
-                                    found_targets += 1;
-                                    log::info!(
-                                        "Deleted target {} ({}/{})",
-                                        target.id,
-                                        found_targets,
-                                        target_map.len()
-                                    );
-                                }
-                                Err(e) => {
-                                    log::error!("Failed to delete target {}: {}", target.id, e);
-                                    result.add_failure(format!(
-                                        "Failed to delete {}: {}",
-                                        target.id, e
-                                    ));
-                                    // Abandon the message
-                                    if let Err(abandon_err) =
-                                        self.abandon_message(context, &message).await
-                                    {
-                                        log::warn!(
-                                            "Failed to abandon message after delete failure: {}",
-                                            abandon_err
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
             }
 
-            // Add non-targets to pending list for lock management
-            pending_messages.extend(non_targets);
-            processed_count += batch_size;
+            // Process a single batch iteration
+            let batch_params = BatchIterationParams {
+                context,
+                batch_size,
+                target_map: &target_map,
+                pending_messages: &mut pending_messages,
+                processed_count: &mut processed_count,
+                found_targets: &mut found_targets,
+                highest_sequence_seen: &mut highest_sequence_seen,
+                result,
+            };
+            let batch_result = self.process_batch_iteration(batch_params).await?;
+
+            if !batch_result {
+                break; // No more messages available
+            }
 
             // Check if we found all targets
             if found_targets >= target_map.len() {
@@ -211,32 +182,238 @@ impl BulkDeleter {
             }
         }
 
-        // Clean up: abandon all pending messages
-        if !pending_messages.is_empty() {
-            log::info!("Abandoning {} pending messages", pending_messages.len());
-            for message in &pending_messages {
-                if let Err(e) = self.abandon_message(context, message).await {
-                    log::warn!("Failed to abandon pending message: {}", e);
+        // Cleanup and finalization
+        self.cleanup_pending_messages(context, pending_messages)
+            .await;
+        lock_refresh_handle.abort();
+
+        log::info!(
+            "Large batch deletion completed: processed {} messages, found {} targets",
+            processed_count,
+            found_targets
+        );
+
+        Ok(())
+    }
+
+    /// Setup the large batch operation with target map, sequence tracking, and lock refresh
+    async fn setup_large_batch_operation(
+        &self,
+        context: &BulkOperationContext,
+        targets: Vec<MessageIdentifier>,
+    ) -> (
+        HashMap<String, MessageIdentifier>,
+        i64,
+        tokio::task::JoinHandle<()>,
+    ) {
+        // Calculate the target max sequence number from the message IDs first
+        let target_max_sequence = targets
+            .iter()
+            .map(|msg_id| msg_id.sequence)
+            .max()
+            .unwrap_or(0);
+
+        let target_map: HashMap<String, MessageIdentifier> = targets
+            .into_iter()
+            .map(|target| (target.id.clone(), target))
+            .collect();
+
+        log::info!("Target max sequence number: {}", target_max_sequence);
+
+        // Start lock refresh task
+        let lock_refresh_handle = self.start_lock_refresh_task(context, &[]).await;
+
+        (target_map, target_max_sequence, lock_refresh_handle)
+    }
+
+    /// Determine if we should continue scanning based on current state
+    fn should_continue_scanning(
+        &self,
+        found_targets: usize,
+        total_targets: usize,
+        target_max_sequence: i64,
+        highest_sequence_seen: i64,
+    ) -> bool {
+        found_targets < total_targets
+            && (target_max_sequence == 0 || highest_sequence_seen < target_max_sequence)
+    }
+
+    /// Log progress for bulk delete operations
+    fn log_bulk_delete_progress(
+        &self,
+        processed_count: usize,
+        highest_sequence_seen: i64,
+        target_max_sequence: i64,
+        found_targets: usize,
+        total_targets: usize,
+        pending_messages: usize,
+    ) {
+        log::info!(
+            "Bulk delete progress: processed: {} | highest_sequence: {} / target: {} | found_targets: {} / {} | pending_locked: {}",
+            processed_count,
+            highest_sequence_seen,
+            target_max_sequence,
+            found_targets,
+            total_targets,
+            pending_messages
+        );
+    }
+
+    /// Process a single batch iteration
+    async fn process_batch_iteration(
+        &self,
+        params: BatchIterationParams<'_>,
+    ) -> Result<bool, Box<dyn Error + Send + Sync>> {
+        log::debug!(
+            "Requesting next batch: {} messages (will complete at {})",
+            params.batch_size,
+            *params.processed_count + params.batch_size
+        );
+
+        let messages = self
+            .receive_messages(params.context, params.batch_size)
+            .await?;
+
+        if messages.is_empty() {
+            log::warn!(
+                "Received empty batch from Service Bus before reaching target sequence. processed: {} found_targets: {} pending: {}",
+                *params.processed_count,
+                *params.found_targets,
+                params.pending_messages.len()
+            );
+            return Ok(false);
+        }
+
+        // Track highest sequence number seen in this batch
+        for msg in &messages {
+            let msg_sequence = msg.sequence_number();
+            if msg_sequence > *params.highest_sequence_seen {
+                *params.highest_sequence_seen = msg_sequence;
+            }
+        }
+
+        // Check current batch for targets
+        let (targets_in_batch, non_targets): (Vec<_>, Vec<_>) =
+            messages.into_iter().partition(|msg| {
+                if let Some(msg_id) = msg.message_id() {
+                    params.target_map.contains_key(msg_id.as_ref())
+                } else {
+                    false
+                }
+            });
+
+        // Process target messages immediately
+        if !targets_in_batch.is_empty() {
+            self.process_target_messages(
+                params.context,
+                targets_in_batch,
+                params.target_map,
+                params.found_targets,
+                params.result,
+            )
+            .await?;
+        }
+
+        // Add non-targets to pending list for lock management (abandon them once at the end)
+        params.pending_messages.extend(non_targets);
+        *params.processed_count += params.batch_size;
+
+        // Safety check: if we've gone well beyond the target sequence and still have targets
+        let target_max_sequence = params
+            .target_map
+            .values()
+            .map(|msg_id| msg_id.sequence)
+            .max()
+            .unwrap_or(0);
+        if target_max_sequence > 0
+            && *params.highest_sequence_seen > target_max_sequence + 1000
+            && *params.found_targets < params.target_map.len()
+        {
+            log::warn!(
+                "Safety break: highest_sequence {} exceeds target {} by 1000+, {} targets still remaining",
+                *params.highest_sequence_seen,
+                target_max_sequence,
+                *params.found_targets
+            );
+            return Ok(false);
+        }
+
+        log::debug!(
+            "End of iteration: processed_count={} | highest_sequence={} | found_targets={} | pending_locked={}",
+            *params.processed_count,
+            *params.highest_sequence_seen,
+            *params.found_targets,
+            params.pending_messages.len()
+        );
+
+        Ok(true)
+    }
+
+    /// Process target messages found in a batch
+    async fn process_target_messages(
+        &self,
+        context: &BulkOperationContext,
+        targets_in_batch: Vec<azservicebus::ServiceBusReceivedMessage>,
+        target_map: &HashMap<String, MessageIdentifier>,
+        found_targets: &mut usize,
+        result: &mut BulkOperationResult,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        log::info!(
+            "Found {} target messages in current batch",
+            targets_in_batch.len()
+        );
+
+        for message in targets_in_batch {
+            if let Some(msg_id) = message.message_id() {
+                if let Some(target) = target_map.get(msg_id.as_ref()) {
+                    match self.complete_message(context, &message).await {
+                        Ok(_) => {
+                            result.add_successful_message(target.clone());
+                            log::info!(
+                                "Deleted target {} ({}/{})",
+                                target.id,
+                                *found_targets,
+                                target_map.len()
+                            );
+                            *found_targets += 1;
+                        }
+                        Err(e) => {
+                            log::error!("Failed to delete target {}: {}", target.id, e);
+                            result.add_failure(format!("Failed to delete {}: {}", target.id, e));
+                            // Abandon the message
+                            if let Err(abandon_err) = self.abandon_message(context, &message).await
+                            {
+                                log::warn!(
+                                    "Failed to abandon message after delete failure: {}",
+                                    abandon_err
+                                );
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        // Stop lock refresh task
-        lock_refresh_handle.abort();
+        Ok(())
+    }
 
-        // Mark remaining targets as not found
-        let targets_not_found = target_map.len() - found_targets;
-        if targets_not_found > 0 {
+    /// Clean up pending messages by abandoning them
+    async fn cleanup_pending_messages(
+        &self,
+        context: &BulkOperationContext,
+        pending_messages: Vec<azservicebus::ServiceBusReceivedMessage>,
+    ) {
+        if !pending_messages.is_empty() {
             log::info!(
-                "{} targets not found in scanned messages",
-                targets_not_found
+                "Abandoning {} remaining non-target messages",
+                pending_messages.len()
             );
-            for _ in 0..targets_not_found {
-                result.add_not_found();
+            for message in pending_messages {
+                if let Err(e) = self.abandon_message(context, &message).await {
+                    log::warn!("Failed to abandon non-target message: {}", e);
+                }
             }
         }
-
-        Ok(())
     }
 
     /// Start background task to refresh locks on pending messages every 30 seconds
@@ -305,7 +482,7 @@ impl BulkDeleter {
                         }
                     }
                 } else {
-                    // Not a target - abandon it
+                    // Not a target - abandon it (this is small batch mode, so immediate abandon is OK)
                     if let Err(e) = self.abandon_message(context, &message).await {
                         log::warn!("Failed to abandon non-target message {:?}: {}", msg_id, e);
                     }

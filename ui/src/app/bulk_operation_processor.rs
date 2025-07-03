@@ -52,7 +52,9 @@ impl BulkOperationPostProcessor {
                 let all_current_deleted =
                     context.selected_from_current_page >= context.current_message_count;
 
-                if large_operation || all_current_deleted {
+                // For delete operations, be more aggressive with force reload for better UI consistency
+                // Force reload if: large operation, all current deleted, OR more than 10 messages deleted
+                if large_operation || all_current_deleted || context.successful_count >= 10 {
                     let reason = if large_operation && all_current_deleted {
                         format!(
                             "Large deletion ({} messages) and all current messages deleted",
@@ -63,10 +65,15 @@ impl BulkOperationPostProcessor {
                             "Large deletion ({} messages >= threshold {})",
                             context.successful_count, context.reload_threshold
                         )
-                    } else {
+                    } else if all_current_deleted {
                         format!(
                             "All current messages deleted ({}/{})",
                             context.selected_from_current_page, context.current_message_count
+                        )
+                    } else {
+                        format!(
+                            "Significant deletion ({} messages) - ensuring UI consistency",
+                            context.successful_count
                         )
                     };
                     ReloadStrategy::ForceReload { reason }
@@ -78,10 +85,11 @@ impl BulkOperationPostProcessor {
             }
             BulkOperationType::Send { should_delete, .. } => {
                 if *should_delete && context.successful_count > 0 {
-                    if large_operation {
+                    // For send-with-delete operations, be more aggressive with force reload
+                    if large_operation || context.successful_count >= 10 {
                         let reason = format!(
-                            "Large bulk send operation ({} messages >= threshold {})",
-                            context.successful_count, context.reload_threshold
+                            "Significant bulk send operation ({} messages) - ensuring UI consistency",
+                            context.successful_count
                         );
                         ReloadStrategy::ForceReload { reason }
                     } else {
@@ -150,6 +158,11 @@ impl BulkOperationPostProcessor {
                     }
                 }
 
+                // Enhanced refresh: Force stats reload AND message display refresh
+                log::info!(
+                    "Forcing queue statistics and message display refresh for local removal"
+                );
+
                 // Refresh queue statistics after bulk operation
                 if let Err(e) = tx_to_main.send(Msg::MessageActivity(
                     MessageActivityMsg::RefreshQueueStatistics,
@@ -158,7 +171,15 @@ impl BulkOperationPostProcessor {
                     // Don't fail the operation if statistics refresh fails
                 }
 
-                // Send completion message after removal
+                // Force a message display refresh to ensure UI consistency
+                if let Err(e) = tx_to_main.send(Msg::MessageActivity(
+                    MessageActivityMsg::ForceReloadMessages,
+                )) {
+                    error_reporter.report_send_error("force reload for local removal", &e);
+                    // Continue even if this fails
+                }
+
+                // Send completion message after refresh
                 Self::send_completion_message(context, tx_to_main, error_reporter)?;
             }
             ReloadStrategy::CompletionOnly => {
@@ -175,8 +196,16 @@ impl BulkOperationPostProcessor {
             }
         }
 
-        // After any delete operation, ensure selection state is cleared so UI reflects the changes
-        if matches!(context.operation_type, BulkOperationType::Delete) {
+        // After operations that remove messages from the main queue (delete or send-with-delete), ensure selections are cleared
+        if matches!(context.operation_type, BulkOperationType::Delete)
+            || matches!(
+                context.operation_type,
+                BulkOperationType::Send {
+                    should_delete: true,
+                    ..
+                }
+            )
+        {
             if let Err(e) =
                 tx_to_main.send(Msg::MessageActivity(MessageActivityMsg::ClearAllSelections))
             {
@@ -202,8 +231,8 @@ impl BulkOperationPostProcessor {
                 format!(
                     "❌ Bulk {operation} failed: No messages were processed from {queue}\n\n\
                     📊 Results:\n\
-                    • ❌ Failed: {failed}\n\
-                    • ⚠️  Not found: {not_found}\n\
+                    • ❌ Failed: {failed} messages\n\
+                    • ⚠️  Not found: {not_found} messages\n\
                     • 📦 Total requested: {total}\n\n\
                     💡 Messages may have been already processed, moved, or deleted by another process.",
                     operation = operation,
@@ -237,7 +266,7 @@ impl BulkOperationPostProcessor {
                 format!(
                     "⚠️  No messages were processed from {queue}\n\n\
                     📊 Results:\n\
-                    • ⚠️  Not found: {not_found}\n\
+                    • ⚠️  Not found: {not_found} messages\n\
                     • 📦 Total requested: {total}\n\n{hint}",
                     queue = queue_name,
                     not_found = not_found_count,
@@ -248,29 +277,40 @@ impl BulkOperationPostProcessor {
         } else if failed_count > 0 || not_found_count > 0 {
             // Partial success
             format!(
-                "⚠️ Bulk {operation} completed with mixed results from {queue}\n\n\
+                "⚠️ Bulk {operation} operation completed with mixed results\n\n{queue}\n\n\
                 📊 Results:\n\
-                • ✅ Successfully processed: {success}\n\
-                • ❌ Failed: {failed}\n\
-                • ⚠️  Not found: {not_found}\n\
-                • 📦 Total requested: {total}\n\n\
+                • ✅ Successfully processed: {success} messages\n\
+                • ❌ Failed: {failed} messages\n\
+                • ⚠️  Not found: {not_found} messages\n\
+                • 📦 Total requested: {total}\n\
+                \n\
                 💡 Some messages may have been processed by another process during the operation.",
                 operation = operation,
-                queue = queue_name,
                 success = successful_count,
                 failed = failed_count,
                 not_found = not_found_count,
-                total = total_count
+                total = total_count,
+                queue = queue_name
             )
         } else {
             // Complete success
-            let action = if is_delete { "deleted" } else { "moved" };
+            let operation_word = if is_delete { "move" } else { "copy" };
+            let past_tense = if is_delete { "moved" } else { "copied" };
+
+            // Convert arrow representation to 'to' wording for the processed line
+            let queue_wording = if queue_name.contains('→') {
+                queue_name.replace('→', "to")
+            } else {
+                queue_name.to_string()
+            };
+
             format!(
-                "✅ Successfully {action} {success} message{plural} from {queue}",
-                action = action,
-                success = successful_count,
+                "✅ Bulk {op} operation completed successfully!\n\n{count} message{plural} processed from {queue_wording}\n\nAll messages {past_tense} successfully",
+                op = operation_word,
+                count = successful_count,
                 plural = if successful_count == 1 { "" } else { "s" },
-                queue = queue_name
+                queue_wording = queue_wording,
+                past_tense = past_tense,
             )
         }
     }
@@ -296,19 +336,19 @@ impl BulkOperationPostProcessor {
             }
             BulkOperationType::Send {
                 from_queue_display,
-                to_queue_display: _,
+                to_queue_display,
                 should_delete,
             } => {
                 // Use detailed message if should_delete (move), else fallback to old summary
                 let not_found_count = context
                     .total_count
                     .saturating_sub(context.successful_count + context.failed_count);
-                let queue_name = from_queue_display;
+                let queue_name_combined = format!("{} → {}", from_queue_display, to_queue_display);
                 let operation = if *should_delete { "move" } else { "copy" };
                 let is_delete = *should_delete;
                 let message = Self::format_bulk_operation_result_message(
                     operation,
-                    queue_name,
+                    &queue_name_combined,
                     context.successful_count,
                     context.failed_count,
                     not_found_count,
@@ -350,7 +390,7 @@ impl BulkOperationPostProcessor {
     /// Create context from bulk operation result for send operations
     pub fn create_send_context(
         result: &BulkOperationResult,
-        message_ids: Vec<String>,
+        message_ids_to_remove: Vec<String>,
         reload_threshold: usize,
         from_queue_display: String,
         to_queue_display: String,
@@ -364,12 +404,12 @@ impl BulkOperationPostProcessor {
             },
             successful_count: result.successful,
             failed_count: result.failed,
-            total_count: message_ids.len(),
-            message_ids,
+            total_count: result.total_requested,
+            message_ids: message_ids_to_remove,
             should_remove_from_state: should_delete,
             reload_threshold,
-            current_message_count: 0,      // Not used for send operations
-            selected_from_current_page: 0, // Not used for send operations
+            current_message_count: 0,
+            selected_from_current_page: 0,
         }
     }
 
@@ -385,17 +425,48 @@ impl BulkOperationPostProcessor {
                 // Take up to the successful count from the original message IDs
                 // Note: This assumes the bulk operation processes messages in order
                 // For more precise tracking, we would need the actual IDs from the operation result
-                message_ids.iter().take(successful_count).cloned().collect()
+                message_ids
+                    .iter()
+                    .take(successful_count)
+                    .map(|id| id.id.clone())
+                    .collect()
             }
             BulkSendData::MessageData(messages_data) => {
                 // Extract message IDs from the message data
                 messages_data
                     .iter()
                     .take(successful_count)
-                    .map(|(id, _)| id.clone())
+                    .map(|(id, _)| id.id.clone())
                     .collect()
             }
         }
+    }
+
+    /// Convenience wrapper retained for test compatibility.
+    /// Generates a user-facing summary for bulk send operations (copy/move).
+    #[allow(clippy::too_many_arguments)]
+    #[allow(dead_code)]
+    pub fn format_send_success_message(
+        successful_count: usize,
+        failed_count: usize,
+        total_count: usize,
+        from_queue: &str,
+        to_queue: &str,
+        is_delete: bool,
+    ) -> String {
+        let not_found_count = total_count.saturating_sub(successful_count + failed_count);
+        let operation = if is_delete { "move" } else { "copy" };
+        let combined_queue = format!("{} → {}", from_queue, to_queue);
+
+        Self::format_bulk_operation_result_message(
+            operation,
+            &combined_queue,
+            successful_count,
+            failed_count,
+            not_found_count,
+            total_count,
+            is_delete,
+        )
     }
 }
 
@@ -487,7 +558,9 @@ mod tests {
 
         match BulkOperationPostProcessor::determine_reload_strategy(&context) {
             ReloadStrategy::ForceReload { reason } => {
-                assert!(reason.contains("Large bulk send operation (50 messages >= threshold 10)"));
+                assert!(reason.contains(
+                    "Significant bulk send operation (50 messages) - ensuring UI consistency"
+                ));
             }
             _ => panic!("Expected ForceReload strategy for large send operation"),
         }

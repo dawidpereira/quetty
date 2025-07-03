@@ -127,6 +127,22 @@ impl BulkSelectionState {
             self.selected_indices.clear();
         }
     }
+
+    /// Select all messages from a given list using a starting global index offset.
+    /// This ensures that selected_indices reflect the absolute message positions across pages.
+    pub fn select_all_with_offset(&mut self, messages: &[MessageModel], start_index_offset: usize) {
+        for (local_idx, message) in messages.iter().enumerate() {
+            let global_idx = start_index_offset + local_idx;
+            self.selected_messages
+                .insert(MessageIdentifier::from_message(message));
+            self.selected_indices.insert(global_idx);
+        }
+        // Set last_selected_index to the highest index across updated selections
+        self.last_selected_index = self.selected_indices.iter().max().copied();
+        if !messages.is_empty() {
+            self.selection_mode = true;
+        }
+    }
 }
 
 /// Encapsulates all queue-related state and data
