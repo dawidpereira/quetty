@@ -342,24 +342,30 @@ impl<T: TerminalAdapter> ValidatedBulkOperation<T> {
     /// Calculate context for post-processing
     pub fn calculate_post_processing_context(&self) -> BulkOperationContext {
         let model = self.model();
-        let current_message_count = model
+
+        // Get current page messages
+        let current_page_messages = model
             .queue_state()
             .message_pagination
-            .get_current_page_messages(crate::config::get_current_page_size())
-            .len();
+            .get_current_page_messages(crate::config::get_current_page_size());
+        let current_message_count = current_page_messages.len();
 
         let selected_from_current_page = self
             .message_ids
             .iter()
             .filter(|msg_id| {
-                model
-                    .queue_state()
-                    .message_pagination
-                    .all_loaded_messages
+                current_page_messages
                     .iter()
-                    .any(|loaded_msg| loaded_msg.id == **msg_id)
+                    .any(|current_msg| current_msg.id == **msg_id)
             })
             .count();
+
+        log::debug!(
+            "calculate_post_processing_context: current_message_count={}, selected_from_current_page={}, total_selected={}",
+            current_message_count,
+            selected_from_current_page,
+            self.message_ids.len()
+        );
 
         // Use actual highest selected index if available, otherwise get current message index
         let max_position = if let Some(highest_index) = model

@@ -1,5 +1,5 @@
 use super::Model;
-use crate::app::managers::{MessageManager, QueueManager, StateManager};
+use crate::app::managers::{QueueManager, StateManager};
 
 use crate::app::queue_state::QueueState;
 use crate::app::task_manager::TaskManager;
@@ -137,11 +137,6 @@ impl Model<CrosstermTerminalAdapter> {
             task_manager.clone(),
             tx_to_main.clone(),
         );
-        let message_manager = MessageManager::new(
-            service_bus_manager.clone(),
-            task_manager.clone(),
-            tx_to_main.clone(),
-        );
 
         let queue_state = QueueState::new();
         let mut app = Self {
@@ -155,7 +150,6 @@ impl Model<CrosstermTerminalAdapter> {
             task_manager,
             state_manager,
             queue_manager,
-            message_manager,
         };
 
         // Initialize loading indicator with ComponentState pattern using extension trait

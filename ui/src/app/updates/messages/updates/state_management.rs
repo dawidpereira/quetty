@@ -275,11 +275,24 @@ where
     pub fn update_pagination_and_view(&mut self) -> Option<Msg> {
         // Update the pagination state and messages data
         let page_size = config::get_current_page_size();
+
+        // After message removal, ensure the view shows the correct messages
         let current_page_messages = self
             .queue_state()
             .message_pagination
             .get_current_page_messages(page_size);
 
+        log::debug!(
+            "update_pagination_and_view: page={}, total_loaded={}, current_page_count={}",
+            self.queue_state().message_pagination.current_page + 1,
+            self.queue_state()
+                .message_pagination
+                .all_loaded_messages
+                .len(),
+            current_page_messages.len()
+        );
+
+        // Update the current page messages in state
         self.queue_state_mut().messages = Some(current_page_messages);
 
         // Update pagination state
@@ -326,35 +339,50 @@ where
 
     /// Calculate pagination after removal
     pub fn calculate_pagination_after_removal(&self, _removed_count: usize) -> (usize, usize) {
-        let current_page = self
-            .queue_manager
-            .queue_state
-            .message_pagination
-            .current_page;
-        let _total_pages = self
-            .queue_manager
-            .queue_state
-            .message_pagination
-            .total_pages_loaded;
-
-        let current_messages = self
-            .queue_state()
-            .message_pagination
-            .get_current_page_messages(config::get_current_page_size());
-        let remaining_on_current_page = current_messages.len();
-
-        // If current page is empty and we have other pages, move to previous page
-        let target_page = if remaining_on_current_page == 0 && current_page > 0 {
-            current_page - 1
-        } else {
-            current_page
-        };
-
+        let page_size = config::get_current_page_size() as usize;
         let total_remaining_messages = self
             .queue_state()
             .message_pagination
             .all_loaded_messages
             .len();
+        let current_page = self
+            .queue_manager
+            .queue_state
+            .message_pagination
+            .current_page;
+
+        // Calculate how many pages we can form with remaining messages
+        let total_possible_pages = if total_remaining_messages == 0 {
+            0
+        } else {
+            total_remaining_messages.div_ceil(page_size)
+        };
+
+        // Determine target page - stay on current page if it has messages, otherwise move to last valid page
+        let target_page = if total_possible_pages == 0 {
+            0
+        } else if current_page >= total_possible_pages {
+            // Current page is beyond available data, move to last page
+            total_possible_pages - 1
+        } else {
+            // Check if current page actually has messages
+            let current_page_start = current_page * page_size;
+            if current_page_start < total_remaining_messages {
+                // Current page has messages, stay here
+                current_page
+            } else {
+                // Current page is empty, move to last valid page
+                total_possible_pages.saturating_sub(1)
+            }
+        };
+
+        log::debug!(
+            "calculate_pagination_after_removal: current_page={}, total_remaining={}, total_possible_pages={}, target_page={}",
+            current_page,
+            total_remaining_messages,
+            total_possible_pages,
+            target_page
+        );
 
         (target_page, total_remaining_messages)
     }
@@ -495,60 +523,101 @@ where
             .queue_state
             .message_pagination
             .current_page;
+
+        // Get actual current page messages using the pagination system
         let current_page_messages = self
             .queue_state()
             .message_pagination
             .get_current_page_messages(page_size);
-        let current_page_size = current_page_messages.len();
+        let actual_messages_on_page = current_page_messages.len();
 
-        // Early return if page is properly filled
-        if current_page_size >= page_size as usize {
+        // Get total remaining messages
+        let total_remaining_messages = self
+            .queue_state()
+            .message_pagination
+            .all_loaded_messages
+            .len();
+
+        log::debug!(
+            "Auto-fill check: page={}, total_remaining={}, actual_on_page={}, target_page_size={}, has_next_page={}, reached_end={}",
+            current_page + 1,
+            total_remaining_messages,
+            actual_messages_on_page,
+            page_size,
+            self.queue_manager
+                .queue_state
+                .message_pagination
+                .has_next_page,
+            self.queue_manager
+                .queue_state
+                .message_pagination
+                .reached_end_of_queue
+        );
+
+        // If page is full (has target page size), no auto-loading needed
+        if actual_messages_on_page >= page_size as usize {
             log::debug!(
-                "Page {} is properly filled with {} messages",
+                "Page {} is full with {} messages (target: {}) - no auto-loading needed",
                 current_page + 1,
-                current_page_size
+                actual_messages_on_page,
+                page_size
             );
             return Ok(false);
         }
 
-        let has_messages_beyond_page =
-            self.has_messages_beyond_current_page(page_size, current_page);
+        // If we've reached the end of the queue, no more messages available
+        if self
+            .queue_manager
+            .queue_state
+            .message_pagination
+            .reached_end_of_queue
+        {
+            log::debug!("Reached end of queue - no auto-loading possible");
+            return Ok(false);
+        }
 
-        let should_fill = self
+        // If we don't have next page capability from server, no auto-loading
+        if !self
             .queue_manager
             .queue_state
             .message_pagination
             .has_next_page
-            || has_messages_beyond_page;
-
-        if !should_fill {
-            log::debug!(
-                "Page {} has {} messages but no more messages available from API - no auto-loading needed (has_next_page: {}, total_loaded: {})",
-                current_page + 1,
-                current_page_size,
-                self.queue_manager
-                    .queue_state
-                    .message_pagination
-                    .has_next_page,
-                self.queue_manager
-                    .queue_state
-                    .message_pagination
-                    .all_loaded_messages
-                    .len()
-            );
+        {
+            log::debug!("No next page available from server - no auto-loading possible");
+            return Ok(false);
         }
 
-        Ok(should_fill)
-    }
+        // If the current page is under-filled but we still have plenty of messages for future pages,
+        // then it might be due to bulk deletion and we shouldn't auto-fill unnecessarily.
+        let messages_consumed_by_current_page = (current_page + 1) * (page_size as usize);
+        let messages_available_for_future_pages =
+            total_remaining_messages.saturating_sub(messages_consumed_by_current_page);
+        let future_pages_worth = page_size as usize; // At least 1 full page worth for future
 
-    /// Check if there are loaded messages beyond the current page
-    fn has_messages_beyond_current_page(&self, page_size: u32, current_page: usize) -> bool {
-        self.queue_manager
-            .queue_state
-            .message_pagination
-            .all_loaded_messages
-            .len()
-            > (current_page + 1) * page_size as usize
+        // Only skip auto-fill if we have plenty of messages for future pages AND this looks like a bulk deletion scenario
+        if messages_available_for_future_pages >= future_pages_worth && actual_messages_on_page > 0
+        {
+            log::debug!(
+                "Current page has {} messages, {} messages available for future pages (>= {} threshold) - likely bulk deletion scenario, skipping auto-fill",
+                actual_messages_on_page,
+                messages_available_for_future_pages,
+                future_pages_worth
+            );
+            return Ok(false);
+        }
+
+        // Page is under-filled and we should auto-load to fill it properly
+        let messages_needed = page_size as usize - actual_messages_on_page;
+        log::info!(
+            "Page {} is under-filled ({} actual vs {} target) with {} available for future - will auto-load {} messages",
+            current_page + 1,
+            actual_messages_on_page,
+            page_size,
+            messages_available_for_future_pages,
+            messages_needed
+        );
+
+        Ok(true)
     }
 
     /// Execute auto-fill by loading additional messages

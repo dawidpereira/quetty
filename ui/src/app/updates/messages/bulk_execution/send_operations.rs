@@ -1,4 +1,4 @@
-use super::operation_setup::{BulkOperationSetup, BulkOperationType};
+use super::operation_setup::{BulkOperationContext, BulkOperationSetup, BulkOperationType};
 use super::task_manager::{BulkSendData, BulkSendParams};
 use crate::app::bulk_operation_processor::BulkOperationPostProcessor;
 use crate::app::model::Model;
@@ -11,7 +11,7 @@ use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 use std::sync::Arc;
 use tuirealm::terminal::TerminalAdapter;
 
-/// Execute bulk resend from DLQ operation
+/// Execute bulk resend from DLQ operation (with deleting from DLQ)
 pub fn handle_bulk_resend_from_dlq_execution<T: TerminalAdapter>(
     model: &mut Model<T>,
     message_ids: Vec<MessageIdentifier>,
@@ -47,6 +47,7 @@ pub fn handle_bulk_resend_from_dlq_execution<T: TerminalAdapter>(
 
     let (from_display, to_display) = validated_operation.get_queue_display_names();
     let loading_template = validated_operation.get_loading_message();
+    let context = validated_operation.calculate_post_processing_context();
 
     // For resend WITH DELETE, we need to use message retrieval approach
     // so the server can actually receive and complete/delete the messages from DLQ
@@ -60,6 +61,7 @@ pub fn handle_bulk_resend_from_dlq_execution<T: TerminalAdapter>(
             &from_display,
             &to_display,
         ),
+        context,
     )
 }
 
@@ -106,6 +108,7 @@ pub fn handle_bulk_resend_from_dlq_only_execution<T: TerminalAdapter>(
 
     let (from_display, to_display) = validated_operation.get_queue_display_names();
     let loading_template = validated_operation.get_loading_message();
+    let context = validated_operation.calculate_post_processing_context();
 
     start_bulk_send_with_data_operation(
         model,
@@ -117,6 +120,7 @@ pub fn handle_bulk_resend_from_dlq_only_execution<T: TerminalAdapter>(
             &from_display,
             &to_display,
         ),
+        context,
     )
 }
 
@@ -156,6 +160,7 @@ pub fn handle_bulk_send_to_dlq_with_delete_execution<T: TerminalAdapter>(
 
     let (from_display, to_display) = validated_operation.get_queue_display_names();
     let loading_template = validated_operation.get_loading_message();
+    let context = validated_operation.calculate_post_processing_context();
 
     let params = BulkSendParams::new(
         target_queue,
@@ -165,7 +170,12 @@ pub fn handle_bulk_send_to_dlq_with_delete_execution<T: TerminalAdapter>(
         &to_display,
     );
 
-    start_bulk_send_operation(model, validated_operation.message_ids().to_vec(), params)
+    start_bulk_send_operation(
+        model,
+        validated_operation.message_ids().to_vec(),
+        params,
+        context,
+    )
 }
 
 /// Extract message data from current state (works for any queue)
@@ -307,6 +317,7 @@ fn handle_bulk_send_success(
     operation_result: server::bulk_operations::BulkOperationResult,
     bulk_data: &BulkSendData,
     operation_params: &BulkSendParams,
+    context: &BulkOperationContext,
     tx_to_main: &std::sync::mpsc::Sender<Msg>,
     error_reporter: &crate::error::ErrorReporter,
 ) -> Result<(), AppError> {
@@ -327,19 +338,16 @@ fn handle_bulk_send_success(
         vec![] // No message IDs needed if not deleting or no successful operations
     };
 
-    // Get auto-reload threshold
-    let auto_reload_threshold = crate::config::get_config_or_panic()
-        .batch()
-        .auto_reload_threshold();
-
-    // Create context for centralized post-processing
+    // Create context for centralized post-processing with proper values
     let context = BulkOperationPostProcessor::create_send_context(
         &operation_result,
         message_ids,
-        auto_reload_threshold,
+        context.auto_reload_threshold,
         operation_params.from_queue_display.clone(),
         operation_params.to_queue_display.clone(),
         operation_params.should_delete,
+        context.current_message_count,
+        context.selected_from_current_page,
     );
 
     // Use centralized post-processor to handle completion
@@ -373,6 +381,7 @@ fn start_bulk_send_generic<T: TerminalAdapter>(
     model: &Model<T>,
     bulk_data: BulkSendData,
     operation_params: BulkSendParams,
+    context: BulkOperationContext,
     max_position: usize,
 ) -> Option<Msg> {
     let service_bus_manager = model.service_bus_manager.clone();
@@ -440,6 +449,7 @@ fn start_bulk_send_generic<T: TerminalAdapter>(
                         operation_result,
                         &bulk_data,
                         &operation_params,
+                        &context,
                         &tx_to_main,
                         &error_reporter,
                     ),
@@ -468,6 +478,7 @@ fn start_bulk_send_operation<T: TerminalAdapter>(
     model: &Model<T>,
     message_ids: Vec<MessageIdentifier>,
     params: BulkSendParams,
+    context: BulkOperationContext,
 ) -> Option<Msg> {
     // Use actual highest selected index if available, otherwise get current message index
     let max_position = if let Some(highest_index) = model
@@ -500,6 +511,7 @@ fn start_bulk_send_operation<T: TerminalAdapter>(
         model,
         BulkSendData::MessageIds(message_ids),
         params,
+        context,
         max_position,
     )
 }
@@ -509,6 +521,7 @@ fn start_bulk_send_with_data_operation<T: TerminalAdapter>(
     model: &Model<T>,
     messages_data: Vec<(MessageIdentifier, Vec<u8>)>,
     params: BulkSendParams,
+    context: BulkOperationContext,
 ) -> Option<Msg> {
     // Use actual highest selected index if available, otherwise get current message index
     let max_position = if let Some(highest_index) = model
@@ -542,6 +555,7 @@ fn start_bulk_send_with_data_operation<T: TerminalAdapter>(
         model,
         BulkSendData::MessageData(messages_data),
         params,
+        context,
         max_position,
     )
 }
