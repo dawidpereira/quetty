@@ -1,4 +1,4 @@
-use crate::app::managers::{MessageManager, QueueManager, StateManager};
+use crate::app::managers::{QueueManager, StateManager};
 // Re-export AppState for other modules
 pub use crate::app::managers::state_manager::AppState;
 use crate::app::task_manager::TaskManager;
@@ -47,7 +47,6 @@ where
     // Managers for different concerns
     pub state_manager: StateManager,
     pub queue_manager: QueueManager,
-    pub message_manager: MessageManager,
 }
 
 impl<T> Model<T>

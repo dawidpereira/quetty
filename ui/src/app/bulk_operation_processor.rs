@@ -52,32 +52,16 @@ impl BulkOperationPostProcessor {
                 let all_current_deleted =
                     context.selected_from_current_page >= context.current_message_count;
 
-                // For delete operations, be more aggressive with force reload for better UI consistency
-                // Force reload if: large operation, all current deleted, OR more than 10 messages deleted
-                if large_operation || all_current_deleted || context.successful_count >= 10 {
-                    let reason = if large_operation && all_current_deleted {
-                        format!(
-                            "Large deletion ({} messages) and all current messages deleted",
-                            context.successful_count
-                        )
-                    } else if large_operation {
-                        format!(
-                            "Large deletion ({} messages >= threshold {})",
-                            context.successful_count, context.reload_threshold
-                        )
-                    } else if all_current_deleted {
-                        format!(
-                            "All current messages deleted ({}/{})",
-                            context.selected_from_current_page, context.current_message_count
-                        )
-                    } else {
-                        format!(
-                            "Significant deletion ({} messages) - ensuring UI consistency",
-                            context.successful_count
-                        )
-                    };
+                // Only force reload in extreme cases where UI state might be completely invalid
+                if all_current_deleted && large_operation {
+                    // Both conditions: all current page deleted AND large operation
+                    let reason = format!(
+                        "Complete current page deletion in large operation ({} messages) - ensuring UI consistency",
+                        context.successful_count
+                    );
                     ReloadStrategy::ForceReload { reason }
                 } else if context.successful_count > 0 {
+                    // For all other deletions, use smart local removal with backfill
                     ReloadStrategy::LocalRemoval
                 } else {
                     ReloadStrategy::CompletionOnly
@@ -85,16 +69,9 @@ impl BulkOperationPostProcessor {
             }
             BulkOperationType::Send { should_delete, .. } => {
                 if *should_delete && context.successful_count > 0 {
-                    // For send-with-delete operations, be more aggressive with force reload
-                    if large_operation || context.successful_count >= 10 {
-                        let reason = format!(
-                            "Significant bulk send operation ({} messages) - ensuring UI consistency",
-                            context.successful_count
-                        );
-                        ReloadStrategy::ForceReload { reason }
-                    } else {
-                        ReloadStrategy::LocalRemoval
-                    }
+                    // Always prefer local removal for send-with-delete to preserve messages in memory.
+                    // The pagination logic will auto-adjust pages and auto-fill if genuinely needed.
+                    ReloadStrategy::LocalRemoval
                 } else {
                     ReloadStrategy::CompletionOnly
                 }
@@ -140,12 +117,11 @@ impl BulkOperationPostProcessor {
                 Self::send_completion_message(context, tx_to_main, error_reporter)?;
             }
             ReloadStrategy::LocalRemoval => {
-                // Remove from local state first
+                // Remove from local state first - this preserves existing messages that weren't deleted
                 if context.should_remove_from_state && !context.message_ids.is_empty() {
                     log::info!(
-                        "Removing {} messages from local state after {} successful operations",
-                        context.message_ids.len(),
-                        context.successful_count
+                        "Smart local removal: removing {} messages from state while preserving others",
+                        context.message_ids.len()
                     );
 
                     if let Err(e) = tx_to_main.send(Msg::MessageActivity(
@@ -158,12 +134,8 @@ impl BulkOperationPostProcessor {
                     }
                 }
 
-                // Enhanced refresh: Force stats reload AND message display refresh
-                log::info!(
-                    "Forcing queue statistics and message display refresh for local removal"
-                );
-
                 // Refresh queue statistics after bulk operation
+                log::info!("Refreshing queue statistics after smart local removal");
                 if let Err(e) = tx_to_main.send(Msg::MessageActivity(
                     MessageActivityMsg::RefreshQueueStatistics,
                 )) {
@@ -171,15 +143,7 @@ impl BulkOperationPostProcessor {
                     // Don't fail the operation if statistics refresh fails
                 }
 
-                // Force a message display refresh to ensure UI consistency
-                if let Err(e) = tx_to_main.send(Msg::MessageActivity(
-                    MessageActivityMsg::ForceReloadMessages,
-                )) {
-                    error_reporter.report_send_error("force reload for local removal", &e);
-                    // Continue even if this fails
-                }
-
-                // Send completion message after refresh
+                // Send completion message after local removal
                 Self::send_completion_message(context, tx_to_main, error_reporter)?;
             }
             ReloadStrategy::CompletionOnly => {
@@ -388,6 +352,7 @@ impl BulkOperationPostProcessor {
     }
 
     /// Create context from bulk operation result for send operations
+    #[allow(clippy::too_many_arguments)]
     pub fn create_send_context(
         result: &BulkOperationResult,
         message_ids_to_remove: Vec<String>,
@@ -395,6 +360,8 @@ impl BulkOperationPostProcessor {
         from_queue_display: String,
         to_queue_display: String,
         should_delete: bool,
+        current_message_count: usize,
+        selected_from_current_page: usize,
     ) -> BulkOperationContext {
         BulkOperationContext {
             operation_type: BulkOperationType::Send {
@@ -408,8 +375,8 @@ impl BulkOperationPostProcessor {
             message_ids: message_ids_to_remove,
             should_remove_from_state: should_delete,
             reload_threshold,
-            current_message_count: 0,
-            selected_from_current_page: 0,
+            current_message_count,
+            selected_from_current_page,
         }
     }
 
@@ -475,29 +442,57 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_delete_strategy_large_operation() {
+    fn test_delete_strategy_large_operation_with_all_current_deleted() {
+        // This represents the only case where ForceReload should be used for deletes:
+        // Large operation AND all current page messages deleted
         let context = BulkOperationContext {
             operation_type: BulkOperationType::Delete,
-            successful_count: 50,
+            successful_count: 100,
             failed_count: 0,
-            total_count: 50,
+            total_count: 100,
             message_ids: vec![],
             should_remove_from_state: true,
-            reload_threshold: 10,
+            reload_threshold: 50,
             current_message_count: 20,
-            selected_from_current_page: 5,
+            selected_from_current_page: 20, // All current messages deleted
         };
 
         match BulkOperationPostProcessor::determine_reload_strategy(&context) {
             ReloadStrategy::ForceReload { reason } => {
-                assert!(reason.contains("Large deletion (50 messages >= threshold 10)"));
+                assert!(reason.contains("Complete current page deletion in large operation"));
             }
-            _ => panic!("Expected ForceReload strategy for large operation"),
+            _ => panic!(
+                "Expected ForceReload strategy for large operation that deletes all current page messages"
+            ),
         }
     }
 
     #[test]
-    fn test_delete_strategy_all_current_deleted() {
+    fn test_delete_strategy_large_operation_partial_current() {
+        // Large operation but not all current page deleted -> LocalRemoval (smart)
+        let context = BulkOperationContext {
+            operation_type: BulkOperationType::Delete,
+            successful_count: 100,
+            failed_count: 0,
+            total_count: 100,
+            message_ids: vec![],
+            should_remove_from_state: true,
+            reload_threshold: 50,
+            current_message_count: 20,
+            selected_from_current_page: 10, // Only partial current page deleted
+        };
+
+        match BulkOperationPostProcessor::determine_reload_strategy(&context) {
+            ReloadStrategy::LocalRemoval => {}
+            _ => panic!(
+                "Expected LocalRemoval strategy for large operation that preserves some current page messages"
+            ),
+        }
+    }
+
+    #[test]
+    fn test_delete_strategy_small_operation_all_current_deleted() {
+        // Small operation but all current deleted -> LocalRemoval (smart)
         let context = BulkOperationContext {
             operation_type: BulkOperationType::Delete,
             successful_count: 5,
@@ -505,21 +500,22 @@ mod tests {
             total_count: 5,
             message_ids: vec![],
             should_remove_from_state: true,
-            reload_threshold: 10,
+            reload_threshold: 50,
             current_message_count: 5,
-            selected_from_current_page: 5,
+            selected_from_current_page: 5, // All current deleted but small operation
         };
 
         match BulkOperationPostProcessor::determine_reload_strategy(&context) {
-            ReloadStrategy::ForceReload { reason } => {
-                assert!(reason.contains("All current messages deleted (5/5)"));
-            }
-            _ => panic!("Expected ForceReload strategy when all current messages deleted"),
+            ReloadStrategy::LocalRemoval => {}
+            _ => panic!(
+                "Expected LocalRemoval strategy for small operation (even if all current deleted)"
+            ),
         }
     }
 
     #[test]
-    fn test_delete_strategy_local_removal() {
+    fn test_delete_strategy_small_local_removal() {
+        // Typical small delete operation -> LocalRemoval
         let context = BulkOperationContext {
             operation_type: BulkOperationType::Delete,
             successful_count: 3,
@@ -527,14 +523,14 @@ mod tests {
             total_count: 3,
             message_ids: vec!["1".to_string(), "2".to_string(), "3".to_string()],
             should_remove_from_state: true,
-            reload_threshold: 10,
+            reload_threshold: 50,
             current_message_count: 20,
             selected_from_current_page: 3,
         };
 
         match BulkOperationPostProcessor::determine_reload_strategy(&context) {
             ReloadStrategy::LocalRemoval => {}
-            _ => panic!("Expected LocalRemoval strategy for small operation"),
+            _ => panic!("Expected LocalRemoval strategy for typical small operation"),
         }
     }
 
@@ -546,23 +542,19 @@ mod tests {
                 to_queue_display: "DLQ".to_string(),
                 should_delete: true,
             },
-            successful_count: 50,
+            successful_count: 2000,
             failed_count: 0,
-            total_count: 50,
+            total_count: 2000,
             message_ids: vec![],
             should_remove_from_state: true,
-            reload_threshold: 10,
-            current_message_count: 0,
-            selected_from_current_page: 0,
+            reload_threshold: 50,
+            current_message_count: 1000,
+            selected_from_current_page: 1000,
         };
 
         match BulkOperationPostProcessor::determine_reload_strategy(&context) {
-            ReloadStrategy::ForceReload { reason } => {
-                assert!(reason.contains(
-                    "Significant bulk send operation (50 messages) - ensuring UI consistency"
-                ));
-            }
-            _ => panic!("Expected ForceReload strategy for large send operation"),
+            ReloadStrategy::LocalRemoval => {}
+            _ => panic!("Expected LocalRemoval strategy for large send operation with delete"),
         }
     }
 
@@ -580,13 +572,40 @@ mod tests {
             message_ids: vec![],
             should_remove_from_state: false,
             reload_threshold: 10,
-            current_message_count: 0,
-            selected_from_current_page: 0,
+            current_message_count: 1000,
+            selected_from_current_page: 50,
         };
 
         match BulkOperationPostProcessor::determine_reload_strategy(&context) {
             ReloadStrategy::CompletionOnly => {}
             _ => panic!("Expected CompletionOnly strategy for copy operation"),
+        }
+    }
+
+    #[test]
+    fn test_send_strategy_local_removal() {
+        // This represents your scenario: 2000 messages deleted from mixed pages (not all current page)
+        let context = BulkOperationContext {
+            operation_type: BulkOperationType::Send {
+                from_queue_display: "Main".to_string(),
+                to_queue_display: "DLQ".to_string(),
+                should_delete: true,
+            },
+            successful_count: 2000,
+            failed_count: 0,
+            total_count: 2000,
+            message_ids: vec![],
+            should_remove_from_state: true,
+            reload_threshold: 50,
+            current_message_count: 3000, // 3000 total messages loaded
+            selected_from_current_page: 1000, // Only 1000 from current page (not all current page deleted)
+        };
+
+        match BulkOperationPostProcessor::determine_reload_strategy(&context) {
+            ReloadStrategy::LocalRemoval => {}
+            _ => panic!(
+                "Expected LocalRemoval strategy for large send operation that doesn't move entire current page"
+            ),
         }
     }
 

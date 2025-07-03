@@ -477,9 +477,117 @@ where
         self.queue_state_mut().message_pagination.reset();
     }
 
-    pub fn load_messages_for_backfill(&mut self, _message_count: u32) -> AppResult<()> {
-        // Simple stub - just load more messages normally
-        self.load_messages_from_api_with_count(_message_count)
+    pub fn load_messages_for_backfill(&mut self, message_count: u32) -> AppResult<()> {
+        // Check if already loading to prevent concurrent operations
+        if self.queue_state().message_pagination.is_loading() {
+            log::debug!("Already loading messages, skipping backfill request");
+            return Ok(());
+        }
+
+        log::info!(
+            "Loading {} messages for backfill, last_sequence: {:?}",
+            message_count,
+            self.queue_state().message_pagination.last_loaded_sequence
+        );
+
+        // Set loading state
+        self.queue_state_mut().message_pagination.set_loading(true);
+
+        let tx_to_main = self.state_manager.tx_to_main.clone();
+        let service_bus_manager = self.get_service_bus_manager();
+        let from_sequence = self
+            .queue_state()
+            .message_pagination
+            .last_loaded_sequence
+            .map(|seq| seq + 1);
+
+        self.task_manager
+            .execute("Loading additional messages...", async move {
+                let result = Self::execute_backfill_task(
+                    tx_to_main.clone(),
+                    service_bus_manager,
+                    from_sequence,
+                    message_count,
+                )
+                .await;
+
+                // Always send a message to clear loading state, even on error
+                if let Err(e) = &result {
+                    log::error!("Error in backfill task: {}", e);
+                    // Send empty message list to clear loading state
+                    let _ =
+                        tx_to_main.send(crate::components::common::Msg::MessageActivity(
+                            crate::components::common::MessageActivityMsg::NewMessagesLoaded(
+                                Vec::new(),
+                            ),
+                        ));
+                }
+                result
+            });
+
+        Ok(())
+    }
+
+    /// Execute backfill loading task
+    async fn execute_backfill_task(
+        tx_to_main: std::sync::mpsc::Sender<crate::components::common::Msg>,
+        service_bus_manager: std::sync::Arc<
+            tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>,
+        >,
+        from_sequence: Option<i64>,
+        message_count: u32,
+    ) -> Result<(), crate::error::AppError> {
+        use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
+
+        let command = ServiceBusCommand::PeekMessages {
+            max_count: message_count,
+            from_sequence,
+        };
+
+        let response = service_bus_manager
+            .lock()
+            .await
+            .execute_command(command)
+            .await;
+
+        let messages = match response {
+            ServiceBusResponse::MessagesReceived { messages } => {
+                log::info!("Loaded {} messages for backfill", messages.len());
+
+                // Debug: log sequence range of received messages
+                if !messages.is_empty() {
+                    let first_seq = messages.first().unwrap().sequence;
+                    let last_seq = messages.last().unwrap().sequence;
+                    log::debug!(
+                        "Backfill messages with sequences: {} to {} (count: {})",
+                        first_seq,
+                        last_seq,
+                        messages.len()
+                    );
+                }
+
+                messages
+            }
+            ServiceBusResponse::Error { error } => {
+                log::error!("Failed to load messages for backfill: {}", error);
+                return Err(crate::error::AppError::ServiceBus(error.to_string()));
+            }
+            _ => {
+                return Err(crate::error::AppError::ServiceBus(
+                    "Unexpected response for backfill peek messages".to_string(),
+                ));
+            }
+        };
+
+        // Send messages with NewMessagesLoaded to trigger append logic
+        if let Err(e) = tx_to_main.send(crate::components::common::Msg::MessageActivity(
+            crate::components::common::MessageActivityMsg::NewMessagesLoaded(messages),
+        )) {
+            log::error!("Failed to send backfill messages: {}", e);
+            return Err(crate::error::AppError::Component(e.to_string()));
+        }
+
+        Ok(())
     }
 
     /// Check if stats cache is expired and reload if needed

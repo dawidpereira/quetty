@@ -174,16 +174,80 @@ where
                 .report_mount_error("PageSizePopup", "unmount", e);
         }
 
+        let new_page_size = size as u32;
+        let current_page_size = crate::config::get_current_page_size();
+        let current_loaded_count = self
+            .queue_state()
+            .message_pagination
+            .all_loaded_messages
+            .len();
+
+        log::info!(
+            "Page size changing from {} to {} (currently loaded: {} messages)",
+            current_page_size,
+            new_page_size,
+            current_loaded_count
+        );
+
         // Update the page size in the application state
-        crate::config::set_current_page_size(size as u32);
-        log::info!("Page size changed to: {} messages per page", size);
+        crate::config::set_current_page_size(new_page_size);
 
-        // Reset pagination state and reload messages
-        self.queue_state_mut().message_pagination.reset();
-        self.queue_state_mut().messages = None;
+        // Decide whether to use smart backfill or reset based on the change
+        if new_page_size > current_page_size && current_loaded_count > 0 {
+            log::info!(
+                "Page size increased from {} to {}, using smart backfill to extend current messages",
+                current_page_size,
+                new_page_size
+            );
 
-        // Immediately load the first page with the new page size
-        let _ = self.load_messages_from_api_with_count(size as u32);
+            let messages_needed = new_page_size as usize - current_loaded_count;
+            if messages_needed > 0 {
+                log::info!(
+                    "Need to load {} more messages for larger page size",
+                    messages_needed
+                );
+
+                // Update pagination state for new page size first
+                self.queue_state_mut()
+                    .message_pagination
+                    .update(new_page_size);
+
+                // Load additional messages to fill the page
+                if let Err(e) = self.load_messages_for_backfill(messages_needed as u32) {
+                    log::error!(
+                        "Failed to load additional messages for page size increase: {}",
+                        e
+                    );
+                    // Fall back to complete reload on error
+                    self.queue_state_mut().message_pagination.reset();
+                    self.queue_state_mut().messages = None;
+                    let _ = self.load_messages_from_api_with_count(new_page_size);
+                }
+            } else {
+                // Already have enough messages, just update pagination bounds
+                log::info!(
+                    "Already have enough messages ({}), just updating pagination bounds",
+                    current_loaded_count
+                );
+                self.queue_state_mut()
+                    .message_pagination
+                    .update(new_page_size);
+
+                // Update the view to reflect new page boundaries
+                if let Err(e) = self.update_current_page_view() {
+                    log::error!("Failed to update page view after page size change: {}", e);
+                }
+            }
+        } else {
+            // Page size decreased or we have no messages - reset and reload
+            log::info!("Page size decreased or no messages loaded, resetting pagination state");
+            self.queue_state_mut().message_pagination.reset();
+            self.queue_state_mut().messages = None;
+
+            // Load the first page with the new page size
+            let _ = self.load_messages_from_api_with_count(new_page_size);
+        }
+
         None
     }
 
