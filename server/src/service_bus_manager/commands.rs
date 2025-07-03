@@ -86,4 +86,5 @@ pub enum ServiceBusCommand {
     // Resource management
     DisposeConsumer,
     DisposeAllResources,
+    ResetConnection,
 }

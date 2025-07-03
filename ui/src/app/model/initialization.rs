@@ -118,6 +118,7 @@ impl Model<CrosstermTerminalAdapter> {
             azure_ad_config,
             statistics_config,
             config.batch().clone(),
+            connection_string.to_string(),
         )));
 
         let (tx_to_main, rx_to_main) = mpsc::channel();

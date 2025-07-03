@@ -1,6 +1,8 @@
 use crate::app::model::{AppState, Model};
 use crate::components::common::{Msg, QueueActivityMsg};
 use tuirealm::terminal::TerminalAdapter;
+use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
+use crate::error::AppError;
 
 impl<T> Model<T>
 where
@@ -37,6 +39,72 @@ where
                     // Load stats for the toggled queue type
                     self.load_stats_for_current_queue();
                 }
+                None
+            }
+            QueueActivityMsg::QueueSwitchCancelled => {
+                log::info!("Queue switch cancelled by user – reverting to queue picker");
+
+                // Clear any pending or current queue selections and cached messages
+                let qs = self.queue_state_mut();
+                qs.pending_queue = None;
+                qs.current_queue_name = None;
+                qs.messages = None;
+                qs.message_pagination.reset();
+
+                // Dispose all backend resources first, then reload queue list in sequence
+                let service_bus_manager = self.service_bus_manager.clone();
+                let task_manager = self.task_manager.clone();
+                let tx_to_main = self.tx_to_main().clone();
+                
+                self.task_manager.execute("Resetting connection and reloading...", async move {
+                    // Reset the entire AMQP connection to clear corrupted session state
+                    match service_bus_manager
+                        .lock()
+                        .await
+                        .execute_command(ServiceBusCommand::ResetConnection)
+                        .await
+                    {
+                        ServiceBusResponse::ConnectionReset => {
+                            log::info!("Connection reset successfully after cancellation");
+                        }
+                        ServiceBusResponse::Error { error } => {
+                            log::error!("Failed to reset connection after cancellation: {}", error);
+                            // Continue anyway to reload queues
+                        }
+                        _ => {
+                            log::warn!("Unexpected response from connection reset");
+                        }
+                    }
+
+                    // Now reload the queue list to ensure a fresh picker state
+                    log::info!("Reloading queue list after resource disposal");
+                    task_manager.execute("Loading queues...", async move {
+                        log::debug!("Requesting queues from Azure AD after cancellation");
+
+                        let queues = server::service_bus_manager::ServiceBusManager::list_queues_azure_ad(
+                            crate::config::get_config_or_panic().azure_ad(),
+                        )
+                        .await
+                        .map_err(|e| {
+                            log::error!("Failed to list queues after cancellation: {}", e);
+                            AppError::ServiceBus(e.to_string())
+                        })?;
+
+                        log::info!("Loaded {} queues after cancellation", queues.len());
+
+                        // Send loaded queues to update the picker
+                        if let Err(e) = tx_to_main.send(Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(queues))) {
+                            log::error!("Failed to send queues loaded message after cancellation: {}", e);
+                            return Err(AppError::Component(e.to_string()));
+                        }
+
+                        Ok(())
+                    });
+
+                    Ok(())
+                });
+
+                self.set_app_state(AppState::QueuePicker);
                 None
             }
         }

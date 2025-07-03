@@ -180,6 +180,15 @@ where
                 for operation_id in active_operations {
                     log::info!("Cancelling operation: {}", operation_id);
                     self.task_manager.cancel_operation(&operation_id);
+
+                    // If the user aborted a queue switch, inform the UI so it can roll back
+                    if operation_id.starts_with("switch_queue_") {
+                        if let Err(e) = self.tx_to_main().send(crate::components::common::Msg::QueueActivity(
+                            crate::components::common::QueueActivityMsg::QueueSwitchCancelled,
+                        )) {
+                            log::error!("Failed to notify queue switch cancellation: {}", e);
+                        }
+                    }
                 }
 
                 None

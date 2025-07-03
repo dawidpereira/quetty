@@ -83,6 +83,7 @@ pub enum QueueActivityMsg {
     QueueUnselected,
     QueuesLoaded(Vec<String>),
     ToggleDeadLetterQueue,
+    QueueSwitchCancelled,
 }
 
 #[derive(Debug, PartialEq)]
