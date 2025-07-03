@@ -1,10 +1,13 @@
 use super::operation_setup::{BulkOperationSetup, BulkOperationType};
-use super::task_manager::{BulkSendData, BulkSendParams, BulkSendTaskParams, BulkTaskManager};
+use super::task_manager::{BulkSendData, BulkSendParams};
+use crate::app::bulk_operation_processor::BulkOperationPostProcessor;
 use crate::app::model::Model;
+use crate::app::task_manager::ProgressReporter;
 use crate::components::common::Msg;
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
 use server::model::BodyData;
+use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 use std::sync::Arc;
 use tuirealm::terminal::TerminalAdapter;
 
@@ -205,6 +208,166 @@ fn extract_message_data_from_current_state<T: TerminalAdapter>(
     Ok(messages_data)
 }
 
+/// Execute bulk send operation with message data (peeked messages)
+async fn execute_bulk_send_with_data(
+    service_bus_manager: Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>>,
+    messages_data: &[(MessageIdentifier, Vec<u8>)],
+    target_queue: String,
+    repeat_count: usize,
+    progress: &ProgressReporter,
+) -> Result<server::bulk_operations::BulkOperationResult, AppError> {
+    progress.report_progress("Preparing message data...");
+    let messages_data_converted: Vec<(MessageIdentifier, Vec<u8>)> = messages_data
+        .iter()
+        .map(|(id, data)| (id.clone(), data.clone()))
+        .collect();
+    let command = ServiceBusCommand::BulkSendPeeked {
+        messages_data: messages_data_converted,
+        target_queue,
+        repeat_count,
+    };
+    progress.report_progress("Executing send operation...");
+    let response = service_bus_manager
+        .lock()
+        .await
+        .execute_command(command)
+        .await;
+
+    match response {
+        ServiceBusResponse::MessagesSent { stats, .. } => {
+            progress.report_progress(format!(
+                "Completed: {} successful, {} failed",
+                stats.successful, stats.failed
+            ));
+            log::info!("Bulk send with data completed successfully: {:?}", stats);
+
+            // Convert OperationStats to BulkOperationResult
+            let mut result = server::bulk_operations::BulkOperationResult::new(messages_data.len());
+            result.successful = stats.successful;
+            result.failed = stats.failed;
+            Ok(result)
+        }
+        ServiceBusResponse::Error { error } => {
+            log::error!("Bulk send with data failed: {}", error);
+            Err(AppError::ServiceBus(error.to_string()))
+        }
+        _ => Err(AppError::ServiceBus(
+            "Unexpected response for bulk send peeked".to_string(),
+        )),
+    }
+}
+
+/// Execute bulk send operation with message IDs (retrieval-based)
+async fn execute_bulk_send_with_ids(
+    service_bus_manager: Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>>,
+    message_ids: &[MessageIdentifier],
+    target_queue: String,
+    should_delete_source: bool,
+    repeat_count: usize,
+    max_position: usize,
+    progress: &ProgressReporter,
+) -> Result<server::bulk_operations::BulkOperationResult, AppError> {
+    progress.report_progress("Preparing message IDs...");
+    let message_ids_converted: Vec<MessageIdentifier> = message_ids.to_vec();
+    let command = ServiceBusCommand::BulkSend {
+        message_ids: message_ids_converted,
+        target_queue,
+        should_delete_source,
+        repeat_count,
+        max_position,
+    };
+    progress.report_progress("Executing send operation...");
+    let response = service_bus_manager
+        .lock()
+        .await
+        .execute_command(command)
+        .await;
+
+    match response {
+        ServiceBusResponse::BulkOperationCompleted { result } => {
+            progress.report_progress(format!(
+                "Completed: {} successful, {} failed",
+                result.successful, result.failed
+            ));
+            log::info!("Bulk send with IDs completed successfully: {:?}", result);
+            Ok(result)
+        }
+        ServiceBusResponse::Error { error } => {
+            log::error!("Bulk send with IDs failed: {}", error);
+            Err(AppError::ServiceBus(error.to_string()))
+        }
+        _ => Err(AppError::ServiceBus(
+            "Unexpected response for bulk send".to_string(),
+        )),
+    }
+}
+
+/// Handle successful bulk send operation result
+fn handle_bulk_send_success(
+    operation_result: server::bulk_operations::BulkOperationResult,
+    bulk_data: &BulkSendData,
+    operation_params: &BulkSendParams,
+    tx_to_main: &std::sync::mpsc::Sender<Msg>,
+    error_reporter: &crate::error::ErrorReporter,
+) -> Result<(), AppError> {
+    log::info!(
+        "Bulk send operation completed: {} successful, {} failed, {} not found",
+        operation_result.successful,
+        operation_result.failed,
+        operation_result.not_found
+    );
+
+    // Extract message IDs for centralized processing
+    let message_ids = if operation_params.should_delete && operation_result.successful > 0 {
+        BulkOperationPostProcessor::extract_successfully_processed_message_ids(
+            bulk_data,
+            operation_result.successful,
+        )
+    } else {
+        vec![] // No message IDs needed if not deleting or no successful operations
+    };
+
+    // Get auto-reload threshold
+    let auto_reload_threshold = crate::config::get_config_or_panic()
+        .batch()
+        .auto_reload_threshold();
+
+    // Create context for centralized post-processing
+    let context = BulkOperationPostProcessor::create_send_context(
+        &operation_result,
+        message_ids,
+        auto_reload_threshold,
+        operation_params.from_queue_display.clone(),
+        operation_params.to_queue_display.clone(),
+        operation_params.should_delete,
+    );
+
+    // Use centralized post-processor to handle completion
+    BulkOperationPostProcessor::handle_completion(&context, tx_to_main, error_reporter)
+}
+
+/// Handle bulk send operation error
+fn handle_bulk_send_error(
+    error: AppError,
+    bulk_data: &BulkSendData,
+    operation_params: &BulkSendParams,
+    tx_to_main: &std::sync::mpsc::Sender<Msg>,
+    error_reporter: &crate::error::ErrorReporter,
+) {
+    error_reporter.report_bulk_operation_error("send", bulk_data.message_count(), &error);
+
+    // Prepare error message with context
+    let context_message = format!(
+        "Failed to send messages from {} to {}: {}",
+        operation_params.from_queue_display, operation_params.to_queue_display, error
+    );
+
+    // Send error message
+    if let Err(e) = tx_to_main.send(Msg::Error(AppError::ServiceBus(context_message))) {
+        error_reporter.report_send_error("error", &e);
+    }
+}
+
 /// Generic method to start bulk send operation with either message IDs or pre-fetched data
 fn start_bulk_send_generic<T: TerminalAdapter>(
     model: &Model<T>,
@@ -212,21 +375,91 @@ fn start_bulk_send_generic<T: TerminalAdapter>(
     operation_params: BulkSendParams,
     max_position: usize,
 ) -> Option<Msg> {
-    let task_manager = BulkTaskManager::new(model.taskpool.clone(), model.tx_to_main().clone());
+    let service_bus_manager = model.service_bus_manager.clone();
+    let loading_message = operation_params
+        .loading_message_template
+        .replace("{}", &bulk_data.message_count().to_string());
+    let tx_to_main = model.tx_to_main().clone();
+    let error_reporter = model.error_reporter.clone();
+    let repeat_count = model.queue_state().message_repeat_count;
 
-    // Create task parameters
-    let task_params = BulkSendTaskParams::new(
-        bulk_data,
-        operation_params,
-        Arc::clone(&model.service_bus_manager),
-        model.tx_to_main().clone(),
-        model.queue_state().message_repeat_count,
-        model.error_reporter.clone(),
-        max_position,
+    // Generate unique operation ID for cancellation support
+    let operation_id = format!(
+        "bulk_send_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
     );
 
-    // Execute the task
-    task_manager.execute_bulk_send_task(task_params);
+    // Use enhanced TaskManager with progress reporting and cancellation
+    model.task_manager.execute_with_progress(
+        loading_message,
+        operation_id,
+        move |progress: ProgressReporter| {
+            Box::pin(async move {
+                log::info!(
+                    "Starting enhanced bulk send operation for {} messages",
+                    bulk_data.message_count()
+                );
+
+                // Report initial progress
+                progress.report_progress("Initializing...");
+
+                // Execute the bulk send operation using service bus manager
+                let result = match &bulk_data {
+                    BulkSendData::MessageData(messages_data) => {
+                        execute_bulk_send_with_data(
+                            service_bus_manager.clone(),
+                            messages_data,
+                            operation_params.target_queue.clone(),
+                            repeat_count,
+                            &progress,
+                        )
+                        .await
+                    }
+                    BulkSendData::MessageIds(message_ids) => {
+                        execute_bulk_send_with_ids(
+                            service_bus_manager.clone(),
+                            message_ids,
+                            operation_params.target_queue.clone(),
+                            operation_params.should_delete,
+                            repeat_count,
+                            max_position,
+                            &progress,
+                        )
+                        .await
+                    }
+                };
+
+                progress.report_progress("Finalizing...");
+
+                // Handle the result
+                match result {
+                    Ok(operation_result) => handle_bulk_send_success(
+                        operation_result,
+                        &bulk_data,
+                        &operation_params,
+                        &tx_to_main,
+                        &error_reporter,
+                    ),
+                    Err(error) => {
+                        handle_bulk_send_error(
+                            error,
+                            &bulk_data,
+                            &operation_params,
+                            &tx_to_main,
+                            &error_reporter,
+                        );
+                        Err(AppError::ServiceBus(
+                            "Bulk send operation failed".to_string(),
+                        ))
+                    }
+                }
+            })
+        },
+    );
+
     None
 }
 
