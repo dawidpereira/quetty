@@ -23,32 +23,36 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Send failure notification to Notion
-        env:
-          NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
-          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-          GH_REPOSITORY: ${{ inputs.repository }}
-          GH_REF_NAME: ${{ inputs.ref_name }}
-          GH_RUN_ID: ${{ inputs.run_id }}
-        shell: bash
-        run: |
-          PAYLOAD=$(cat <<'EOF'
-          {
+    - name: Send failure notification to Notion
+      env:
+        NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
+        NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+        GH_REPOSITORY: ${{ inputs.repository }}
+        GH_REF_NAME: ${{ inputs.ref_name }}
+        GH_RUN_ID: ${{ inputs.run_id }}
+      shell: bash
+      run: |
+        # Create the JSON payload with correct property names and types
+        PAYLOAD=$(jq -n \
+          --arg database_id "$NOTION_DATABASE_ID" \
+          --arg title "Bug - Quetty - CI Build Failed: $GH_REPOSITORY - $GH_REF_NAME" \
+          --arg run_url "https://github.com/$GH_REPOSITORY/actions/runs/$GH_RUN_ID" \
+          '{
             "parent": {
-              "database_id": "$NOTION_DATABASE_ID"
+              "database_id": $database_id
             },
             "properties": {
-              "Name": {
+              "Task name": {
                 "title": [
                   {
                     "text": {
-                      "content": "Bug - Quetty - CI Build Failed: $GH_REPOSITORY - $GH_REF_NAME"
+                      "content": $title
                     }
                   }
                 ]
               },
-              "status": {
-                "select": {
+              "Status": {
+                "status": {
                   "name": "Not Started"
                 }
               },
@@ -62,57 +66,36 @@ jobs:
                   "name": "Bug"
                 }
               },
-              "Project": {
-                "select": {
-                  "name": "Quetty"
-                }
-              },
               "Archived": {
                 "checkbox": false
               }
-            },
-            "children": [
-              {
-                "object": "block",
-                "type": "paragraph",
-                "paragraph": {
-                  "rich_text": [
-                    {
-                      "type": "text",
-                      "text": {
-                        "content": "CI build failed for repository: $GH_REPOSITORY on branch: $GH_REF_NAME.\n\nSee full details at: https://github.com/$GH_REPOSITORY/actions/runs/$GH_RUN_ID"
-                      }
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-          EOF
-          )
+            }
+          }')
 
-          # Substitute environment variables in the payload
-          PAYLOAD=$(echo "$PAYLOAD" | envsubst)
-
-          echo "Sending payload to Notion:"
-          echo "$PAYLOAD"
-
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://api.notion.com/v1/pages" \
+        echo "Sending notification to Notion..."
+        echo "Repository: $GH_REPOSITORY"
+        echo "Branch: $GH_REF_NAME"
+        echo "Run ID: $GH_RUN_ID"
+        
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://api.notion.com/v1/pages" \
           -H "Authorization: Bearer $NOTION_API_TOKEN" \
           -H "Content-Type: application/json" \
           -H "Notion-Version: 2022-06-28" \
           -d "$PAYLOAD")
 
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | head -n -1)
+        HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+        BODY=$(echo "$RESPONSE" | head -n -1)
 
-          echo "HTTP Status Code: $HTTP_CODE"
+        echo "HTTP Status Code: $HTTP_CODE"
+        
+        if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+          echo "Successfully sent notification to Notion"
+          PAGE_ID=$(echo "$BODY" | jq -r '.id // "unknown"')
+          echo "Created page ID: $PAGE_ID"
+          echo "Page URL: https://www.notion.so/$PAGE_ID"
+        else
+          echo "Failed to send notification to Notion"
           echo "Response Body: $BODY"
-
-          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "Successfully sent notification to Notion"
-          else
-            echo "Failed to send notification to Notion"
-            exit 1
-          fi
+          exit 1
+        fi
 
