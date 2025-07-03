@@ -138,7 +138,8 @@ impl ErrorReporter {
 
     /// Report a simple error with basic context
     pub fn report_simple(&self, error: AppError, component: &str, operation: &str) {
-        let context = ErrorContext::new(component, operation);
+        let context =
+            ErrorContext::new(component, operation).with_technical_details(&error.to_string());
         self.report(error, context);
     }
 

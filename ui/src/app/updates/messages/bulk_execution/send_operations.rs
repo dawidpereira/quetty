@@ -265,7 +265,7 @@ fn start_bulk_send_operation<T: TerminalAdapter>(
 
     start_bulk_send_generic(
         model,
-        BulkSendData::MessageIds(message_ids.iter().map(|id| id.to_string()).collect()),
+        BulkSendData::MessageIds(message_ids),
         params,
         max_position,
     )
@@ -307,12 +307,7 @@ fn start_bulk_send_with_data_operation<T: TerminalAdapter>(
 
     start_bulk_send_generic(
         model,
-        BulkSendData::MessageData(
-            messages_data
-                .iter()
-                .map(|(id, data)| (id.to_string(), data.to_vec()))
-                .collect(),
-        ),
+        BulkSendData::MessageData(messages_data),
         params,
         max_position,
     )

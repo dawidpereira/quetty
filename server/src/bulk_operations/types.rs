@@ -158,27 +158,27 @@ impl BatchConfig {
 
     /// Get the maximum batch size for bulk operations
     pub fn max_batch_size(&self) -> u32 {
-        self.max_batch_size.unwrap_or(200)
+        self.max_batch_size.unwrap_or(500)
     }
 
     /// Get the timeout for bulk operations
     pub fn operation_timeout_secs(&self) -> u64 {
-        self.operation_timeout_secs.unwrap_or(300)
+        self.operation_timeout_secs.unwrap_or(600)
     }
 
     /// Get the chunk size for bulk processing operations
     pub fn bulk_chunk_size(&self) -> usize {
-        self.bulk_chunk_size.unwrap_or(200)
+        self.bulk_chunk_size.unwrap_or(500)
     }
 
     /// Get the processing time limit for bulk operations in seconds
     pub fn bulk_processing_time_secs(&self) -> u64 {
-        self.bulk_processing_time_secs.unwrap_or(120)
+        self.bulk_processing_time_secs.unwrap_or(300)
     }
 
     /// Get the timeout for lock operations in seconds
     pub fn lock_timeout_secs(&self) -> u64 {
-        self.lock_timeout_secs.unwrap_or(5)
+        self.lock_timeout_secs.unwrap_or(10)
     }
 
     /// Get the maximum messages to process in bulk operations
@@ -301,7 +301,7 @@ impl QueueOperationType {
 }
 
 /// Bulk operation context containing shared resources
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BulkOperationContext {
     pub consumer: Arc<Mutex<crate::consumer::Consumer>>,
     pub cancel_token: CancellationToken,

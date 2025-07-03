@@ -92,6 +92,9 @@ impl<T: TerminalAdapter> BulkOperationSetup<T> {
         self.validate_queue_type_for_operation(model)?;
         self.validate_operation_size()?; // Added back validation against max_messages_to_process
 
+        // Validate link credit usage to prevent receiver credit exhaustion
+        self.validate_link_credit_limit(model)?;
+
         // Log validation success
         log::info!(
             "Validated bulk {:?} operation for {} messages",
@@ -183,6 +186,48 @@ impl<T: TerminalAdapter> BulkOperationSetup<T> {
             BulkOperationType::ResendFromDlq { .. } => QueueType::DeadLetter,
             BulkOperationType::SendToDlq { .. } => QueueType::Main,
         }
+    }
+
+    /// Ensure the operation will not exceed Service Bus link credit (2048)
+    fn validate_link_credit_limit(&self, model: &Model<T>) -> Result<(), AppError> {
+        // Get the highest position index of selected messages (1-based)
+        let max_position = model
+            .queue_state()
+            .bulk_selection
+            .get_highest_selected_index()
+            .unwrap_or(0);
+
+        if max_position == 0 {
+            // Should not happen, but skip check if we can't determine
+            return Ok(());
+        }
+
+        // Calculate non-target messages that will remain locked during the scan
+        // This is: max_position - selected_count
+        let locked_non_targets = max_position.saturating_sub(self.message_ids.len());
+
+        // Use exact Azure Service Bus link credit limit
+        const LINK_CREDIT_LIMIT: usize = 2048;
+
+        if locked_non_targets > LINK_CREDIT_LIMIT {
+            return Err(AppError::State(format!(
+                "Operation would lock {} non-target messages (max position: {}, selected: {}), which exceeds the Azure Service Bus link-credit limit of {}. This would cause the bulk operation to get stuck.\n\nTo fix this:\n• Select messages in a smaller range (closer together)\n• Split into multiple smaller operations\n• Select messages from earlier pages",
+                locked_non_targets,
+                max_position,
+                self.message_ids.len(),
+                LINK_CREDIT_LIMIT
+            )));
+        }
+
+        log::debug!(
+            "Link credit validation passed: max_position={}, selected={}, locked_non_targets={}, limit={}",
+            max_position,
+            self.message_ids.len(),
+            locked_non_targets,
+            LINK_CREDIT_LIMIT
+        );
+
+        Ok(())
     }
 }
 

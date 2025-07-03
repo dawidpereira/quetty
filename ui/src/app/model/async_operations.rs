@@ -18,7 +18,6 @@ where
 
     /// Create new consumer for the selected queue using QueueManager
     pub fn new_consumer_for_queue(&mut self) {
-        // Extract the queue from the queue manager
         if let Some(queue) = self.queue_manager.queue_state.pending_queue.clone() {
             self.queue_manager.switch_to_queue(queue);
         }
@@ -26,14 +25,26 @@ where
 
     /// Force reload messages - useful after bulk operations that modify the queue
     pub fn handle_force_reload_messages(&mut self) -> Option<Msg> {
-        log::info!("Force reloading messages after bulk operation - resetting pagination state");
+        log::info!("Force reloading messages after bulk operation - complete state reset");
 
-        // Reset pagination state to clear all existing messages and start fresh
         self.reset_pagination_state();
+        self.queue_state_mut().messages = None;
+        self.queue_state_mut().bulk_selection.clear_all();
 
-        // Trigger reload
+        if let Err(e) = self
+            .app
+            .active(&crate::components::common::ComponentId::Messages)
+        {
+            log::warn!(
+                "Failed to activate messages component during force reload: {}",
+                e
+            );
+        }
+
         self.message_manager.force_reload_messages();
 
-        None
+        // Force a full UI redraw to clear stale state
+        self.set_redraw(true);
+        Some(crate::components::common::Msg::ForceRedraw)
     }
 }

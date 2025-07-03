@@ -39,8 +39,8 @@ impl BulkSendParams {
 
 /// Data types for bulk send operations
 pub enum BulkSendData {
-    MessageIds(Vec<String>),
-    MessageData(Vec<(String, Vec<u8>)>),
+    MessageIds(Vec<MessageIdentifier>),
+    MessageData(Vec<(MessageIdentifier, Vec<u8>)>),
 }
 
 impl BulkSendData {
@@ -148,7 +148,7 @@ pub async fn execute_bulk_send_task(params: BulkSendTaskParams) {
             // Convert to the format expected by the service bus manager
             let messages_data_converted: Vec<(MessageIdentifier, Vec<u8>)> = messages_data
                 .iter()
-                .map(|(id, data)| (MessageIdentifier::new(id.clone(), 0), data.clone()))
+                .map(|(id, data)| (id.clone(), data.clone()))
                 .collect();
 
             let command = ServiceBusCommand::BulkSendPeeked {
@@ -184,10 +184,7 @@ pub async fn execute_bulk_send_task(params: BulkSendTaskParams) {
         }
         BulkSendData::MessageIds(message_ids) => {
             // Convert to the format expected by the service bus manager
-            let message_ids_converted: Vec<MessageIdentifier> = message_ids
-                .iter()
-                .map(|id| MessageIdentifier::new(id.clone(), 0))
-                .collect();
+            let message_ids_converted: Vec<MessageIdentifier> = message_ids.to_vec();
 
             let command = ServiceBusCommand::BulkSend {
                 message_ids: message_ids_converted,
