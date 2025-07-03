@@ -46,3 +46,22 @@ jobs:
 
     - name: Run Clippy
       run: cargo clippy --workspace --all-features -- -D warnings
+
+  notify-on-failure:
+    runs-on: ubuntu-latest
+    needs: build
+    if: failure()
+
+    steps:
+    - name: Send failure notification to Notion
+      env:
+        NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
+        NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+      run: |
+        PAYLOAD=''{ "parent": { "database_id": "'"$NOTION_DATABASE_ID"'" }, "properties": { "Title": { "title": [ { "text": { "content": "Bug - Quetty - CI Build Failed: ${{ github.repository }} - ${{ github.ref_name }}" } } ] }, "Status": { "select": { "name": "Not Started" } }, "Priority": { "select": { "name": "Medium" } }, "Type": { "select": { "name": "Bug" } }, "Project": { "select": { "name": "Quetty" } }, "Archived": { "checkbox": false } } }''
+
+        curl -X POST "https://api.notion.com/v1/pages" \
+          -H "Authorization: Bearer $NOTION_API_TOKEN" \
+          -H "Content-Type: application/json" \
+          -H "Notion-Version: 2022-06-28" \
+          -d "$PAYLOAD"
