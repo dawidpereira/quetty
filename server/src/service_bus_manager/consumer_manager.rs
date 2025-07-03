@@ -302,13 +302,13 @@ impl ConsumerManager {
         new_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
     ) -> ServiceBusResult<()> {
         log::info!("Resetting ServiceBusClient reference in ConsumerManager");
-        
+
         // Dispose existing consumer if any
         self.dispose_consumer().await?;
-        
+
         // Update the client reference
         self.service_bus_client = new_client;
-        
+
         log::info!("ConsumerManager client reference updated successfully");
         Ok(())
     }

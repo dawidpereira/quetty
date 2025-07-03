@@ -3,13 +3,13 @@ use super::azure_management_client::StatisticsConfig;
 use super::command_handlers::*;
 use super::commands::ServiceBusCommand;
 use super::consumer_manager::ConsumerManager;
-use super::errors::{ServiceBusResult, ServiceBusError};
+use super::errors::{ServiceBusError, ServiceBusResult};
 use super::producer_manager::ProducerManager;
 use super::queue_statistics_service::QueueStatisticsService;
 use super::responses::ServiceBusResponse;
 use super::types::QueueInfo;
 use crate::bulk_operations::{BulkOperationHandler, types::BatchConfig};
-use azservicebus::{ServiceBusClient, core::BasicRetryPolicy, ServiceBusClientOptions};
+use azservicebus::{ServiceBusClient, ServiceBusClientOptions, core::BasicRetryPolicy};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -249,9 +249,7 @@ impl ServiceBusManager {
             ServiceBusCommand::DisposeAllResources => {
                 self.resource_handler.handle_dispose_all_resources().await
             }
-            ServiceBusCommand::ResetConnection => {
-                self.handle_reset_connection().await
-            }
+            ServiceBusCommand::ResetConnection => self.handle_reset_connection().await,
         }
     }
 
@@ -325,12 +323,16 @@ impl ServiceBusManager {
         // Update the consumer and producer managers with the new client
         {
             let mut consumer_manager = self.consumer_manager.lock().await;
-            consumer_manager.reset_client(self.service_bus_client.clone()).await?;
+            consumer_manager
+                .reset_client(self.service_bus_client.clone())
+                .await?;
         }
 
         {
             let mut producer_manager = self.producer_manager.lock().await;
-            producer_manager.reset_client(self.service_bus_client.clone()).await?;
+            producer_manager
+                .reset_client(self.service_bus_client.clone())
+                .await?;
         }
 
         log::info!("ServiceBus connection reset successfully");

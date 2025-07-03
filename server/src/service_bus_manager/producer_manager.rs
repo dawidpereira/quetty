@@ -392,13 +392,13 @@ impl ProducerManager {
         new_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
     ) -> ServiceBusResult<()> {
         log::info!("Resetting ServiceBusClient reference in ProducerManager");
-        
+
         // Dispose all existing producers
         self.dispose_all_producers().await?;
-        
+
         // Update the client reference
         self.service_bus_client = new_client;
-        
+
         log::info!("ProducerManager client reference updated successfully");
         Ok(())
     }

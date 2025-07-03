@@ -1,8 +1,8 @@
 use crate::app::model::{AppState, Model};
 use crate::components::common::{Msg, QueueActivityMsg};
-use tuirealm::terminal::TerminalAdapter;
-use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 use crate::error::AppError;
+use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
+use tuirealm::terminal::TerminalAdapter;
 
 impl<T> Model<T>
 where
@@ -55,7 +55,7 @@ where
                 let service_bus_manager = self.service_bus_manager.clone();
                 let task_manager = self.task_manager.clone();
                 let tx_to_main = self.tx_to_main().clone();
-                
+
                 self.task_manager.execute("Resetting connection and reloading...", async move {
                     // Reset the entire AMQP connection to clear corrupted session state
                     match service_bus_manager
