@@ -1,0 +1,102 @@
+# Example configuration for Quetty
+# This file provides default values and serves as a template for user configuration.
+
+# App configuration
+page_size = 100  # Number of messages displayed per page
+peek_interval = 1
+poll_timeout_ms = 10
+tick_interval_millis = 250
+
+# DLQ operation configuration
+dlq_receive_timeout_secs = 10      # Timeout for receiving messages from DLQ (seconds)
+dlq_send_timeout_secs = 10         # Timeout for sending messages to main queue (seconds)
+dlq_max_attempts = 10              # Maximum attempts to find a message in DLQ operations
+dlq_overall_timeout_cap_secs = 60  # Maximum total time for entire resend operation (seconds)
+dlq_receive_timeout_cap_secs = 10  # Hard cap for receive timeouts (seconds)
+dlq_send_timeout_cap_secs = 15     # Hard cap for send timeouts (seconds)
+dlq_retry_delay_ms = 500           # Delay between retry attempts when no messages found (milliseconds)
+
+# Crossterm input listener configuration
+crossterm_input_listener_interval_ms = 20
+crossterm_input_listener_retries = 5
+
+# Bulk operation configuration
+max_batch_size = 200       # Maximum batch size for all operations (DLQ, send, delete, etc.)
+max_messages_to_process = 10000 # Maximum messages allowed in any bulk operation
+operation_timeout_secs = 300 # Timeout for bulk operations (seconds)
+
+# UI configuration
+ui_loading_frame_duration_ms = 100 # Duration between animation frames for loading indicators (milliseconds)
+
+# Queue statistics display configuration
+queue_stats_display_enabled = true # Set to false to disable statistics completely
+queue_stats_cache_ttl_seconds = 60 # Cache duration in seconds (0 = no caching)
+
+# Theme configuration
+[theme]
+theme_name = "nightfox"
+flavor_name = "duskfox"
+
+# Service Bus configuration
+[servicebus]
+# connection_string = ""  # Required - set via environment variable (e.g., AZURE_SERVICEBUS_CONNECTION_STRING)
+                        # or uncomment and set here (not recommended for sensitive data)
+
+# Azure AD configuration (for Azure Service Bus with Azure AD authentication)
+[azure_ad]
+# tenant_id = ""       # Required - Azure AD tenant ID (set via environment variable)
+# client_id = ""       # Required - Azure AD application client ID (set via environment variable)
+# client_secret = ""   # Required - Azure AD application client secret (set via environment variable)
+# subscription_id = "" # Required - Azure subscription ID (set via environment variable)
+# resource_group = ""  # Required - Azure resource group name (set via environment variable)
+# namespace = ""       # Required - Service Bus namespace (set via environment variable)
+
+# Key bindings configuration
+[keys]
+# Global keys
+key_quit = "q"  # Key to quit the application (default: q)
+key_help = "h"  # Key to show help screen (default: h)
+key_theme = "t" # Key to toggle theme (default: t)
+
+# Navigation keys
+key_down = "j"          # Key to move down (default: j)
+key_up = "k"            # Key to move up (default: k)
+key_next_page = "n"     # Key to go to next page (default: n)
+key_prev_page = "p"     # Key to go to previous page (default: p)
+key_alt_next_page = "]" # Alternative key for next page (default: ])
+key_alt_prev_page = "[" # Alternative key for previous page (default: [)
+
+# Message actions
+key_send_to_dlq = "s"                # Key to send message to DLQ (default: s)
+key_resend_from_dlq = "s"            # Key to resend message from DLQ (default: s)
+key_resend_and_delete_from_dlq = "S" # Key to resend and delete from DLQ (default: S)
+key_delete_message = "x"             # Key to delete message (default: x)
+key_alt_delete_message = "x"         # Alternative key to delete message (default: x)
+
+# Message details actions (when viewing message content)
+key_copy_message = "c"           # Key for Ctrl+key copy operation (default: c)
+key_yank_message = "y"           # Key for yank/copy operation (default: y)
+key_send_edited_message = "s"    # Key for Ctrl+key send edited message (default: s)
+key_replace_edited_message = "s" # Key for Ctrl+key replace message (default: s) - NOTE: same as send, uses different modifier
+
+# Bulk selection keys
+key_toggle_selection = " " # Key to toggle message selection (default: space)
+key_select_all_page = "a"  # Key to select all messages on current page (default: a)
+
+# Queue/Namespace selection
+key_queue_select = "o"     # Key to open queue selection (default: o)
+key_namespace_select = "o" # Key to open namespace selection (default: o)
+
+# Message composition keys (in messages view)
+key_toggle_dlq = "d"       # Key to toggle between main queue and dead letter queue (default: d)
+key_compose_multiple = "m" # Key to compose multiple messages with repeat count (default: m)
+key_compose_single = "n"   # Key for Ctrl+key to compose single message (default: n)
+
+# Confirmation keys
+key_confirm_yes = "y" # Key to confirm yes in prompts (default: y)
+key_confirm_no = "n"  # Key to confirm no in prompts (default: n)
+
+# Logging configuration
+[logging]
+level = "debug" # Available levels: "trace", "debug", "info", "warn", "error"
+# file = "quetty.log" # Uncomment to log to a file (e.g., "quetty.log")
