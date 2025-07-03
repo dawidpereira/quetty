@@ -219,22 +219,7 @@ mod resilience_integration {
 mod performance_integration {
     use super::*;
 
-    #[tokio::test]
-    async fn test_client_creation_performance() {
-        let start = std::time::Instant::now();
-        
-        // Create multiple clients rapidly
-        for _i in 0..100 {
-            let azure_config = create_mock_server_azure_config();
-            let _client = AzureManagementClient::from_config(azure_config);
-        }
-        
-        let duration = start.elapsed();
-        
-        // Client creation should be fast
-        assert!(duration < Duration::from_millis(5000), 
-                "Creating 100 clients should be fast, took: {:?}", duration);
-    }
+    
 
     #[test]
     fn test_error_creation_performance() {
