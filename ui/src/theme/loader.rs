@@ -185,7 +185,7 @@ mod tests {
 
         // Verify the error contains useful information
         if let Err(error) = result {
-            let error_msg = format!("{}", error);
+            let error_msg = format!("{error}");
             assert!(error_msg.contains("nonexistent_theme") || error_msg.contains("Invalid"));
         }
     }
@@ -205,9 +205,9 @@ mod tests {
                 assert_eq!(theme.metadata.flavor_name, Some("dark".to_string()));
             }
             Err(e) => {
-                log::error!("Failed to load default theme: {}", e);
+                log::error!("Failed to load default theme: {e}");
                 // This will show us what the exact error is
-                panic!("Default theme should be loadable: {}", e);
+                panic!("Default theme should be loadable: {e}");
             }
         }
     }

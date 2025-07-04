@@ -84,6 +84,12 @@ pub enum QueueActivityMsg {
     QueuesLoaded(Vec<String>),
     ToggleDeadLetterQueue,
     QueueSwitchCancelled,
+    /// User requested to exit the current queue (shows confirmation dialog)
+    ExitQueueConfirmation,
+    /// User confirmed queue exit - triggers resource cleanup and returns to queue selection
+    ExitQueueConfirmed,
+    /// Resource disposal completed - finalize the exit process
+    ExitQueueFinalized,
 }
 
 #[derive(Debug, PartialEq)]

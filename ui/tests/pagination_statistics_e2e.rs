@@ -22,7 +22,7 @@ fn create_test_messages(count: usize, start_sequence: i64) -> Vec<MessageModel> 
             create_test_message(
                 &format!("msg-{}", start_sequence + i as i64),
                 start_sequence + i as i64,
-                &format!("Test message body {}", i),
+                &format!("Test message body {i}"),
             )
         })
         .collect()

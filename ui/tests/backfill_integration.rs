@@ -23,7 +23,7 @@ mod helpers {
             enqueued_at: timestamp.into(),
             delivery_count: 1,
             state: MessageState::Active,
-            body: BodyData::RawString(format!("Test message {}", id)),
+            body: BodyData::RawString(format!("Test message {id}")),
         }
     }
 
@@ -275,10 +275,7 @@ fn test_backfill_after_send_with_delete_from_main() {
         // Simulate backfill
         let mut backfill_messages = Vec::new();
         for i in 1..=messages_needed {
-            backfill_messages.push(create_test_message(
-                &format!("backfill{}", i),
-                10 + i as i64,
-            ));
+            backfill_messages.push(create_test_message(&format!("backfill{i}"), 10 + i as i64));
         }
 
         add_backfill_messages(&mut queue_state.message_pagination, backfill_messages);
@@ -399,7 +396,7 @@ fn test_backfill_after_auto_reload_threshold_deletions() {
 
     let mut initial_messages = Vec::new();
     for i in 1..=initial_count {
-        initial_messages.push(create_test_message(&format!("msg{}", i), i as i64));
+        initial_messages.push(create_test_message(&format!("msg{i}"), i as i64));
     }
 
     setup_pagination_with_messages(&mut queue_state, initial_messages);
@@ -413,7 +410,7 @@ fn test_backfill_after_auto_reload_threshold_deletions() {
     let mut to_remove = Vec::new();
     let mut remove_strings = Vec::new();
     for i in 1..=auto_reload_threshold {
-        let remove_string = format!("msg{}", i);
+        let remove_string = format!("msg{i}");
         remove_strings.push(remove_string);
     }
     for s in &remove_strings {
@@ -450,7 +447,7 @@ fn test_pagination_consistency_after_backfill() {
 
     let mut initial_messages = Vec::new();
     for i in 1..=total_messages {
-        initial_messages.push(create_test_message(&format!("msg{}", i), i as i64));
+        initial_messages.push(create_test_message(&format!("msg{i}"), i as i64));
     }
 
     setup_pagination_with_messages(&mut queue_state, initial_messages);
@@ -468,7 +465,7 @@ fn test_pagination_consistency_after_backfill() {
     let mut to_remove = Vec::new();
     let mut remove_strings = Vec::new();
     for i in 1..=delete_count {
-        let remove_string = format!("msg{}", i);
+        let remove_string = format!("msg{i}");
         remove_strings.push(remove_string);
     }
     for s in &remove_strings {

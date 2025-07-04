@@ -411,7 +411,7 @@ mod tests {
         let input_line = popup.render_input_field();
 
         // Should contain placeholder text for empty input
-        assert!(format!("{:?}", input_line).contains("Type a number"));
+        assert!(format!("{input_line:?}").contains("Type a number"));
     }
 
     #[test]

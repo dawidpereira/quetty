@@ -10,6 +10,7 @@ use server::bulk_operations::MessageIdentifier;
 use server::model::MessageModel;
 use tui_realm_stdlib::Table;
 use tuirealm::command::{Cmd, CmdResult};
+use tuirealm::event::{Key, KeyEvent};
 use tuirealm::props::{Alignment, BorderType, Borders, Color, Style};
 use tuirealm::ratatui::layout::{Alignment as RatatuiAlignment, Constraint, Rect};
 use tuirealm::ratatui::style::{Color as RatatuiColor, Modifier, Style as RatatuiStyle};
@@ -219,8 +220,30 @@ impl Messages {
 
 impl Component<Msg, NoUserEvent> for Messages {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
-        // Delegate to event handling module
-        super::event_handling::handle_event(self, ev)
+        match ev {
+            Event::Keyboard(KeyEvent { code: Key::Esc, .. }) => {
+                // If no messages are selected, and we are in bulk mode, exit bulk mode
+                if self
+                    .pagination_info
+                    .as_ref()
+                    .is_some_and(|info| info.bulk_mode)
+                    && self.selected_messages.is_empty()
+                {
+                    return Some(Msg::MessageActivity(
+                        crate::components::common::MessageActivityMsg::ClearAllSelections,
+                    ));
+                }
+                // If no messages are selected, and we are not in bulk mode, exit queue
+                if self.selected_messages.is_empty() {
+                    return Some(Msg::QueueActivity(
+                        crate::components::common::QueueActivityMsg::ExitQueueConfirmation,
+                    ));
+                }
+                // Otherwise, delegate to event handling module
+                super::event_handling::handle_event(self, ev)
+            }
+            _ => super::event_handling::handle_event(self, ev),
+        }
     }
 }
 

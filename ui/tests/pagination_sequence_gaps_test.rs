@@ -12,7 +12,7 @@ fn create_test_message(id: &str, sequence: i64) -> MessageModel {
         enqueued_at: timestamp.into(),
         delivery_count: 1,
         state: MessageState::Active,
-        body: BodyData::RawString(format!("Test message {}", id)),
+        body: BodyData::RawString(format!("Test message {id}")),
     }
 }
 
@@ -41,14 +41,14 @@ fn test_automatic_page_filling_with_sequence_gaps() {
     // Simulate the reported bug: requesting 100 messages starting from sequence 30591
     // But Azure only returns 55 messages due to sequence gaps (30591-30645, missing 30646-30690)
     let incomplete_page = (30591..30646)
-        .map(|seq| create_test_message(&format!("msg_{}", seq), seq))
+        .map(|seq| create_test_message(&format!("msg_{seq}"), seq))
         .collect::<Vec<_>>();
 
     assert_eq!(incomplete_page.len(), 55); // Incomplete page
 
     // Simulate the automatic fill with additional messages (30691-30735)
     let fill_messages = (30691..30726)
-        .map(|seq| create_test_message(&format!("msg_{}", seq), seq))
+        .map(|seq| create_test_message(&format!("msg_{seq}"), seq))
         .collect::<Vec<_>>();
 
     assert_eq!(fill_messages.len(), 35); // Messages to fill the gap
@@ -78,13 +78,13 @@ fn test_complete_page_filling_to_expected_size() {
 
     // Start with an incomplete page of 55 messages
     let incomplete_page = (1..56)
-        .map(|seq| create_test_message(&format!("msg_{}", seq), seq))
+        .map(|seq| create_test_message(&format!("msg_{seq}"), seq))
         .collect::<Vec<_>>();
 
     // Need to fill to full page size, so calculate how many more needed
     let messages_needed = page_size - 55;
     let fill_messages = (100..100 + messages_needed as i64)
-        .map(|seq| create_test_message(&format!("fill_{}", seq), seq))
+        .map(|seq| create_test_message(&format!("fill_{seq}"), seq))
         .collect::<Vec<_>>();
 
     simulate_auto_page_filling(&mut pagination, incomplete_page, fill_messages);
@@ -159,13 +159,13 @@ fn test_page_start_indices_tracking_with_extensions() {
 
     // Add first page
     let page1_messages = (1..=page_size as i64)
-        .map(|seq| create_test_message(&format!("p1_msg_{}", seq), seq))
+        .map(|seq| create_test_message(&format!("p1_msg_{seq}"), seq))
         .collect::<Vec<_>>();
     pagination.add_loaded_page(page1_messages);
 
     // Add second page (should track start index)
     let page2_incomplete = (101..151)
-        .map(|seq| create_test_message(&format!("p2_msg_{}", seq), seq))
+        .map(|seq| create_test_message(&format!("p2_msg_{seq}"), seq))
         .collect::<Vec<_>>();
     pagination.add_loaded_page(page2_incomplete);
 
@@ -174,7 +174,7 @@ fn test_page_start_indices_tracking_with_extensions() {
 
     // Extend page 2 (should not add new start index)
     let page2_extension = (151..201)
-        .map(|seq| create_test_message(&format!("p2_ext_{}", seq), seq))
+        .map(|seq| create_test_message(&format!("p2_ext_{seq}"), seq))
         .collect::<Vec<_>>();
     pagination.extend_current_page(page2_extension);
 
@@ -247,18 +247,18 @@ fn test_page_bounds_calculation_with_extended_pages() {
 
     // Create page 1 with extensions
     let initial_p1 = (1..51)
-        .map(|seq| create_test_message(&format!("p1_{}", seq), seq))
+        .map(|seq| create_test_message(&format!("p1_{seq}"), seq))
         .collect::<Vec<_>>();
     pagination.add_loaded_page(initial_p1);
 
     let extend_p1 = (51..=page_size as i64)
-        .map(|seq| create_test_message(&format!("p1_ext_{}", seq), seq))
+        .map(|seq| create_test_message(&format!("p1_ext_{seq}"), seq))
         .collect::<Vec<_>>();
     pagination.extend_current_page(extend_p1);
 
     // Create page 2
     let initial_p2 = (1001..1051)
-        .map(|seq| create_test_message(&format!("p2_{}", seq), seq))
+        .map(|seq| create_test_message(&format!("p2_{seq}"), seq))
         .collect::<Vec<_>>();
     pagination.add_loaded_page(initial_p2);
 
@@ -283,31 +283,31 @@ fn test_realistic_azure_sequence_gap_scenario() {
     // Simulate real Azure scenario: 358 total messages, page size 100
     // Page 1: sequences 1-100 (complete)
     let page1 = (1..=100)
-        .map(|seq| create_test_message(&format!("p1_{}", seq), seq))
+        .map(|seq| create_test_message(&format!("p1_{seq}"), seq))
         .collect::<Vec<_>>();
     pagination.add_loaded_page(page1);
 
     // Page 2: sequences 101-200 (complete)
     let page2 = (101..=200)
-        .map(|seq| create_test_message(&format!("p2_{}", seq), seq))
+        .map(|seq| create_test_message(&format!("p2_{seq}"), seq))
         .collect::<Vec<_>>();
     pagination.add_loaded_page(page2);
 
     // Page 3: sequences 201-255 (incomplete due to gaps, only 55 messages)
     let page3_incomplete = (201..=255)
-        .map(|seq| create_test_message(&format!("p3_{}", seq), seq))
+        .map(|seq| create_test_message(&format!("p3_{seq}"), seq))
         .collect::<Vec<_>>();
     pagination.add_loaded_page(page3_incomplete);
 
     // Auto-fill page 3: sequences 300-344 (filling the gap to make 100 total)
     let page3_fill = (300..=344)
-        .map(|seq| create_test_message(&format!("p3_fill_{}", seq), seq))
+        .map(|seq| create_test_message(&format!("p3_fill_{seq}"), seq))
         .collect::<Vec<_>>();
     pagination.extend_current_page(page3_fill);
 
     // Final page: remaining messages 345-358
     let page4 = (345..=358)
-        .map(|seq| create_test_message(&format!("p4_{}", seq), seq))
+        .map(|seq| create_test_message(&format!("p4_{seq}"), seq))
         .collect::<Vec<_>>();
     pagination.add_loaded_page(page4);
 

@@ -32,6 +32,12 @@ impl Display for AppError {
 
 impl std::error::Error for AppError {}
 
+impl From<server::service_bus_manager::ServiceBusError> for AppError {
+    fn from(err: server::service_bus_manager::ServiceBusError) -> Self {
+        AppError::ServiceBus(err.to_string())
+    }
+}
+
 /// Result type alias for application operations
 pub type AppResult<T> = Result<T, AppError>;
 
@@ -535,7 +541,7 @@ mod tests {
         let context = ErrorContext::new("TestComponent", "test_operation");
 
         let contextual = ContextualError::new(error, context);
-        let display_str = format!("{}", contextual);
+        let display_str = format!("{contextual}");
 
         assert!(display_str.contains("TestComponent"));
         assert!(display_str.contains("Test error"));
