@@ -41,6 +41,96 @@ where
                 }
                 None
             }
+            QueueActivityMsg::ExitQueueConfirmed => {
+                log::info!("Exiting current queue and returning to queue selection");
+
+                // Check for active operations before proceeding
+                let active_ops = self.task_manager.get_active_operations();
+                if !active_ops.is_empty() {
+                    log::warn!("Cannot exit queue while operations are running: {active_ops:?}");
+                    self.error_reporter.report_simple(
+                        AppError::State("Cannot exit queue while operations are in progress. Please wait for current operations to complete.".to_string()),
+                        "QueueHandler",
+                        "exit_queue_blocked"
+                    );
+                    return None;
+                }
+
+                // Clear any pending or current queue selections and cached messages
+                let qs = self.queue_state_mut();
+                qs.pending_queue = None;
+                qs.current_queue_name = None;
+                qs.messages = None;
+                qs.message_pagination.reset();
+                qs.bulk_selection.clear_all();
+
+                // Dispose all backend resources using task manager with progress tracking
+                let service_bus_manager = self.service_bus_manager.clone();
+                let error_reporter = self.error_reporter.clone();
+                let tx_to_main = self.tx_to_main().clone();
+
+                self.task_manager.execute_with_progress(
+                    "Disposing resources and exiting queue...",
+                    "dispose_resources_and_exit",
+                    move |progress| {
+                        Box::pin(async move {
+                            progress.report_progress("Disposing Service Bus resources...");
+
+                            match service_bus_manager
+                                .lock()
+                                .await
+                                .execute_command(ServiceBusCommand::DisposeAllResources)
+                                .await
+                            {
+                                ServiceBusResponse::AllResourcesDisposed => {
+                                    log::info!("All Service Bus resources disposed successfully");
+                                    progress.report_progress(
+                                        "Resources disposed, returning to namespace selection...",
+                                    );
+
+                                    // Send message to complete the exit process
+                                    if let Err(e) = tx_to_main.send(Msg::QueueActivity(
+                                        QueueActivityMsg::ExitQueueFinalized,
+                                    )) {
+                                        error_reporter.report_send_error("exit_queue_finalized", e);
+                                        return Err(AppError::State(
+                                            "Failed to complete queue exit".to_string(),
+                                        ));
+                                    }
+
+                                    Ok(())
+                                }
+                                ServiceBusResponse::Error { error } => {
+                                    let app_error = AppError::from(error);
+                                    error_reporter.report_simple(
+                                        app_error.clone(),
+                                        "QueueHandler",
+                                        "dispose_resources",
+                                    );
+                                    Err(app_error)
+                                }
+                                _ => {
+                                    let error = AppError::ServiceBus(
+                                        "Unexpected response from dispose all resources"
+                                            .to_string(),
+                                    );
+                                    log::warn!("Unexpected response from dispose all resources");
+                                    Err(error)
+                                }
+                            }
+                        })
+                    },
+                );
+
+                None
+            }
+            QueueActivityMsg::ExitQueueFinalized => {
+                log::info!("Finalizing queue exit - returning to queue selection");
+
+                // Load queues to return to queue picker
+                self.load_queues();
+                None
+            }
             QueueActivityMsg::QueueSwitchCancelled => {
                 log::info!("Queue switch cancelled by user – reverting to queue picker");
 
@@ -105,6 +195,11 @@ where
                 });
 
                 self.set_app_state(AppState::QueuePicker);
+                None
+            }
+            QueueActivityMsg::ExitQueueConfirmation => {
+                // This message is handled by update_handler to show the confirmation popup
+                // No further action needed here
                 None
             }
         }

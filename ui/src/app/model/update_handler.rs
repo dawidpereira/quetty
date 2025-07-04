@@ -1,5 +1,5 @@
 use super::Model;
-use crate::components::common::{MessageActivityMsg, Msg, PopupActivityMsg};
+use crate::components::common::{MessageActivityMsg, Msg, PopupActivityMsg, QueueActivityMsg};
 use tuirealm::terminal::TerminalAdapter;
 
 impl<T> Model<T>
@@ -33,6 +33,13 @@ where
                     None
                 }
                 Msg::MessageActivity(msg) => self.update_messages(msg),
+                Msg::QueueActivity(QueueActivityMsg::ExitQueueConfirmation) => {
+                    Some(Msg::PopupActivity(PopupActivityMsg::ShowConfirmation {
+                        title: "Exit Queue".to_string(),
+                        message: "Are you sure you want to exit the current queue and return to queue selection?".to_string(),
+                        on_confirm: Box::new(Msg::QueueActivity(QueueActivityMsg::ExitQueueConfirmed)),
+                    }))
+                }
                 Msg::QueueActivity(msg) => self.update_queue(msg),
                 Msg::NamespaceActivity(msg) => self.update_namespace(msg),
                 Msg::ThemeActivity(msg) => self.update_theme(msg),
