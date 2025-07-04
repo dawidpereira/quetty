@@ -47,7 +47,7 @@ impl LoadingIndicator {
 
         // Don't set TextModifiers/TextProps as they're causing issues
 
-        log::debug!("Created new LoadingIndicator with message: {}", message);
+        log::debug!("Created new LoadingIndicator with message: {message}");
 
         Self {
             component,

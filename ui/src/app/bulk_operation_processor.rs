@@ -95,7 +95,7 @@ impl BulkOperationPostProcessor {
 
         match strategy {
             ReloadStrategy::ForceReload { reason } => {
-                log::info!("Forcing message reload: {}", reason);
+                log::info!("Forcing message reload: {reason}");
 
                 // Send reload first
                 if let Err(e) = tx_to_main.send(Msg::MessageActivity(
@@ -193,68 +193,64 @@ impl BulkOperationPostProcessor {
         if successful_count == 0 {
             if failed_count > 0 {
                 format!(
-                    "❌ Bulk {operation} failed: No messages were processed from {queue}\n\n\
+                    "❌ Bulk {operation} failed: No messages were processed from {queue_name}\n\n\
                     📊 Results:\n\
-                    • ❌ Failed: {failed} messages\n\
-                    • ⚠️  Not found: {not_found} messages\n\
-                    • 📦 Total requested: {total}\n\n\
-                    💡 Messages may have been already processed, moved, or deleted by another process.",
-                    operation = operation,
-                    queue = queue_name,
-                    failed = failed_count,
-                    not_found = not_found_count,
-                    total = total_count
+                    • ❌ Failed: {failed_count} messages\n\
+                    • ⚠️  Not found: {not_found_count} messages\n\
+                    • 📦 Total requested: {total_count}\n\n\
+                    💡 Messages may have been already processed, moved, or deleted by another process."
                 )
             } else {
                 let unavailable_hint = if is_delete {
                     format!(
-                        "💡 The {not_found} messages you selected were not available for deletion.\n\
+                        "💡 The {not_found_count} messages you selected were not available for deletion.\n\
                         This typically happens when:\n\
                         • Messages were processed by another consumer\n\
                         • Messages were moved or deleted by another process\n\
                         • Selected messages are only visible in preview but not available for consumption\n\n\
-                        🔄 Try refreshing the queue to see the current available messages.",
-                        not_found = not_found_count
+                        🔄 Try refreshing the queue to see the current available messages."
                     )
                 } else {
                     format!(
-                        "💡 The {not_found} messages you selected were not available for moving.\n\
+                        "💡 The {not_found_count} messages you selected were not available for moving.\n\
                         This typically happens when:\n\
                         • Messages were processed by another consumer\n\
                         • Messages were moved or deleted by another process\n\
                         • Selected messages are only visible in preview but not available for consumption\n\n\
-                        🔄 Try refreshing the queue to see the current available messages.",
-                        not_found = not_found_count
+                        🔄 Try refreshing the queue to see the current available messages."
                     )
                 };
                 format!(
-                    "⚠️  No messages were processed from {queue}\n\n\
-                    📊 Results:\n\
-                    • ⚠️  Not found: {not_found} messages\n\
-                    • 📦 Total requested: {total}\n\n{hint}",
-                    queue = queue_name,
-                    not_found = not_found_count,
-                    total = total_count,
-                    hint = unavailable_hint
+                    "⚠️  No messages were processed from {queue_name}
+
+📊 Results:
+• ⚠️  Not found: {not_found_count} messages
+• 📦 Total requested: {total_count}
+
+{unavailable_hint}"
                 )
             }
         } else if failed_count > 0 || not_found_count > 0 {
             // Partial success
             format!(
-                "⚠️ Bulk {operation} operation completed with mixed results\n\n{queue}\n\n\
-                📊 Results:\n\
-                • ✅ Successfully processed: {success} messages\n\
-                • ❌ Failed: {failed} messages\n\
-                • ⚠️  Not found: {not_found} messages\n\
-                • 📦 Total requested: {total}\n\
-                \n\
-                💡 Some messages may have been processed by another process during the operation.",
-                operation = operation,
-                success = successful_count,
-                failed = failed_count,
-                not_found = not_found_count,
-                total = total_count,
-                queue = queue_name
+                "⚠️ Bulk {operation} operation completed with mixed results
+
+{queue_name}
+
+
+                📊 Results:
+
+                • ✅ Successfully processed: {successful_count} messages
+
+                • ❌ Failed: {failed_count} messages
+
+                • ⚠️  Not found: {not_found_count} messages
+
+                • 📦 Total requested: {total_count}
+
+                
+
+                💡 Some messages may have been processed by another process during the operation."
             )
         } else {
             // Complete success
@@ -307,7 +303,7 @@ impl BulkOperationPostProcessor {
                 let not_found_count = context
                     .total_count
                     .saturating_sub(context.successful_count + context.failed_count);
-                let queue_name_combined = format!("{} → {}", from_queue_display, to_queue_display);
+                let queue_name_combined = format!("{from_queue_display} → {to_queue_display}");
                 let operation = if *should_delete { "move" } else { "copy" };
                 let is_delete = *should_delete;
                 let message = Self::format_bulk_operation_result_message(
@@ -423,7 +419,7 @@ impl BulkOperationPostProcessor {
     ) -> String {
         let not_found_count = total_count.saturating_sub(successful_count + failed_count);
         let operation = if is_delete { "move" } else { "copy" };
-        let combined_queue = format!("{} → {}", from_queue, to_queue);
+        let combined_queue = format!("{from_queue} → {to_queue}");
 
         Self::format_bulk_operation_result_message(
             operation,

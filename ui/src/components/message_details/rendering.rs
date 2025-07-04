@@ -167,7 +167,7 @@ fn create_status_bar(details: &MessageDetails) -> Paragraph {
             if count == 1 {
                 " | Will send 1 time".to_string()
             } else {
-                format!(" | Will send {} times", count)
+                format!(" | Will send {count} times")
             }
         } else {
             String::new()

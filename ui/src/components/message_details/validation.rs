@@ -20,18 +20,12 @@ impl MessageValidationError {
             MessageValidationError::Common(common_error) => common_error.user_message(),
             MessageValidationError::InvalidJson { reason } => {
                 format!(
-                    "Invalid JSON format!\n\n\
-                    Error: {}\n\n\
-                    Please check your JSON syntax and try again.",
-                    reason
+                    "Invalid JSON format!\n\nError: {reason}\n\n\n                    Please check your JSON syntax and try again."
                 )
             }
             MessageValidationError::InvalidCharacters { characters } => {
                 format!(
-                    "Message contains invalid characters!\n\n\
-                    Invalid characters: {}\n\n\
-                    Please remove these characters and try again.",
-                    characters
+                    "Message contains invalid characters!\n\nInvalid characters: {characters}\n\n\n                    Please remove these characters and try again."
                 )
             }
         }
@@ -142,8 +136,7 @@ impl Validator<str> for MessageEncodingValidator {
         for (i, ch) in input.char_indices() {
             if ch.is_control() && ch != '\n' && ch != '\r' && ch != '\t' {
                 return Err(MessageValidationError::invalid_characters(format!(
-                    "Control character at position {}: {:?}",
-                    i, ch
+                    "Control character at position {i}: {ch:?}"
                 )));
             }
         }

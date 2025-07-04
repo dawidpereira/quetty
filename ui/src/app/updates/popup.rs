@@ -89,7 +89,7 @@ where
         on_confirm: Box<Msg>,
     ) -> Option<Msg> {
         // Store the action to perform on confirmation
-        log::debug!("Storing confirmation action: {:?}", on_confirm);
+        log::debug!("Storing confirmation action: {on_confirm:?}");
         self.set_pending_confirmation_action(Some(on_confirm));
 
         if let Err(e) = self.mount_confirmation_popup(&title, &message) {
@@ -101,7 +101,7 @@ where
     }
 
     fn handle_confirmation_result(&mut self, confirmed: bool) -> Option<Msg> {
-        log::debug!("Handling confirmation result: confirmed={}", confirmed);
+        log::debug!("Handling confirmation result: confirmed={confirmed}");
 
         // Close the confirmation popup
         if let Err(e) = self.unmount_confirmation_popup() {
@@ -112,7 +112,7 @@ where
         if confirmed {
             // Execute the stored action if user confirmed
             if let Some(action) = self.take_pending_confirmation_action() {
-                log::debug!("Executing stored confirmation action: {:?}", action);
+                log::debug!("Executing stored confirmation action: {action:?}");
                 Some(*action)
             } else {
                 log::warn!("No pending confirmation action found");
@@ -143,7 +143,7 @@ where
     }
 
     fn handle_number_input_result(&mut self, value: usize) -> Option<Msg> {
-        log::debug!("Handling number input result: {}", value);
+        log::debug!("Handling number input result: {value}");
 
         // Close the number input popup
         if let Err(e) = self.unmount_number_input_popup() {
@@ -166,7 +166,7 @@ where
     }
 
     fn handle_page_size_result(&mut self, size: usize) -> Option<Msg> {
-        log::debug!("Handling page size result: {}", size);
+        log::debug!("Handling page size result: {size}");
 
         // Close the page size popup
         if let Err(e) = self.unmount_page_size_popup() {
@@ -183,10 +183,7 @@ where
             .len();
 
         log::info!(
-            "Page size changing from {} to {} (currently loaded: {} messages)",
-            current_page_size,
-            new_page_size,
-            current_loaded_count
+            "Page size changing from {current_page_size} to {new_page_size} (currently loaded: {current_loaded_count} messages)"
         );
 
         // Update the page size in the application state
@@ -195,17 +192,12 @@ where
         // Decide whether to use smart backfill or reset based on the change
         if new_page_size > current_page_size && current_loaded_count > 0 {
             log::info!(
-                "Page size increased from {} to {}, using smart backfill to extend current messages",
-                current_page_size,
-                new_page_size
+                "Page size increased from {current_page_size} to {new_page_size}, using smart backfill to extend current messages"
             );
 
             let messages_needed = new_page_size as usize - current_loaded_count;
             if messages_needed > 0 {
-                log::info!(
-                    "Need to load {} more messages for larger page size",
-                    messages_needed
-                );
+                log::info!("Need to load {messages_needed} more messages for larger page size");
 
                 // Update pagination state for new page size first
                 self.queue_state_mut()
@@ -214,10 +206,7 @@ where
 
                 // Load additional messages to fill the page
                 if let Err(e) = self.load_messages_for_backfill(messages_needed as u32) {
-                    log::error!(
-                        "Failed to load additional messages for page size increase: {}",
-                        e
-                    );
+                    log::error!("Failed to load additional messages for page size increase: {e}",);
                     // Fall back to complete reload on error
                     self.queue_state_mut().message_pagination.reset();
                     self.queue_state_mut().messages = None;
@@ -226,8 +215,7 @@ where
             } else {
                 // Already have enough messages, just update pagination bounds
                 log::info!(
-                    "Already have enough messages ({}), just updating pagination bounds",
-                    current_loaded_count
+                    "Already have enough messages ({current_loaded_count}), just updating pagination bounds"
                 );
                 self.queue_state_mut()
                     .message_pagination
@@ -235,7 +223,7 @@ where
 
                 // Update the view to reflect new page boundaries
                 if let Err(e) = self.update_current_page_view() {
-                    log::error!("Failed to update page view after page size change: {}", e);
+                    log::error!("Failed to update page view after page size change: {e}");
                 }
             }
         } else {

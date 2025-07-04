@@ -68,7 +68,7 @@ where
                             log::info!("Connection reset successfully after cancellation");
                         }
                         ServiceBusResponse::Error { error } => {
-                            log::error!("Failed to reset connection after cancellation: {}", error);
+                            log::error!("Failed to reset connection after cancellation: {error}");
                             // Continue anyway to reload queues
                         }
                         _ => {
@@ -86,7 +86,7 @@ where
                         )
                         .await
                         .map_err(|e| {
-                            log::error!("Failed to list queues after cancellation: {}", e);
+                            log::error!("Failed to list queues after cancellation: {e}");
                             AppError::ServiceBus(e.to_string())
                         })?;
 
@@ -94,7 +94,7 @@ where
 
                         // Send loaded queues to update the picker
                         if let Err(e) = tx_to_main.send(Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(queues))) {
-                            log::error!("Failed to send queues loaded message after cancellation: {}", e);
+                            log::error!("Failed to send queues loaded message after cancellation: {e}");
                             return Err(AppError::Component(e.to_string()));
                         }
 
@@ -129,19 +129,16 @@ where
             .stats_manager
             .has_valid_cache(&base_queue_name)
         {
-            log::info!("Using cached stats for queue: {}", base_queue_name);
+            log::info!("Using cached stats for queue: {base_queue_name}");
             // Cache is valid - stats will be displayed immediately in UI
             return;
         }
 
-        log::info!(
-            "No valid cache for queue: {}, loading from API",
-            base_queue_name
-        );
+        log::info!("No valid cache for queue: {base_queue_name}, loading from API");
 
         // No valid cache - load from API in background
         if let Err(e) = self.load_queue_statistics_from_api(&base_queue_name) {
-            log::error!("Failed to load queue statistics: {}", e);
+            log::error!("Failed to load queue statistics: {e}");
         }
     }
 }

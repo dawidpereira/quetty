@@ -43,10 +43,10 @@ pub fn setup_logger() -> Result<(), log::SetLoggerError> {
                 // Only log to the file
                 base_config.chain(file).apply()?;
                 // Print initialization message (will show before TUI starts)
-                println!("Logging to file: {}", file_path);
+                println!("Logging to file: {file_path}");
             }
             Err(e) => {
-                eprintln!("Warning: Failed to open log file '{}': {}", file_path, e);
+                eprintln!("Warning: Failed to open log file '{file_path}': {e}");
                 eprintln!("Continuing without file logging.");
                 // Apply base config without file output
                 base_config.apply()?;
@@ -64,16 +64,10 @@ pub fn setup_logger() -> Result<(), log::SetLoggerError> {
                 // Only log to the file
                 base_config.chain(file).apply()?;
                 // Print initialization message (will show before TUI starts)
-                println!(
-                    "No log file configured. Logging to default file: {}",
-                    default_log_path
-                );
+                println!("No log file configured. Logging to default file: {default_log_path}");
             }
             Err(e) => {
-                eprintln!(
-                    "Warning: Failed to open default log file '{}': {}",
-                    default_log_path, e
-                );
+                eprintln!("Warning: Failed to open default log file '{default_log_path}': {e}");
                 eprintln!("Continuing without file logging.");
                 // Apply base config without file output
                 base_config.apply()?;

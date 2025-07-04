@@ -53,8 +53,7 @@ impl Consumer {
                 Err(_) => {
                     // Timeout occurred - return empty vector instead of error
                     log::debug!(
-                        "receive_messages timed out after {:?}, returning empty result",
-                        timeout
+                        "receive_messages timed out after {timeout:?}, returning empty result"
                     );
                     Ok(Vec::new())
                 }
@@ -132,18 +131,13 @@ impl Consumer {
                     Ok(()) => {
                         completed_count += 1;
                         log::debug!(
-                            "Successfully completed message {} (sequence: {})",
-                            message_id,
-                            sequence
+                            "Successfully completed message {message_id} (sequence: {sequence})"
                         );
                     }
                     Err(e) => {
                         failed_count += 1;
                         log::error!(
-                            "Failed to complete message {} (sequence: {}): {}",
-                            message_id,
-                            sequence,
-                            e
+                            "Failed to complete message {message_id} (sequence: {sequence}): {e}"
                         );
                         // Don't return early - try to complete as many as possible
                     }
@@ -223,18 +217,13 @@ impl Consumer {
                     Ok(()) => {
                         renewed_count += 1;
                         log::debug!(
-                            "Successfully renewed lock for message {} (sequence: {})",
-                            message_id,
-                            sequence
+                            "Successfully renewed lock for message {message_id} (sequence: {sequence})"
                         );
                     }
                     Err(e) => {
                         failed_count += 1;
                         log::warn!(
-                            "Failed to renew lock for message {} (sequence: {}): {}",
-                            message_id,
-                            sequence,
-                            e
+                            "Failed to renew lock for message {message_id} (sequence: {sequence}): {e}"
                         );
                         // Continue trying to renew other locks
                     }

@@ -60,7 +60,7 @@ impl ThemeLoader {
         let theme_path = self
             .themes_dir
             .join(theme_name)
-            .join(format!("{}.toml", flavor_name));
+            .join(format!("{flavor_name}.toml"));
 
         // Validate path
         self.path_validator.validate(&theme_path)?;
@@ -116,7 +116,7 @@ impl ThemeLoader {
 
         for entry in entries {
             let entry = entry
-                .map_err(|e| AppError::Config(format!("Failed to read directory entry: {}", e)))?;
+                .map_err(|e| AppError::Config(format!("Failed to read directory entry: {e}")))?;
 
             let path = entry.path();
             if path.is_dir() {
@@ -147,7 +147,7 @@ impl ThemeLoader {
 
         for entry in entries {
             let entry = entry
-                .map_err(|e| AppError::Config(format!("Failed to read directory entry: {}", e)))?;
+                .map_err(|e| AppError::Config(format!("Failed to read directory entry: {e}")))?;
 
             let path = entry.path();
             if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("toml") {

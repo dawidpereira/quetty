@@ -12,9 +12,9 @@ pub fn create_toggle_message_selection(index: usize) -> Msg {
 pub fn format_queue_display(info: &PaginationInfo) -> String {
     let queue_name = info.queue_name.as_deref().unwrap_or("Unknown Queue");
     match info.queue_type {
-        QueueType::Main => format!("📬 Messages ({}) [Main → d:DLQ]", queue_name),
+        QueueType::Main => format!("📬 Messages ({queue_name}) [Main → d:DLQ]"),
         QueueType::DeadLetter => {
-            format!("💀 Dead Letter Queue ({}) [DLQ → d:Main]", queue_name)
+            format!("💀 Dead Letter Queue ({queue_name}) [DLQ → d:Main]")
         }
     }
 }
@@ -54,7 +54,7 @@ pub fn format_pagination_status(info: &PaginationInfo) -> String {
     let navigation_hints = format_navigation_hints(info);
 
     if info.total_messages_loaded == 0 {
-        format!("No messages available {}", bulk_info)
+        format!("No messages available {bulk_info}")
     } else {
         let base_status = format!(
             "Page {}/{} • {} loaded • {} on page",
@@ -73,12 +73,12 @@ pub fn format_pagination_status(info: &PaginationInfo) -> String {
                         .queue_stats_age_threshold_seconds()
                         as i64;
                     if age < age_threshold {
-                        format!(" • {} in queue", total)
+                        format!(" • {total} in queue")
                     } else {
                         format!(" • ~{} in queue ({}m ago)", total, age / age_threshold)
                     }
                 } else {
-                    format!(" • {} in queue", total)
+                    format!(" • {total} in queue")
                 }
             } else {
                 String::new()
@@ -87,9 +87,6 @@ pub fn format_pagination_status(info: &PaginationInfo) -> String {
             String::new()
         };
 
-        format!(
-            "{}{} {} {}",
-            base_status, queue_info, navigation_hints, bulk_info
-        )
+        format!("{base_status}{queue_info} {navigation_hints} {bulk_info}")
     }
 }

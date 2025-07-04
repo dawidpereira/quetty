@@ -49,7 +49,7 @@ impl ThemePicker {
                 }
             }
             Err(e) => {
-                log::error!("Failed to discover themes: {}", e);
+                log::error!("Failed to discover themes: {e}");
                 // Fallback to default themes with generic icons
                 self.themes = vec![(
                     "quetty".to_string(),
@@ -83,7 +83,7 @@ impl ThemePicker {
                         .first()
                         .map(|(_, theme_icon, _)| theme_icon.as_str())
                         .unwrap_or("🎨");
-                    format!("{} {}", icon, name)
+                    format!("{icon} {name}")
                 })
                 .collect(),
             PickerMode::SelectingFlavor => {
@@ -91,7 +91,7 @@ impl ThemePicker {
                     flavors
                         .iter()
                         .map(|(flavor_name, _, flavor_icon)| {
-                            format!("{} {} ({})", flavor_icon, flavor_name, theme_name)
+                            format!("{flavor_icon} {flavor_name} ({theme_name})")
                         })
                         .collect()
                 } else {
@@ -134,7 +134,7 @@ impl MockComponent for ThemePicker {
             PickerMode::SelectingTheme => "  🎨 Select Theme  ".to_string(),
             PickerMode::SelectingFlavor => {
                 if let Some(theme_name) = self.get_current_theme() {
-                    format!("  🎭 Select {} Flavor  ", theme_name)
+                    format!("  🎭 Select {theme_name} Flavor  ")
                 } else {
                     "  🎭 Select Flavor  ".to_string()
                 }
@@ -185,7 +185,7 @@ impl MockComponent for ThemePicker {
 
     fn state(&self) -> State {
         if let (Some(theme), Some(flavor)) = (self.get_current_theme(), self.get_current_flavor()) {
-            State::One(StateValue::String(format!("{}:{}", theme, flavor)))
+            State::One(StateValue::String(format!("{theme}:{flavor}")))
         } else {
             State::None
         }
@@ -260,7 +260,7 @@ impl Component<Msg, NoUserEvent> for ThemePicker {
                         {
                             CmdResult::Custom(
                                 CMD_RESULT_THEME_SELECTED,
-                                State::One(StateValue::String(format!("{}:{}", theme, flavor))),
+                                State::One(StateValue::String(format!("{theme}:{flavor}"))),
                             )
                         } else {
                             CmdResult::None

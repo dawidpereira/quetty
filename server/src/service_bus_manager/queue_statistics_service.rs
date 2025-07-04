@@ -18,8 +18,7 @@ impl QueueStatisticsService {
                 }
                 Err(e) => {
                     log::warn!(
-                        "Failed to initialize Azure Management API client: {}. Queue statistics will not be available.",
-                        e
+                        "Failed to initialize Azure Management API client: {e}. Queue statistics will not be available.",
                     );
                     None
                 }
@@ -55,11 +54,7 @@ impl QueueStatisticsService {
         };
 
         // Fetch counts from management API for the main queue name
-        log::info!(
-            "Getting statistics for queue: {} (type: {:?})",
-            queue_name,
-            queue_type
-        );
+        log::info!("Getting statistics for queue: {queue_name} (type: {queue_type:?})");
 
         match client.get_queue_counts(queue_name).await {
             Ok((active, dlq)) => {
@@ -68,24 +63,20 @@ impl QueueStatisticsService {
                     QueueType::DeadLetter => dlq,
                 };
                 log::debug!(
-                    "Retrieved counts - active: {}, dlq: {}. Returning {} for {:?} queue",
-                    active,
-                    dlq,
-                    count,
-                    queue_type
+                    "Retrieved counts - active: {active}, dlq: {dlq}. Returning {count} for {queue_type:?} queue"
                 );
                 Some(count)
             }
             Err(ManagementApiError::QueueNotFound(_)) => {
-                log::warn!("Queue not found: {}", queue_name);
+                log::warn!("Queue not found: {queue_name}");
                 None
             }
             Err(ManagementApiError::AuthenticationFailed(msg)) => {
-                log::warn!("Authentication failed for management API: {}", msg);
+                log::warn!("Authentication failed for management API: {msg}");
                 None
             }
             Err(e) => {
-                log::warn!("Failed to get queue statistics: {}", e);
+                log::warn!("Failed to get queue statistics: {e}");
                 None
             }
         }
@@ -112,23 +103,23 @@ impl QueueStatisticsService {
         };
 
         // Fetch counts from management API for the main queue name
-        log::info!("Getting both counts for queue: {}", queue_name);
+        log::info!("Getting both counts for queue: {queue_name}");
 
         match client.get_queue_counts(queue_name).await {
             Ok((active, dlq)) => {
-                log::debug!("Retrieved counts - active: {}, dlq: {}", active, dlq);
+                log::debug!("Retrieved counts - active: {active}, dlq: {dlq}");
                 (Some(active), Some(dlq))
             }
             Err(ManagementApiError::QueueNotFound(_)) => {
-                log::warn!("Queue not found: {}", queue_name);
+                log::warn!("Queue not found: {queue_name}");
                 (None, None)
             }
             Err(ManagementApiError::AuthenticationFailed(msg)) => {
-                log::warn!("Authentication failed for management API: {}", msg);
+                log::warn!("Authentication failed for management API: {msg}");
                 (None, None)
             }
             Err(e) => {
-                log::warn!("Failed to get queue statistics: {}", e);
+                log::warn!("Failed to get queue statistics: {e}");
                 (None, None)
             }
         }

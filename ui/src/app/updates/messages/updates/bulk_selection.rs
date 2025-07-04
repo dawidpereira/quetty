@@ -37,10 +37,7 @@ where
         let global_index = current_page * page_size + index;
 
         log::debug!(
-            "Toggling selection for message: {:?} (local_idx={}, global_idx={})",
-            message_id,
-            index,
-            global_index
+            "Toggling selection for message: {message_id:?} (local_idx={index}, global_idx={global_index})"
         );
 
         let was_in_bulk_mode = self.queue_manager.queue_state.bulk_selection.selection_mode;
@@ -125,7 +122,7 @@ where
         // Also update the messages field to ensure UI consistency
         self.queue_state_mut().messages = Some(current_messages.clone());
 
-        log::info!("Selected all {} messages on current page", message_count);
+        log::info!("Selected all {message_count} messages on current page");
 
         if let Err(e) = self.remount_messages_with_focus(true) {
             self.error_reporter
@@ -158,7 +155,7 @@ where
             .bulk_selection
             .select_all(&all_messages);
 
-        log::info!("Selected all {} loaded messages", all_messages_count);
+        log::info!("Selected all {all_messages_count} loaded messages");
 
         if let Err(e) = self.remount_messages_with_focus(true) {
             self.error_reporter
@@ -182,7 +179,7 @@ where
         }
 
         self.queue_state_mut().bulk_selection.clear_all();
-        log::info!("Cleared {} message selections", selection_count);
+        log::info!("Cleared {selection_count} message selections");
 
         if let Err(e) = self.remount_messages_with_focus(true) {
             self.error_reporter

@@ -212,8 +212,7 @@ impl QueueState {
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| {
                         log::warn!(
-                            "Failed to strip DLQ suffix from queue name: {}",
-                            current_queue_name
+                            "Failed to strip DLQ suffix from queue name: {current_queue_name}"
                         );
                         current_queue_name.clone()
                     })
@@ -223,7 +222,7 @@ impl QueueState {
 
             let target_queue = match new_queue_type {
                 QueueType::Main => base_queue_name,
-                QueueType::DeadLetter => format!("{}/$deadletterqueue", base_queue_name),
+                QueueType::DeadLetter => format!("{base_queue_name}/$deadletterqueue"),
             };
 
             self.pending_queue = Some(target_queue.clone());

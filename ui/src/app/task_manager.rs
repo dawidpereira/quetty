@@ -56,7 +56,7 @@ impl TaskManager {
             let final_result = match result {
                 Ok(operation_result) => operation_result,
                 Err(_) => {
-                    log::warn!("Operation timed out after {:?}", timeout);
+                    log::warn!("Operation timed out after {timeout:?}");
                     Err(AppError::Component(format!(
                         "Operation timed out after {} seconds",
                         timeout.as_secs()
@@ -155,7 +155,7 @@ impl TaskManager {
             let result = tokio::select! {
                 result = operation_future => result,
                 _ = cancel_token.cancelled() => {
-                    log::info!("Operation '{}' cancelled by user", operation_id);
+                    log::info!("Operation '{operation_id}' cancelled by user");
                     Err(AppError::Component("Operation cancelled by user".to_string()))
                 }
             };
@@ -195,7 +195,7 @@ impl TaskManager {
         let mut operations = self.active_operations.lock().unwrap();
         if let Some(token) = operations.remove(operation_id) {
             token.cancel();
-            log::info!("Cancelled operation: {}", operation_id);
+            log::info!("Cancelled operation: {operation_id}");
         }
     }
 
@@ -225,7 +225,7 @@ impl ProgressReporter {
                 message.to_string(),
             )))
         {
-            log::error!("Failed to send progress update: {}", e);
+            log::error!("Failed to send progress update: {e}");
         }
     }
 }

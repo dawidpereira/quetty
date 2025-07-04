@@ -18,41 +18,31 @@ impl ThemeValidationError {
         match self {
             ThemeValidationError::InvalidThemeName { name, reason } => {
                 format!(
-                    "Invalid theme name: '{}'\n\n\
-                    Reason: {}\n\n\
-                    Please use valid theme names (alphanumeric, hyphens, underscores only).",
-                    name, reason
+                    "Invalid theme name: '{name}'\n\n\
+                    Reason: {reason}\n\n\
+                    Please use valid theme names (alphanumeric, hyphens, underscores only)."
                 )
             }
             ThemeValidationError::InvalidFlavorName { flavor, reason } => {
                 format!(
-                    "Invalid flavor name: '{}'\n\n\
-                    Reason: {}\n\n\
-                    Please use valid flavor names (alphanumeric, hyphens, underscores only).",
-                    flavor, reason
+                    "Invalid flavor name: '{flavor}'\n\n\n                    Reason: {reason}\n\n\n                    Please use valid flavor names (alphanumeric, hyphens, underscores only)."
                 )
             }
             ThemeValidationError::InvalidThemePath { path, reason } => {
                 format!(
-                    "Invalid theme path: '{}'\n\n\
-                    Reason: {}\n\n\
-                    Please ensure the path exists and is accessible.",
-                    path, reason
+                    "Invalid theme path: '{path}'\n\n\n                    Reason: {reason}\n\n\n                    Please ensure the path exists and is accessible."
                 )
             }
             ThemeValidationError::MissingMetadata { field } => {
                 format!(
-                    "Missing theme metadata: '{}'\n\n\
-                    Please ensure the theme file contains all required metadata fields.",
-                    field
+                    "Missing theme metadata: '{field}'\n\n\n                    Please ensure the theme file contains all required metadata fields."
                 )
             }
             ThemeValidationError::InvalidFileExtension { path, expected } => {
                 format!(
-                    "Invalid file extension for: '{}'\n\n\
-                    Expected: '{}' files\n\n\
-                    Please ensure theme files have the correct extension.",
-                    path, expected
+                    "Invalid file extension for: '{path}'\n\n\
+                    Expected: '{expected}' files\n\n\
+                    Please ensure theme files have the correct extension."
                 )
             }
         }

@@ -32,7 +32,7 @@ impl QueueInfo {
     }
 
     pub fn dead_letter_queue(base_name: String) -> Self {
-        let dlq_name = format!("{}/$deadletterqueue", base_name);
+        let dlq_name = format!("{base_name}/$deadletterqueue");
         Self::new(dlq_name, QueueType::DeadLetter)
     }
 

@@ -62,7 +62,7 @@ where
 
                 Some(Msg::ForceRedraw)
             } else {
-                log::warn!("Index {} out of bounds for messages", index);
+                log::warn!("Index {index} out of bounds for messages");
                 None
             }
         } else {
@@ -111,16 +111,12 @@ where
         };
 
         let repeat_count = self.queue_manager.queue_state.message_repeat_count;
-        log::info!(
-            "Sending edited message content to queue: {} ({} times)",
-            queue_name,
-            repeat_count
-        );
+        log::info!("Sending edited message content to queue: {queue_name} ({repeat_count} times)");
 
         let loading_message = if repeat_count == 1 {
             "Sending message...".to_string()
         } else {
-            format!("Sending message {} times...", repeat_count)
+            format!("Sending message {repeat_count} times...")
         };
 
         let service_bus_manager = Arc::clone(&self.service_bus_manager);
@@ -146,7 +142,7 @@ where
                         progress.report_progress("Sending message...");
                         Self::send_single_message(service_bus_manager, queue_name, content).await
                     } else {
-                        progress.report_progress(format!("Sending {} messages...", repeat_count));
+                        progress.report_progress(format!("Sending {repeat_count} messages..."));
                         Self::send_multiple_messages(
                             service_bus_manager,
                             queue_name,
@@ -163,7 +159,7 @@ where
                     let success_message = if repeat_count == 1 {
                         "✅ Message sent successfully!".to_string()
                     } else {
-                        format!("✅ {} messages sent successfully!", repeat_count)
+                        format!("✅ {repeat_count} messages sent successfully!")
                     };
 
                     async_operations::send_completion_messages(
@@ -234,11 +230,7 @@ where
             Err(e) => return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(e))),
         };
 
-        log::info!(
-            "Replacing message {} with edited content in queue: {}",
-            message_id,
-            queue_name
-        );
+        log::info!("Replacing message {message_id} with edited content in queue: {queue_name}");
 
         let service_bus_manager = Arc::clone(&self.service_bus_manager);
         let tx_to_main = self.state_manager.tx_to_main.clone();
@@ -280,20 +272,17 @@ where
                             ServiceBusResponse::BulkOperationCompleted { result } => {
                                 if result.successful > 0 {
                                     log::info!(
-                                        "Successfully deleted original message {} in queue: {}",
-                                        message_id_str,
-                                        queue_name
+                                        "Successfully deleted original message {message_id_str} in queue: {queue_name}"
                                     );
                                 } else {
                                     log::warn!(
-                                        "Message {} was not found or could not be deleted (may have been already processed)",
-                                        message_id_str
+                                        "Message {message_id_str} was not found or could not be deleted (may have been already processed)"
                                     );
                                 }
                             }
                             ServiceBusResponse::Error { error } => {
-                                log::error!("Failed to delete original message: {}", error);
-                                return Err(AppError::ServiceBus(format!("Failed to delete original message: {}", error)));
+                                log::error!("Failed to delete original message: {error}");
+                                return Err(AppError::ServiceBus(format!("Failed to delete original message: {error}")));
                             }
                             _ => {
                                 return Err(AppError::ServiceBus("Unexpected response for bulk delete".to_string()));
@@ -302,9 +291,7 @@ where
 
                         progress.report_progress("Message replacement completed!");
                         log::info!(
-                            "Successfully replaced message {} in queue: {}",
-                            message_id_str,
-                            queue_name
+                            "Successfully replaced message {message_id_str} in queue: {queue_name}"
                         );
                         Ok::<(), AppError>(())
                     }
@@ -357,11 +344,11 @@ where
 
         match response {
             ServiceBusResponse::MessageSent { .. } => {
-                log::info!("Successfully sent message to queue: {}", queue_name);
+                log::info!("Successfully sent message to queue: {queue_name}");
                 Ok(())
             }
             ServiceBusResponse::Error { error } => {
-                log::error!("Failed to send message to queue {}: {}", queue_name, error);
+                log::error!("Failed to send message to queue {queue_name}: {error}");
                 Err(AppError::ServiceBus(error.to_string()))
             }
             _ => Err(AppError::ServiceBus(
@@ -379,7 +366,7 @@ where
         content: String,
         count: usize,
     ) -> Result<(), AppError> {
-        log::info!("Sending message {} times to queue: {}", count, queue_name);
+        log::info!("Sending message {count} times to queue: {queue_name}");
 
         let messages: Vec<MessageData> = (0..count)
             .map(|_| MessageData::new(content.clone()))
@@ -409,12 +396,12 @@ where
                         "Failed to send all messages: {} successful, {} failed out of {} requested",
                         stats.successful, stats.failed, count
                     );
-                    log::error!("{}", error_msg);
+                    log::error!("{error_msg}");
                     Err(AppError::ServiceBus(error_msg))
                 }
             }
             ServiceBusResponse::Error { error } => {
-                log::error!("Failed to send messages to queue {}: {}", queue_name, error);
+                log::error!("Failed to send messages to queue {queue_name}: {error}");
                 Err(AppError::ServiceBus(error.to_string()))
             }
             _ => Err(AppError::ServiceBus(

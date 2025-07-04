@@ -32,7 +32,7 @@ impl MockComponent for NamespacePicker {
         let formatted_items: Vec<String> = self
             .namespaces
             .iter()
-            .map(|ns| format!("🏢 {}", ns))
+            .map(|ns| format!("🏢 {ns}"))
             .collect();
 
         // Find maximum width needed for proper alignment

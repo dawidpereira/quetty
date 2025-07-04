@@ -296,10 +296,7 @@ where
             .len();
 
         log::debug!(
-            "Next page request: current_page={}, has_next={}, total_messages={}",
-            current_page,
-            has_next,
-            total_messages
+            "Next page request: current_page={current_page}, has_next={has_next}, total_messages={total_messages}"
         );
 
         // Always call handle_next_page - it will check if it can actually go forward
@@ -331,9 +328,7 @@ where
             .has_previous_page;
 
         log::debug!(
-            "Previous page request: current_page={}, has_previous={}",
-            current_page,
-            has_previous
+            "Previous page request: current_page={current_page}, has_previous={has_previous}"
         );
 
         // Always call handle_previous_page - it will check if it can actually go back
@@ -387,14 +382,12 @@ where
             );
 
             if let Err(e) = self.update_current_page_view() {
-                log::error!("Failed to update page view: {}", e);
+                log::error!("Failed to update page view: {e}");
             }
         } else if !self.queue_state().message_pagination.reached_end_of_queue {
             // Need to load more messages first, then advance page
             log::debug!(
-                "Loading more messages for next page (current: {}, total: {})",
-                current_page,
-                total_messages
+                "Loading more messages for next page (current: {current_page}, total: {total_messages})"
             );
             // Set a flag to indicate we want to advance after loading
             self.queue_state_mut().message_pagination.advance_after_load = true;
@@ -429,7 +422,7 @@ where
             );
 
             if let Err(e) = self.update_current_page_view() {
-                log::error!("Failed to update page view: {}", e);
+                log::error!("Failed to update page view: {e}");
             }
         } else {
             log::debug!("Already at first page, cannot go to previous page");
@@ -467,7 +460,7 @@ where
         self.queue_state_mut().messages = Some(current_page_messages);
 
         if let Err(e) = self.remount_messages() {
-            log::error!("Failed to remount messages: {}", e);
+            log::error!("Failed to remount messages: {e}");
         }
         Ok(())
     }
@@ -513,7 +506,7 @@ where
 
                 // Always send a message to clear loading state, even on error
                 if let Err(e) = &result {
-                    log::error!("Error in backfill task: {}", e);
+                    log::error!("Error in backfill task: {e}");
                     // Send empty message list to clear loading state
                     let _ =
                         tx_to_main.send(crate::components::common::Msg::MessageActivity(
@@ -569,7 +562,7 @@ where
                 messages
             }
             ServiceBusResponse::Error { error } => {
-                log::error!("Failed to load messages for backfill: {}", error);
+                log::error!("Failed to load messages for backfill: {error}");
                 return Err(crate::error::AppError::ServiceBus(error.to_string()));
             }
             _ => {
@@ -583,7 +576,7 @@ where
         if let Err(e) = tx_to_main.send(crate::components::common::Msg::MessageActivity(
             crate::components::common::MessageActivityMsg::NewMessagesLoaded(messages),
         )) {
-            log::error!("Failed to send backfill messages: {}", e);
+            log::error!("Failed to send backfill messages: {e}");
             return Err(crate::error::AppError::Component(e.to_string()));
         }
 
@@ -608,12 +601,9 @@ where
             .stats_manager
             .is_stats_cache_expired(&base_queue_name)
         {
-            log::info!(
-                "Stats cache expired for {}, reloading from API",
-                base_queue_name
-            );
+            log::info!("Stats cache expired for {base_queue_name}, reloading from API");
             if let Err(e) = self.load_queue_statistics_from_api(&base_queue_name) {
-                log::error!("Failed to reload queue statistics: {}", e);
+                log::error!("Failed to reload queue statistics: {e}");
             }
         }
     }

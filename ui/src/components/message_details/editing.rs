@@ -87,11 +87,11 @@ impl MessageDetails {
     /// Copy message content to clipboard
     pub fn copy_to_clipboard(&self) -> Result<(), String> {
         let mut ctx = ClipboardContext::new()
-            .map_err(|e| format!("Failed to create clipboard context: {}", e))?;
+            .map_err(|e| format!("Failed to create clipboard context: {e}"))?;
 
         let content = self.get_edited_content();
         ctx.set_contents(content)
-            .map_err(|e| format!("Failed to set clipboard contents: {}", e))?;
+            .map_err(|e| format!("Failed to set clipboard contents: {e}"))?;
 
         Ok(())
     }

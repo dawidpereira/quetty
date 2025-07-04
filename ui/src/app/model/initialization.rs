@@ -97,7 +97,7 @@ impl Model<CrosstermTerminalAdapter> {
         let connection_string = config
             .servicebus()
             .connection_string()
-            .map_err(|e| AppError::Config(format!("Failed to get connection string: {}", e)))?;
+            .map_err(|e| AppError::Config(format!("Failed to get connection string: {e}")))?;
 
         let azure_service_bus_client = AzureServiceBusClient::new_from_connection_string(
             connection_string,

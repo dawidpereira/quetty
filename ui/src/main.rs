@@ -13,7 +13,7 @@ use std::error::Error as StdError;
 async fn main() -> Result<(), Box<dyn StdError>> {
     // Initialize logger first
     if let Err(e) = logger::setup_logger() {
-        eprintln!("Failed to initialize logger: {}", e);
+        eprintln!("Failed to initialize logger: {e}");
     }
 
     // Initialize application and get configured model

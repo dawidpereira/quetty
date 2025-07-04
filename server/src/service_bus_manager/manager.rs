@@ -85,7 +85,7 @@ impl ServiceBusManager {
 
     /// Execute a service bus command and return the response
     pub async fn execute_command(&self, command: ServiceBusCommand) -> ServiceBusResponse {
-        log::debug!("Executing command: {:?}", command);
+        log::debug!("Executing command: {command:?}");
 
         let result = self.handle_command(command).await;
 
@@ -98,7 +98,7 @@ impl ServiceBusManager {
             Err(error) => {
                 let mut last_error = self.last_error.lock().await;
                 *last_error = Some(error.to_string());
-                log::error!("Command execution failed: {}", error);
+                log::error!("Command execution failed: {error}");
                 ServiceBusResponse::Error { error }
             }
         }
@@ -309,8 +309,7 @@ impl ServiceBusManager {
         .await
         .map_err(|e| {
             ServiceBusError::ConnectionFailed(format!(
-                "Failed to create new ServiceBus client: {}",
-                e
+                "Failed to create new ServiceBus client: {e}"
             ))
         })?;
 

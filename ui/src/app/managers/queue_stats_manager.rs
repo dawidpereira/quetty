@@ -43,7 +43,7 @@ impl QueueStatsManager {
     /// Invalidate stats cache for specific queue
     pub fn invalidate_stats_cache_for_queue(&mut self, queue_name: &str) {
         if self.stats_cache.remove(queue_name).is_some() {
-            log::debug!("Invalidated stats cache for queue: {}", queue_name);
+            log::debug!("Invalidated stats cache for queue: {queue_name}");
         }
     }
 

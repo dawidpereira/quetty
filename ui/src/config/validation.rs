@@ -41,64 +41,39 @@ impl ConfigValidationError {
             } => {
                 format!(
                     "Page size out of range!\n\n\
-                    Your configured value: {}\n\
-                    Valid range: {} - {}\n\n\
-                    Please update page_size in config.toml to a value between {} and {}.",
-                    configured, min_limit, max_limit, min_limit, max_limit
+                    Your configured value: {configured}\n\
+                    Valid range: {min_limit} - {max_limit}\n\n\
+                    Please update page_size in config.toml to a value between {min_limit} and {max_limit}."
                 )
             }
             ConfigValidationError::MaxMessagesToProcess { configured, limit } => {
                 format!(
-                    "Maximum messages to process too high!\n\n\
-                    Your configured value: {}\n\
-                    Recommended maximum: {}\n\n\
-                    Please update max_messages_to_process in config.toml.",
-                    configured, limit
+                    "Maximum messages to process too high!\n\n\n                    Your configured value: {configured}\n\n\n                    Recommended maximum: {limit}\n\n\n                    Please update max_messages_to_process in config.toml."
                 )
             }
             ConfigValidationError::BulkChunkSize { configured, limit } => {
                 format!(
-                    "Bulk chunk size too high!\n\n\
-                    Your configured value: {}\n\
-                    Recommended maximum: {}\n\n\
-                    Please update bulk_chunk_size in config.toml.",
-                    configured, limit
+                    "Bulk chunk size too high!\n\n\n                    Your configured value: {configured}\n\n\n                    Recommended maximum: {limit}\n\n\n                    Please update bulk_chunk_size in config.toml."
                 )
             }
             ConfigValidationError::BatchSize { configured, limit } => {
                 format!(
-                    "Bulk batch size configuration error!\n\n\
-                    Your configured value: {}\n\
-                    Azure Service Bus limit: {}\n\n\
-                    Please update max_batch_size in config.toml to {} or less.",
-                    configured, limit, limit
+                    "Bulk batch size configuration error!\n\n\n                    Your configured value: {configured}\n\n                    Azure Service Bus limit: {limit}\n\n\n                    Please update max_batch_size in config.toml to {limit} or less."
                 )
             }
             ConfigValidationError::OperationTimeout { configured, limit } => {
                 format!(
-                    "Operation timeout too high!\n\n\
-                    Your configured value: {} seconds\n\
-                    Recommended maximum: {} seconds\n\n\
-                    Please update operation_timeout_secs in config.toml.",
-                    configured, limit
+                    "Operation timeout too high!\n\n\n                    Your configured value: {configured} seconds\n\n\n                    Recommended maximum: {limit} seconds\n\n\n                    Please update operation_timeout_secs in config.toml."
                 )
             }
             ConfigValidationError::BulkProcessingTime { configured, limit } => {
                 format!(
-                    "Bulk processing time too high!\n\n\
-                    Your configured value: {} seconds\n\
-                    Recommended maximum: {} seconds\n\n\
-                    Please update bulk_processing_time_secs in config.toml.",
-                    configured, limit
+                    "Bulk processing time too high!\n\n\n                    Your configured value: {configured} seconds\n\n                    Recommended maximum: {limit} seconds\n\n\n                    Please update bulk_processing_time_secs in config.toml."
                 )
             }
             ConfigValidationError::LockTimeout { configured, limit } => {
                 format!(
-                    "Lock timeout too high!\n\n\
-                    Your configured value: {} seconds\n\
-                    Recommended maximum: {} seconds\n\n\
-                    Please update lock_timeout_secs in config.toml.",
-                    configured, limit
+                    "Lock timeout too high!\n\n\n                    Your configured value: {configured} seconds\n\n                    Recommended maximum: {limit} seconds\n\n\n                    Please update lock_timeout_secs in config.toml."
                 )
             }
             ConfigValidationError::QueueStatsCacheTtl {
@@ -107,11 +82,7 @@ impl ConfigValidationError {
                 max_limit,
             } => {
                 format!(
-                    "Queue statistics cache TTL out of range!\n\n\
-                    Your configured value: {} seconds\n\
-                    Valid range: {} - {} seconds\n\n\
-                    Please update queue_stats_cache_ttl_seconds in config.toml to a value between {} and {} seconds.",
-                    configured, min_limit, max_limit, min_limit, max_limit
+                    "Queue statistics cache TTL out of range!\n\nYour configured value: {configured} seconds\nValid range: {min_limit} - {max_limit} seconds\n\nPlease update queue_stats_cache_ttl_seconds in config.toml to a value between {min_limit} and {max_limit} seconds."
                 )
             }
         }

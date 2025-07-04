@@ -155,8 +155,7 @@ impl<T: TerminalAdapter> BulkOperationSetup<T> {
             let required_name = queue_type_display_name(required_type);
 
             return Err(AppError::State(format!(
-                "Operation not allowed: currently in {} but operation requires {}",
-                current_name, required_name
+                "Operation not allowed: currently in {current_name} but operation requires {required_name}"
             )));
         }
 
@@ -260,32 +259,26 @@ impl<T: TerminalAdapter> ValidatedBulkOperation<T> {
     pub fn get_loading_message(&self) -> String {
         let count = self.message_ids.len();
         match &self.operation_type {
-            BulkOperationType::Delete => format!("Deleting {} messages...", count),
+            BulkOperationType::Delete => format!("Deleting {count} messages..."),
             BulkOperationType::ResendFromDlq {
                 delete_source: true,
             } => {
-                format!(
-                    "Bulk resending {} messages from DLQ to main queue...",
-                    count
-                )
+                format!("Bulk resending {count} messages from DLQ to main queue...")
             }
             BulkOperationType::ResendFromDlq {
                 delete_source: false,
             } => {
-                format!(
-                    "Bulk copying {} messages from DLQ to main queue (keeping in DLQ)...",
-                    count
-                )
+                format!("Bulk copying {count} messages from DLQ to main queue (keeping in DLQ)...")
             }
             BulkOperationType::SendToDlq {
                 delete_source: true,
             } => {
-                format!("Bulk moving {} messages from main queue to DLQ...", count)
+                format!("Bulk moving {count} messages from main queue to DLQ...")
             }
             BulkOperationType::SendToDlq {
                 delete_source: false,
             } => {
-                format!("Bulk copying {} messages from main queue to DLQ...", count)
+                format!("Bulk copying {count} messages from main queue to DLQ...")
             }
         }
     }
@@ -316,7 +309,7 @@ impl<T: TerminalAdapter> ValidatedBulkOperation<T> {
             }
             BulkOperationType::SendToDlq { .. } => {
                 // Add DLQ suffix to current queue name
-                Ok(format!("{}/$deadletterqueue", current_queue_name))
+                Ok(format!("{current_queue_name}/$deadletterqueue"))
             }
         }
     }
@@ -427,8 +420,7 @@ impl<T: TerminalAdapter> ValidatedBulkOperation<T> {
         // If we found positions in loaded data, use that
         if max_loaded_position > 0 {
             log::info!(
-                "Found selected messages in loaded data, highest position: {}",
-                max_loaded_position
+                "Found selected messages in loaded data, highest position: {max_loaded_position}"
             );
             return max_loaded_position;
         }
@@ -481,9 +473,7 @@ pub trait BulkOperationValidation<T: TerminalAdapter> {
     /// Log operation warning about message order
     fn log_message_order_warning(message_count: usize, operation_name: &str) {
         log::warn!(
-            "Bulk {} for {} messages may affect message order. Messages may not be processed in their original sequence.",
-            operation_name,
-            message_count
+            "Bulk {operation_name} for {message_count} messages may affect message order. Messages may not be processed in their original sequence."
         );
     }
 }

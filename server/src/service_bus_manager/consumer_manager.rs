@@ -50,7 +50,7 @@ impl ConsumerManager {
         if let Some(consumer) = &self.current_consumer {
             log::debug!("Disposing existing consumer");
             if let Err(e) = consumer.lock().await.dispose().await {
-                log::error!("Failed to dispose existing consumer: {}", e);
+                log::error!("Failed to dispose existing consumer: {e}");
                 // Continue anyway - we'll create a new one
             }
         }
@@ -207,21 +207,14 @@ impl ConsumerManager {
         let max_position = max_position.unwrap_or(self.batch_config.max_messages_to_process());
 
         log::info!(
-            "Searching for message {} (sequence: {}) in batches of {} up to position {}",
-            message_id,
-            sequence_number,
-            batch_size,
-            max_position
+            "Searching for message {message_id} (sequence: {sequence_number}) in batches of {batch_size} up to position {max_position}"
         );
 
         let mut processed_count = 0;
 
         while processed_count < max_position {
             log::debug!(
-                "Search batch: fetching {} messages (processed: {}/{})",
-                batch_size,
-                processed_count,
-                max_position
+                "Search batch: fetching {batch_size} messages (processed: {processed_count}/{max_position})"
             );
 
             let messages = {
@@ -246,10 +239,7 @@ impl ConsumerManager {
 
                 if msg_id == message_id && msg_seq == sequence_number {
                     log::info!(
-                        "Found target message {} (sequence: {}) after processing {} messages",
-                        message_id,
-                        sequence_number,
-                        processed_count
+                        "Found target message {message_id} (sequence: {sequence_number}) after processing {processed_count} messages"
                     );
                     return Ok(Some(message));
                 }
@@ -257,17 +247,13 @@ impl ConsumerManager {
                 // Abandon non-target messages to keep the queue flowing
                 let mut consumer_guard = consumer.lock().await;
                 if let Err(e) = consumer_guard.abandon_message(&message).await {
-                    log::warn!("Failed to abandon non-target message: {}", e);
+                    log::warn!("Failed to abandon non-target message: {e}");
                 }
             }
         }
 
         log::info!(
-            "Message {} (sequence: {}) not found after processing {} messages (max: {})",
-            message_id,
-            sequence_number,
-            processed_count,
-            max_position
+            "Message {message_id} (sequence: {sequence_number}) not found after processing {processed_count} messages (max: {max_position})"
         );
         Ok(None)
     }
@@ -277,7 +263,7 @@ impl ConsumerManager {
         if let Some(consumer) = self.current_consumer.take() {
             log::info!("Disposing consumer for queue: {:?}", self.current_queue);
             consumer.lock().await.dispose().await.map_err(|e| {
-                ServiceBusError::InternalError(format!("Failed to dispose consumer: {}", e))
+                ServiceBusError::InternalError(format!("Failed to dispose consumer: {e}"))
             })?;
         }
         self.current_queue = None;

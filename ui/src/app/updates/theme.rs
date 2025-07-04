@@ -18,7 +18,7 @@ where
     }
 
     fn handle_theme_selected(&mut self, theme_name: String, flavor_name: String) -> Option<Msg> {
-        log::info!("Switching to theme: {} ({})", theme_name, flavor_name);
+        log::info!("Switching to theme: {theme_name} ({flavor_name})");
 
         // Create theme config
         let theme_config = ThemeConfig {
@@ -66,11 +66,7 @@ where
         // Force a complete redraw to apply the new theme
         self.set_redraw(true);
 
-        log::info!(
-            "Successfully switched to theme: {} ({})",
-            theme_name,
-            flavor_name
-        );
+        log::info!("Successfully switched to theme: {theme_name} ({flavor_name})");
         None
     }
 

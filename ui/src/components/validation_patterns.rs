@@ -83,12 +83,12 @@ impl CommonValidationError {
     /// Get user-friendly error message
     pub fn user_message(&self) -> String {
         match self {
-            Self::Empty { field_name } => format!("{} cannot be empty", field_name),
+            Self::Empty { field_name } => format!("{field_name} cannot be empty"),
             Self::InvalidFormat {
                 field_name,
                 expected_format,
             } => {
-                format!("{} must be in {} format", field_name, expected_format)
+                format!("{field_name} must be in {expected_format} format")
             }
             Self::OutOfRange {
                 field_name,
@@ -96,11 +96,11 @@ impl CommonValidationError {
                 max,
             } => match (min, max) {
                 (Some(min), Some(max)) => {
-                    format!("{} must be between {} and {}", field_name, min, max)
+                    format!("{field_name} must be between {min} and {max}")
                 }
-                (Some(min), None) => format!("{} must be at least {}", field_name, min),
-                (None, Some(max)) => format!("{} must be at most {}", field_name, max),
-                (None, None) => format!("{} is out of range", field_name),
+                (Some(min), None) => format!("{field_name} must be at least {min}"),
+                (None, Some(max)) => format!("{field_name} must be at most {max}"),
+                (None, None) => format!("{field_name} is out of range"),
             },
             Self::TooLong {
                 field_name,
@@ -108,8 +108,7 @@ impl CommonValidationError {
                 actual_length,
             } => {
                 format!(
-                    "{} is too long ({} characters, maximum {})",
-                    field_name, actual_length, max_length
+                    "{field_name} is too long ({actual_length} characters, maximum {max_length})"
                 )
             }
             Self::TooShort {
@@ -118,8 +117,7 @@ impl CommonValidationError {
                 actual_length,
             } => {
                 format!(
-                    "{} is too short ({} characters, minimum {})",
-                    field_name, actual_length, min_length
+                    "{field_name} is too short ({actual_length} characters, minimum {min_length})"
                 )
             }
         }

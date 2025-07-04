@@ -26,7 +26,7 @@ pub fn send_completion_messages(
 ) {
     // Always stop loading first
     if let Err(e) = tx_to_main.send(Msg::LoadingActivity(LoadingActivityMsg::Stop)) {
-        log::error!("Failed to send loading stop message: {}", e);
+        log::error!("Failed to send loading stop message: {e}");
     }
 
     match result {
@@ -34,18 +34,18 @@ pub fn send_completion_messages(
             if let Err(e) = tx_to_main.send(Msg::PopupActivity(PopupActivityMsg::ShowSuccess(
                 success_msg.to_string(),
             ))) {
-                log::error!("Failed to send success message: {}", e);
+                log::error!("Failed to send success message: {e}");
             }
 
             if let Err(e) = tx_to_main.send(Msg::MessageActivity(
                 MessageActivityMsg::MessagesSentSuccessfully,
             )) {
-                log::error!("Failed to send messages sent successfully message: {}", e);
+                log::error!("Failed to send messages sent successfully message: {e}");
             }
         }
         Err(e) => {
             if let Err(err) = tx_to_main.send(Msg::PopupActivity(PopupActivityMsg::ShowError(e))) {
-                log::error!("Failed to send error message: {}", err);
+                log::error!("Failed to send error message: {err}");
             }
         }
     }

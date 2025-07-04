@@ -49,7 +49,7 @@ where
 
                 // Always send a message to clear loading state, even on error
                 if let Err(e) = &result {
-                    log::error!("Error in message loading task: {}", e);
+                    log::error!("Error in message loading task: {e}");
                     // Send empty message list to clear loading state
                     let _ = Self::send_loaded_messages(&tx_to_main, Vec::new());
                 }
@@ -142,7 +142,7 @@ where
                 messages,
             )))
             .map_err(|e| {
-                log::error!("Failed to send new messages loaded message: {}", e);
+                log::error!("Failed to send new messages loaded message: {e}");
                 AppError::Component(e.to_string())
             })?;
         Ok(())

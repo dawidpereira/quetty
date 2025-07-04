@@ -50,16 +50,15 @@ impl BulkDeleter {
         // Use max_position for small batch logic only
         let max_index = params.max_position;
 
-        log::info!("Maximum target index: {}", max_index);
+        log::info!("Maximum target index: {max_index}");
 
         // Check if position is too high
         let max_allowed_index = self.config.max_messages_to_process();
         if max_index > max_allowed_index {
             let error_msg = format!(
-                "Index {} is too high. Maximum allowed index is {}.",
-                max_index, max_allowed_index
+                "Index {max_index} is too high. Maximum allowed index is {max_allowed_index}."
             );
-            log::error!("{}", error_msg);
+            log::error!("{error_msg}");
             result.add_failure(error_msg);
             return Ok(result);
         }
@@ -92,10 +91,7 @@ impl BulkDeleter {
         batch_size: usize,
         result: &mut BulkOperationResult,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        log::info!(
-            "Small batch mode: fetching {} messages in single batch",
-            batch_size
-        );
+        log::info!("Small batch mode: fetching {batch_size} messages in single batch");
 
         let target_map: HashMap<String, MessageIdentifier> = targets
             .into_iter()
@@ -126,8 +122,7 @@ impl BulkDeleter {
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let batch_size = self.config.bulk_chunk_size();
         log::info!(
-            "Large batch mode: scanning in batches of {} using sequence-based stopping",
-            batch_size
+            "Large batch mode: scanning in batches of {batch_size} using sequence-based stopping"
         );
 
         // Setup operation state
@@ -188,9 +183,7 @@ impl BulkDeleter {
         lock_refresh_handle.abort();
 
         log::info!(
-            "Large batch deletion completed: processed {} messages, found {} targets",
-            processed_count,
-            found_targets
+            "Large batch deletion completed: processed {processed_count} messages, found {found_targets} targets"
         );
 
         Ok(())
@@ -218,7 +211,7 @@ impl BulkDeleter {
             .map(|target| (target.id.clone(), target))
             .collect();
 
-        log::info!("Target max sequence number: {}", target_max_sequence);
+        log::info!("Target max sequence number: {target_max_sequence}");
 
         // Start lock refresh task
         let lock_refresh_handle = self.start_lock_refresh_task(context, &[]).await;
@@ -249,13 +242,7 @@ impl BulkDeleter {
         pending_messages: usize,
     ) {
         log::info!(
-            "Bulk delete progress: processed: {} | highest_sequence: {} / target: {} | found_targets: {} / {} | pending_locked: {}",
-            processed_count,
-            highest_sequence_seen,
-            target_max_sequence,
-            found_targets,
-            total_targets,
-            pending_messages
+            "Bulk delete progress: processed: {processed_count} | highest_sequence: {highest_sequence_seen} / target: {target_max_sequence} | found_targets: {found_targets} / {total_targets} | pending_locked: {pending_messages}"
         );
     }
 
@@ -384,8 +371,7 @@ impl BulkDeleter {
                             if let Err(abandon_err) = self.abandon_message(context, &message).await
                             {
                                 log::warn!(
-                                    "Failed to abandon message after delete failure: {}",
-                                    abandon_err
+                                    "Failed to abandon message after delete failure: {abandon_err}"
                                 );
                             }
                         }
@@ -410,7 +396,7 @@ impl BulkDeleter {
             );
             for message in pending_messages {
                 if let Err(e) = self.abandon_message(context, &message).await {
-                    log::warn!("Failed to abandon non-target message: {}", e);
+                    log::warn!("Failed to abandon non-target message: {e}");
                 }
             }
         }
@@ -475,8 +461,7 @@ impl BulkDeleter {
                             if let Err(abandon_err) = self.abandon_message(context, &message).await
                             {
                                 log::warn!(
-                                    "Failed to abandon message after delete failure: {}",
-                                    abandon_err
+                                    "Failed to abandon message after delete failure: {abandon_err}"
                                 );
                             }
                         }
@@ -484,13 +469,13 @@ impl BulkDeleter {
                 } else {
                     // Not a target - abandon it (this is small batch mode, so immediate abandon is OK)
                     if let Err(e) = self.abandon_message(context, &message).await {
-                        log::warn!("Failed to abandon non-target message {:?}: {}", msg_id, e);
+                        log::warn!("Failed to abandon non-target message {msg_id:?}: {e}");
                     }
                 }
             } else {
                 // Message has no ID - abandon it
                 if let Err(e) = self.abandon_message(context, &message).await {
-                    log::warn!("Failed to abandon message with no ID: {}", e);
+                    log::warn!("Failed to abandon message with no ID: {e}");
                 }
             }
         }
@@ -512,7 +497,7 @@ impl BulkDeleter {
         )
         .await?;
 
-        log::debug!("Receiving up to {} messages", count);
+        log::debug!("Receiving up to {count} messages");
 
         match consumer
             .receive_messages_with_timeout(
@@ -525,7 +510,7 @@ impl BulkDeleter {
                 log::debug!("Received {} messages", messages.len());
                 Ok(messages)
             }
-            Err(e) => Err(format!("Failed to receive messages: {}", e).into()),
+            Err(e) => Err(format!("Failed to receive messages: {e}").into()),
         }
     }
 
@@ -546,7 +531,7 @@ impl BulkDeleter {
         consumer
             .complete_message(message)
             .await
-            .map_err(|e| format!("Failed to complete message: {}", e).into())
+            .map_err(|e| format!("Failed to complete message: {e}").into())
     }
 
     /// Abandon a message (put it back in the queue)
@@ -566,7 +551,7 @@ impl BulkDeleter {
         consumer
             .abandon_message(message)
             .await
-            .map_err(|e| format!("Failed to abandon message: {}", e).into())
+            .map_err(|e| format!("Failed to abandon message: {e}").into())
     }
 }
 
