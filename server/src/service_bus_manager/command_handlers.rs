@@ -85,11 +85,7 @@ impl QueueCommandHandler {
         queue_name: String,
         queue_type: QueueType,
     ) -> ServiceBusResult<ServiceBusResponse> {
-        log::debug!(
-            "Getting real statistics for queue: {} (type: {:?})",
-            queue_name,
-            queue_type
-        );
+        log::debug!("Getting real statistics for queue: {queue_name} (type: {queue_type:?})");
 
         let retrieved_at = chrono::Utc::now();
 
@@ -100,10 +96,7 @@ impl QueueCommandHandler {
             .await;
 
         log::debug!(
-            "Retrieved stats for queue '{}': active={:?}, dlq={:?}",
-            queue_name,
-            active_count,
-            dlq_count
+            "Retrieved stats for queue '{queue_name}': active={active_count:?}, dlq={dlq_count:?}"
         );
 
         Ok(ServiceBusResponse::QueueStatistics {
@@ -239,7 +232,7 @@ impl BulkCommandHandler {
         }
 
         // Log which queue we're deleting from for debugging
-        log::info!("Bulk delete operating on queue: {}", queue_name);
+        log::info!("Bulk delete operating on queue: {queue_name}");
 
         match self
             .bulk_handler
@@ -256,10 +249,9 @@ impl BulkCommandHandler {
                 Ok(ServiceBusResponse::BulkOperationCompleted { result })
             }
             Err(e) => {
-                log::error!("Bulk delete failed: {}", e);
+                log::error!("Bulk delete failed: {e}");
                 Err(ServiceBusError::BulkOperationFailed(format!(
-                    "Bulk delete failed: {}",
-                    e
+                    "Bulk delete failed: {e}"
                 )))
             }
         }
@@ -340,16 +332,14 @@ impl BulkCommandHandler {
                 {
                     Ok(msgs) => msgs,
                     Err(e) => {
-                        log::error!("Receive error during bulk send: {}", e);
+                        log::error!("Receive error during bulk send: {e}");
                         break;
                     }
                 };
 
                 if batch.is_empty() {
                     log::debug!(
-                        "Receive batch empty after processing {} messages (highest_sequence: {})",
-                        processed_count,
-                        highest_sequence_seen
+                        "Receive batch empty after processing {processed_count} messages (highest_sequence: {highest_sequence_seen})"
                     );
                     break;
                 }
@@ -513,7 +503,7 @@ impl BulkCommandHandler {
             );
             for msg in pending_non_targets.into_iter() {
                 if let Err(e) = consumer.abandon_message(&msg).await {
-                    log::warn!("Failed to abandon non-target message after scan: {}", e);
+                    log::warn!("Failed to abandon non-target message after scan: {e}");
                 }
             }
         }
@@ -556,9 +546,7 @@ impl BulkCommandHandler {
         let stats = producer_mgr
             .send_raw_messages(&target_queue, raw_vec, repeat_count)
             .await
-            .map_err(|e| {
-                ServiceBusError::BulkOperationFailed(format!("Bulk send failed: {}", e))
-            })?;
+            .map_err(|e| ServiceBusError::BulkOperationFailed(format!("Bulk send failed: {e}")))?;
 
         Ok(ServiceBusResponse::MessagesSent {
             queue_name: target_queue,

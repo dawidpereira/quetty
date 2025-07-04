@@ -18,12 +18,12 @@ where
     T: TerminalAdapter,
 {
     pub fn mount_loading_indicator(&mut self, message: &str) -> AppResult<()> {
-        log::debug!("Mounting loading indicator with message: {}", message);
+        log::debug!("Mounting loading indicator with message: {message}");
 
         // Unmount existing loading indicator if any
         if self.app.mounted(&ComponentId::LoadingIndicator) {
             if let Err(e) = self.app.umount(&ComponentId::LoadingIndicator) {
-                log::error!("Failed to unmount loading indicator: {}", e);
+                log::error!("Failed to unmount loading indicator: {e}");
             }
         }
 
@@ -43,7 +43,7 @@ where
 
     /// Mount error popup and give focus to it
     pub fn mount_error_popup(&mut self, error: &AppError) -> AppResult<()> {
-        log::error!("Displaying error popup: {}", error);
+        log::error!("Displaying error popup: {error}");
 
         self.app.remount_with_state(
             ComponentId::ErrorPopup,
@@ -78,7 +78,7 @@ where
 
     /// Mount success popup and give focus to it
     pub fn mount_success_popup(&mut self, message: &str) -> AppResult<()> {
-        log::info!("Displaying success popup: {}", message);
+        log::info!("Displaying success popup: {message}");
 
         self.app.remount_with_state(
             ComponentId::SuccessPopup,

@@ -36,17 +36,14 @@ fn load_config() -> ConfigLoadResult {
         Ok(config) => config,
         Err(e) => {
             return ConfigLoadResult::LoadError(format!(
-                "Configuration loading failed: {}. Please check your config.toml file and environment variables.",
-                e
+                "Configuration loading failed: {e}. Please check your config.toml file and environment variables."
             ));
         }
     };
 
     match config.try_deserialize::<AppConfig>() {
         Ok(app_config) => ConfigLoadResult::Success(Box::new(app_config)),
-        Err(e) => {
-            ConfigLoadResult::DeserializeError(format!("Failed to deserialize config: {}", e))
-        }
+        Err(e) => ConfigLoadResult::DeserializeError(format!("Failed to deserialize config: {e}")),
     }
 }
 
@@ -58,10 +55,10 @@ pub fn get_config_or_panic() -> &'static AppConfig {
     match get_config() {
         ConfigLoadResult::Success(config) => config,
         ConfigLoadResult::LoadError(e) => {
-            panic!("Failed to load config: {}", e);
+            panic!("Failed to load config: {e}");
         }
         ConfigLoadResult::DeserializeError(e) => {
-            panic!("Failed to deserialize config: {}", e);
+            panic!("Failed to deserialize config: {e}");
         }
     }
 }

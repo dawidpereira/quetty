@@ -209,7 +209,7 @@ impl ThemeManager {
     pub fn switch_theme(&mut self, theme_name: &str, flavor_name: &str) -> AppResult<()> {
         let theme = self.loader.load_theme(theme_name, flavor_name)?;
         self.current_theme = Arc::new(theme);
-        log::info!("Switched to theme: {} ({})", theme_name, flavor_name);
+        log::info!("Switched to theme: {theme_name} ({flavor_name})");
         Ok(())
     }
 
@@ -249,7 +249,7 @@ impl ThemeManager {
                         flavor_data.push((flavor_display, theme_icon, flavor_icon));
                     }
                     Err(e) => {
-                        log::warn!("Failed to load theme {}:{}: {}", theme_name, flavor_name, e);
+                        log::warn!("Failed to load theme {theme_name}:{flavor_name}: {e}");
                         // Use fallback values
                         let theme_icon = self.get_default_theme_icon(&theme_name);
                         let flavor_icon = self.get_default_flavor_icon(&flavor_name);

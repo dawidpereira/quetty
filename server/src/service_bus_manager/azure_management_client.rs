@@ -83,8 +83,7 @@ impl AzureManagementClient {
         match self.azure_ad_config.get_azure_ad_token().await {
             Ok(token) => Ok(token),
             Err(e) => Err(ManagementApiError::AuthenticationFailed(format!(
-                "Failed to get Azure AD token: {}",
-                e
+                "Failed to get Azure AD token: {e}"
             ))),
         }
     }
@@ -144,7 +143,7 @@ impl AzureManagementClient {
                             | ManagementApiError::QueueNotFound(_)
                             | ManagementApiError::NotConfigured
                             | ManagementApiError::MissingConfiguration(_) => {
-                                log::debug!("Non-retryable error, failing immediately: {}", err);
+                                log::debug!("Non-retryable error, failing immediately: {err}");
                                 return Err(last_error.unwrap());
                             }
                             _ => {}
@@ -174,7 +173,7 @@ impl AzureManagementClient {
         queue_name: &str,
     ) -> Result<(u64, u64), ManagementApiError> {
         // Reuse existing logic to fetch queue properties
-        log::debug!("Getting queue counts for: {}", queue_name);
+        log::debug!("Getting queue counts for: {queue_name}");
 
         // Get access token for management API
         let access_token = self.get_management_api_token().await?;
@@ -186,21 +185,16 @@ impl AzureManagementClient {
             self.subscription_id, self.resource_group_name, self.namespace_name, encoded_queue_name
         );
 
-        log::debug!(
-            "Requesting queue properties from Azure Management API: {}",
-            url
-        );
+        log::debug!("Requesting queue properties from Azure Management API: {url}");
 
         let response = self
             .http_client
             .get(&url)
-            .header("Authorization", format!("Bearer {}", access_token))
+            .header("Authorization", format!("Bearer {access_token}"))
             .header("Content-Type", "application/json")
             .send()
             .await
-            .map_err(|e| {
-                ManagementApiError::RequestFailed(format!("HTTP request failed: {}", e))
-            })?;
+            .map_err(|e| ManagementApiError::RequestFailed(format!("HTTP request failed: {e}")))?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -211,18 +205,17 @@ impl AzureManagementClient {
             }
 
             return Err(ManagementApiError::RequestFailed(format!(
-                "API request failed with status {}: {}",
-                status, error_text
+                "API request failed with status {status}: {error_text}"
             )));
         }
 
         let response_text = response.text().await.map_err(|e| {
-            ManagementApiError::RequestFailed(format!("Failed to read response: {}", e))
+            ManagementApiError::RequestFailed(format!("Failed to read response: {e}"))
         })?;
 
         let queue_response: QueuePropertiesResponse = serde_json::from_str(&response_text)
             .map_err(|e| {
-                ManagementApiError::JsonParsingFailed(format!("Failed to parse JSON: {}", e))
+                ManagementApiError::JsonParsingFailed(format!("Failed to parse JSON: {e}"))
             })?;
 
         let active_raw = queue_response.properties.count_details.active_message_count;

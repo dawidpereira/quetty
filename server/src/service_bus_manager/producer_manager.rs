@@ -52,12 +52,11 @@ impl ProducerManager {
             .await
             .map_err(|e| {
                 ServiceBusError::MessageSendFailed(format!(
-                    "Failed to send message to queue {}: {}",
-                    queue_name, e
+                    "Failed to send message to queue {queue_name}: {e}"
                 ))
             })?;
 
-        log::info!("Successfully sent message to queue: {}", queue_name);
+        log::info!("Successfully sent message to queue: {queue_name}");
         Ok(())
     }
 
@@ -89,7 +88,7 @@ impl ProducerManager {
             match self.create_service_bus_message(message) {
                 Ok(sb_message) => service_bus_messages.push(sb_message),
                 Err(e) => {
-                    log::error!("Failed to create ServiceBusMessage: {}", e);
+                    log::error!("Failed to create ServiceBusMessage: {e}");
                     stats.failed += 1;
                 }
             }
@@ -155,7 +154,7 @@ impl ProducerManager {
                 match self.create_service_bus_message(message) {
                     Ok(sb_message) => all_messages.push(sb_message),
                     Err(e) => {
-                        log::error!("Failed to create ServiceBusMessage: {}", e);
+                        log::error!("Failed to create ServiceBusMessage: {e}");
                         stats.failed += 1;
                     }
                 }
@@ -214,7 +213,7 @@ impl ProducerManager {
             // For DLQ operations, we need to handle this differently
             // We cannot directly send to DLQ - this needs to be done via dead_letter_message operation
             // on received messages, not by sending new messages
-            log::error!("Cannot send messages directly to DLQ: {}", queue_name);
+            log::error!("Cannot send messages directly to DLQ: {queue_name}");
             stats.failed = total_messages;
             return Ok(stats);
         }
@@ -292,15 +291,14 @@ impl ProducerManager {
         }
 
         // Create new producer
-        log::debug!("Creating new producer for queue: {}", queue_name);
+        log::debug!("Creating new producer for queue: {queue_name}");
         let mut client = self.service_bus_client.lock().await;
         let producer = client
             .create_producer_for_queue(queue_name, ServiceBusSenderOptions::default())
             .await
             .map_err(|e| {
                 ServiceBusError::ProducerCreationFailed(format!(
-                    "Failed to create producer for queue {}: {}",
-                    queue_name, e
+                    "Failed to create producer for queue {queue_name}: {e}"
                 ))
             })?;
 
@@ -308,7 +306,7 @@ impl ProducerManager {
         self.producers
             .insert(queue_name.to_string(), Arc::clone(&producer_arc));
 
-        log::info!("Successfully created producer for queue: {}", queue_name);
+        log::info!("Successfully created producer for queue: {queue_name}");
         Ok(producer_arc)
     }
 
@@ -341,11 +339,10 @@ impl ProducerManager {
     /// Dispose a producer for a specific queue
     pub async fn dispose_producer(&mut self, queue_name: &str) -> ServiceBusResult<()> {
         if let Some(producer) = self.producers.remove(queue_name) {
-            log::info!("Disposing producer for queue: {}", queue_name);
+            log::info!("Disposing producer for queue: {queue_name}");
             producer.lock().await.dispose().await.map_err(|e| {
                 ServiceBusError::InternalError(format!(
-                    "Failed to dispose producer for queue {}: {}",
-                    queue_name, e
+                    "Failed to dispose producer for queue {queue_name}: {e}"
                 ))
             })?;
         }
@@ -360,8 +357,7 @@ impl ProducerManager {
         for (queue_name, producer) in self.producers.drain() {
             if let Err(e) = producer.lock().await.dispose().await {
                 errors.push(format!(
-                    "Failed to dispose producer for queue {}: {}",
-                    queue_name, e
+                    "Failed to dispose producer for queue {queue_name}: {e}"
                 ));
             }
         }

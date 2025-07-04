@@ -34,7 +34,7 @@ where
         if let Ok(State::One(tuirealm::StateValue::String(namespace))) =
             self.app.state(&ComponentId::NamespacePicker)
         {
-            log::info!("Selected namespace: {}", namespace);
+            log::info!("Selected namespace: {namespace}");
             self.set_selected_namespace(Some(namespace));
         }
 

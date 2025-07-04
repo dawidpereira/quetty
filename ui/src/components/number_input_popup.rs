@@ -148,7 +148,7 @@ impl NumberInputPopup {
         if !validation_state.is_valid {
             if let Some(error_message) = validation_state.error_message {
                 return Some(Line::from(Span::styled(
-                    format!("⚠ {}", error_message),
+                    format!("⚠ {error_message}"),
                     Style::default().fg(ThemeManager::status_error()),
                 )));
             }

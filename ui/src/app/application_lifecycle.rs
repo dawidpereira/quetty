@@ -39,15 +39,15 @@ impl ConfigErrorDisplay {
         // Initialize a minimal model for error display
         let mut model = Model::new()
             .await
-            .map_err(|e| format!("Failed to initialize model for error display: {}", e))?;
+            .map_err(|e| format!("Failed to initialize model for error display: {e}"))?;
 
         // Show the first error in a popup (most critical one)
         if let Some(first_error) = validation_errors.first() {
             let error_message = first_error.user_message();
-            error!("Configuration error: {}", error_message);
+            error!("Configuration error: {error_message}");
 
             if let Err(e) = model.mount_error_popup(&AppError::Config(error_message)) {
-                error!("Failed to mount configuration error popup: {}", e);
+                error!("Failed to mount configuration error popup: {e}");
                 // Fallback to logging all errors
                 for validation_error in &validation_errors {
                     error!(
@@ -74,7 +74,7 @@ impl ConfigErrorDisplay {
 
         // Draw the error popup
         if let Err(e) = self.model.view() {
-            error!("Error during error popup rendering: {}", e);
+            error!("Error during error popup rendering: {e}");
         }
 
         // Main loop to handle the error popup until user closes it
@@ -83,7 +83,7 @@ impl ConfigErrorDisplay {
 
             match self.model.app.tick(PollStrategy::Once) {
                 Err(err) => {
-                    error!("Application tick error during error display: {}", err);
+                    error!("Application tick error during error display: {err}");
                     break;
                 }
                 Ok(messages) if !messages.is_empty() => {
@@ -104,7 +104,7 @@ impl ConfigErrorDisplay {
 
                     // Check if popup was closed (which should set quit to true)
                     if let Err(e) = self.model.view() {
-                        error!("Error during view rendering: {}", e);
+                        error!("Error during view rendering: {e}");
                         break;
                     }
                 }
@@ -194,19 +194,15 @@ impl ApplicationLifecycle {
     fn try_initialize_theme_manager(theme_config: &ThemeConfig) -> ThemeInitializationResult {
         // Try to initialize with user's theme config first
         if let Err(e) = ThemeManager::init_global(theme_config) {
-            error!("Failed to initialize theme manager with user config: {}", e);
+            error!("Failed to initialize theme manager with user config: {e}");
 
             // Try to fallback to default theme
             let default_config = ThemeConfig::default();
             if let Err(default_e) = ThemeManager::init_global(&default_config) {
-                error!(
-                    "Failed to initialize theme manager with default theme: {}",
-                    default_e
-                );
+                error!("Failed to initialize theme manager with default theme: {default_e}");
                 return ThemeInitializationResult::CriticalFailure {
                     error_message: format!(
-                        "Critical theme error: Unable to load any theme.\n\nUser theme error: {}\nDefault theme error: {}\n\nPlease check your theme files.",
-                        e, default_e
+                        "Critical theme error: Unable to load any theme.\n\nUser theme error: {e}\nDefault theme error: {default_e}\n\nPlease check your theme files."
                     ),
                 };
             } else {
@@ -277,11 +273,11 @@ impl ApplicationLifecycle {
         model
             .terminal
             .enter_alternate_screen()
-            .map_err(|e| format!("Failed to enter alternate screen: {}", e))?;
+            .map_err(|e| format!("Failed to enter alternate screen: {e}"))?;
         model
             .terminal
             .enable_raw_mode()
-            .map_err(|e| format!("Failed to enable raw mode: {}", e))?;
+            .map_err(|e| format!("Failed to enable raw mode: {e}"))?;
         Ok(())
     }
 
@@ -326,25 +322,24 @@ impl ApplicationLifecycle {
         model: &mut Model<CrosstermTerminalAdapter>,
         err: tuirealm::ApplicationError,
     ) -> Result<(), Box<dyn StdError>> {
-        error!("Application tick error: {:?}", err);
+        error!("Application tick error: {err:?}");
 
         // Show error in popup
-        if let Err(e) = model.mount_error_popup(&AppError::Component(format!(
-            "Application error: {:?}",
-            err
-        ))) {
-            error!("Failed to mount error popup: {}", e);
+        if let Err(e) =
+            model.mount_error_popup(&AppError::Component(format!("Application error: {err:?}")))
+        {
+            error!("Failed to mount error popup: {e}");
             // Fallback to simpler error handling
             if model
                 .app
                 .attr(
                     &ComponentId::TextLabel,
                     Attribute::Text,
-                    AttrValue::String(format!("Application error: {:?}", err)),
+                    AttrValue::String(format!("Application error: {err:?}")),
                 )
                 .is_err()
             {
-                return Err(format!("Failed to display error: {:?}", err).into());
+                return Err(format!("Failed to display error: {err:?}").into());
             }
         }
         model.state_manager.set_redraw(true);
@@ -367,7 +362,7 @@ impl ApplicationLifecycle {
     fn handle_redraw(model: &mut Model<CrosstermTerminalAdapter>) -> Result<(), Box<dyn StdError>> {
         if model.state_manager.needs_redraw() {
             if let Err(e) = model.view() {
-                error!("Error during view rendering: {}", e);
+                error!("Error during view rendering: {e}");
                 // Show error in popup
                 if let Err(popup_err) = model.mount_error_popup(&e) {
                     model
@@ -428,6 +423,6 @@ impl ApplicationLifecycle {
         error_reporter.report_critical_and_exit(error, component, operation, user_message);
 
         // Also ensure the error is visible in case ErrorReporter fails
-        eprintln!("Critical Error: {}", user_message);
+        eprintln!("Critical Error: {user_message}");
     }
 }

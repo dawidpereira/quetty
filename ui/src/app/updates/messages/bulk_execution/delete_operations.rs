@@ -89,7 +89,7 @@ pub fn handle_bulk_delete_execution<T: TerminalAdapter>(
                         result
                     }
                     ServiceBusResponse::Error { error } => {
-                        log::error!("Bulk delete operation failed: {}", error);
+                        log::error!("Bulk delete operation failed: {error}");
                         return Err(AppError::ServiceBus(error.to_string()));
                     }
                     _ => {

@@ -21,11 +21,11 @@ pub enum AppError {
 impl Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AppError::Io(msg) => write!(f, "IO Error: {}", msg),
-            AppError::ServiceBus(msg) => write!(f, "Service Bus Error: {}", msg),
-            AppError::Component(msg) => write!(f, "Component Error: {}", msg),
-            AppError::State(msg) => write!(f, "State Error: {}", msg),
-            AppError::Config(msg) => write!(f, "Configuration Error: {}", msg),
+            AppError::Io(msg) => write!(f, "IO Error: {msg}"),
+            AppError::ServiceBus(msg) => write!(f, "Service Bus Error: {msg}"),
+            AppError::Component(msg) => write!(f, "Component Error: {msg}"),
+            AppError::State(msg) => write!(f, "State Error: {msg}"),
+            AppError::Config(msg) => write!(f, "Configuration Error: {msg}"),
         }
     }
 }
@@ -78,7 +78,7 @@ impl ErrorContext {
     /// Generate simple generic fallback message
     /// The preferred approach is to use .with_message() for explicit user messages.
     fn generate_fallback_message(component: &str) -> String {
-        format!("An error occurred in {}. Please try again.", component)
+        format!("An error occurred in {component}. Please try again.")
     }
 
     /// Builder pattern method for setting custom user message
@@ -219,14 +219,14 @@ impl ErrorReporter {
                     self.format_user_message(&context),
                 ));
                 if let Err(e) = self.tx.send(popup_msg) {
-                    log::error!("Failed to send warning popup message: {}", e);
+                    log::error!("Failed to send warning popup message: {e}");
                 }
             }
             ErrorSeverity::Error | ErrorSeverity::Critical => {
                 let formatted_error = self.create_formatted_error(&error, &context);
                 let popup_msg = Msg::PopupActivity(PopupActivityMsg::ShowError(formatted_error));
                 if let Err(e) = self.tx.send(popup_msg) {
-                    log::error!("Failed to send error popup message: {}", e);
+                    log::error!("Failed to send error popup message: {e}");
                 }
             }
         }
@@ -237,11 +237,11 @@ impl ErrorReporter {
         let mut parts = Vec::new();
 
         if let Some(ref technical_details) = context.technical_details {
-            parts.push(format!("🔍 Technical: {}", technical_details));
+            parts.push(format!("🔍 Technical: {technical_details}"));
         }
 
         if let Some(ref suggestion) = context.suggestion {
-            parts.push(format!("💡 Suggestion: {}", suggestion));
+            parts.push(format!("💡 Suggestion: {suggestion}"));
         }
 
         if parts.is_empty() {
@@ -256,7 +256,7 @@ impl ErrorReporter {
         let mut message = context.user_message.clone();
 
         if let Some(ref suggestion) = context.suggestion {
-            message.push_str(&format!("\n\n💡 Suggestion: {}", suggestion));
+            message.push_str(&format!("\n\n💡 Suggestion: {suggestion}"));
         }
 
         message
@@ -267,7 +267,7 @@ impl ErrorReporter {
         // Create formatted warning with warning emoji
         let mut formatted_message = String::new();
         formatted_message.push_str("⚠️ Warning");
-        formatted_message.push_str(&format!("\n\n{}", message));
+        formatted_message.push_str(&format!("\n\n{message}"));
 
         AppError::Component(formatted_message)
     }
@@ -293,12 +293,12 @@ impl ErrorReporter {
 
         // Add technical details if available (for debugging)
         if let Some(ref technical) = context.technical_details {
-            formatted_message.push_str(&format!("\n\n🔍 Details: {}", technical));
+            formatted_message.push_str(&format!("\n\n🔍 Details: {technical}"));
         }
 
         // Add suggestion if available
         if let Some(ref suggestion) = context.suggestion {
-            formatted_message.push_str(&format!("\n\n💡 Suggestion: {}", suggestion));
+            formatted_message.push_str(&format!("\n\n💡 Suggestion: {suggestion}"));
         }
 
         // Create a new AppError with the formatted message
@@ -331,39 +331,38 @@ impl ErrorReporter {
         operation: &str,
         error: impl std::fmt::Display,
     ) {
-        let app_error =
-            AppError::Component(format!("Failed to {} {}: {}", operation, component, error));
+        let app_error = AppError::Component(format!("Failed to {operation} {component}: {error}"));
         self.report_simple(app_error, component, operation);
     }
 
     /// Report message sending errors (mpsc channel errors)
     pub fn report_send_error(&self, context: &str, error: impl std::fmt::Display) {
-        let app_error = AppError::Component(format!("Failed to send {}: {}", context, error));
+        let app_error = AppError::Component(format!("Failed to send {context}: {error}"));
         self.report_simple(app_error, "MessageChannel", "send_message");
     }
 
     /// Report activation/focus errors for UI components
     pub fn report_activation_error(&self, component: &str, error: impl std::fmt::Display) {
-        let app_error = AppError::Component(format!("Failed to activate {}: {}", component, error));
+        let app_error = AppError::Component(format!("Failed to activate {component}: {error}"));
         self.report_simple(app_error, component, "activate");
     }
 
     /// Report global key watcher update errors
     pub fn report_key_watcher_error(&self, error: impl std::fmt::Display) {
         let app_error =
-            AppError::Component(format!("Failed to update global key watcher: {}", error));
+            AppError::Component(format!("Failed to update global key watcher: {error}"));
         self.report_simple(app_error, "GlobalKeyWatcher", "update_state");
     }
 
     /// Report clipboard operation errors (non-critical, use warning)
     pub fn report_clipboard_error(&self, operation: &str, error: impl std::fmt::Display) {
-        let app_error = AppError::Component(format!("Failed to {}: {}", operation, error));
+        let app_error = AppError::Component(format!("Failed to {operation}: {error}"));
         self.report_warning(app_error, "Clipboard", operation);
     }
 
     /// Report theme-related errors (non-critical, use warning)
     pub fn report_theme_error(&self, operation: &str, error: impl std::fmt::Display) {
-        let app_error = AppError::Component(format!("Theme {} failed: {}", operation, error));
+        let app_error = AppError::Component(format!("Theme {operation} failed: {error}"));
         self.report_warning(app_error, "ThemeManager", operation);
     }
 
@@ -375,7 +374,7 @@ impl ErrorReporter {
         error: impl std::fmt::Display,
     ) {
         let context = ErrorContext::new(component, operation)
-            .with_message(&format!("Failed to {} data", operation))
+            .with_message(&format!("Failed to {operation} data"))
             .with_technical_details(&error.to_string())
             .with_suggestion("Check your connection and try again");
 
@@ -391,7 +390,7 @@ impl ErrorReporter {
         suggestion: Option<&str>,
     ) {
         let context = ErrorContext::new("ServiceBus", operation)
-            .with_message(&format!("Service bus {} failed", operation))
+            .with_message(&format!("Service bus {operation} failed"))
             .with_technical_details(&error.to_string())
             .with_suggestion(suggestion.unwrap_or("Check your Azure connection and credentials"));
 
@@ -407,7 +406,7 @@ impl ErrorReporter {
         error: impl std::fmt::Display,
     ) {
         let context = ErrorContext::new("BulkOperationHandler", operation)
-            .with_message(&format!("Failed to {} {} messages", operation, count))
+            .with_message(&format!("Failed to {operation} {count} messages"))
             .with_technical_details(&error.to_string())
             .with_suggestion(
                 "Some messages may have been processed. Check the queue and try again if needed",
@@ -420,7 +419,7 @@ impl ErrorReporter {
     /// Report configuration errors with suggestions
     pub fn report_config_error(&self, config_type: &str, error: impl std::fmt::Display) {
         let context = ErrorContext::new("Configuration", "load_config")
-            .with_message(&format!("Failed to load {} configuration", config_type))
+            .with_message(&format!("Failed to load {config_type} configuration"))
             .with_technical_details(&error.to_string())
             .with_suggestion("Check your configuration file and restart the application");
 

@@ -37,7 +37,7 @@ impl MockComponent for QueuePicker {
                 if q.ends_with("/$deadletter") {
                     format!("💀 {}", q.replace("/$deadletter", " (DLQ)"))
                 } else {
-                    format!("📬 {}", q)
+                    format!("📬 {q}")
                 }
             })
             .collect();

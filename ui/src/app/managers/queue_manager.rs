@@ -46,7 +46,7 @@ impl QueueManager {
                 )
                 .await
                 .map_err(|e| {
-                    log::error!("Failed to list namespaces: {}", e);
+                    log::error!("Failed to list namespaces: {e}");
                     AppError::ServiceBus(e.to_string())
                 })?;
 
@@ -56,7 +56,7 @@ impl QueueManager {
                 if let Err(e) = tx_to_main.send(Msg::NamespaceActivity(
                     NamespaceActivityMsg::NamespacesLoaded(namespaces),
                 )) {
-                    log::error!("Failed to send namespaces loaded message: {}", e);
+                    log::error!("Failed to send namespaces loaded message: {e}");
                     return Err(AppError::Component(e.to_string()));
                 }
 
@@ -76,7 +76,7 @@ impl QueueManager {
                 ServiceBusManager::list_queues_azure_ad(config::get_config_or_panic().azure_ad())
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to list queues: {}", e);
+                        log::error!("Failed to list queues: {e}");
                         AppError::ServiceBus(e.to_string())
                     })?;
 
@@ -86,7 +86,7 @@ impl QueueManager {
             if let Err(e) =
                 tx_to_main.send(Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(queues)))
             {
-                log::error!("Failed to send queues loaded message: {}", e);
+                log::error!("Failed to send queues loaded message: {e}");
                 return Err(AppError::Component(e.to_string()));
             }
 
@@ -99,7 +99,7 @@ impl QueueManager {
         // Store the queue name for later use
         self.queue_state.pending_queue = Some(queue_name.clone());
 
-        log::info!("Switching to queue: {}", queue_name);
+        log::info!("Switching to queue: {queue_name}");
 
         let service_bus_manager = self.service_bus_manager.clone();
         let tx_to_main = self.tx_to_main.clone();
@@ -118,15 +118,11 @@ impl QueueManager {
         );
 
         self.task_manager.execute_with_progress(
-            format!("Connecting to queue {}...", queue_name),
+            format!("Connecting to queue {queue_name}..."),
             operation_id,
             move |progress: crate::app::task_manager::ProgressReporter| {
                 Box::pin(async move {
-                    log::debug!(
-                        "Switching to queue: {} (type: {:?})",
-                        queue_name,
-                        queue_type
-                    );
+                    log::debug!("Switching to queue: {queue_name} (type: {queue_type:?})");
 
                     progress.report_progress("Establishing connection...");
 
@@ -148,7 +144,7 @@ impl QueueManager {
                             queue_info
                         }
                         ServiceBusResponse::Error { error } => {
-                            log::error!("Failed to switch to queue {}: {}", queue_name, error);
+                            log::error!("Failed to switch to queue {queue_name}: {error}");
                             return Err(AppError::ServiceBus(error.to_string()));
                         }
                         _ => {
@@ -164,7 +160,7 @@ impl QueueManager {
                     if let Err(e) = tx_to_main.send(Msg::MessageActivity(
                         MessageActivityMsg::QueueSwitched(queue_info),
                     )) {
-                        log::error!("Failed to send queue switched message: {}", e);
+                        log::error!("Failed to send queue switched message: {e}");
                         return Err(AppError::Component(e.to_string()));
                     }
 
@@ -172,7 +168,7 @@ impl QueueManager {
                     if let Err(e) = tx_to_main.send(Msg::MessageActivity(
                         MessageActivityMsg::QueueNameUpdated(queue_name_for_update),
                     )) {
-                        log::error!("Failed to send queue name updated message: {}", e);
+                        log::error!("Failed to send queue name updated message: {e}");
                         return Err(AppError::Component(e.to_string()));
                     }
 

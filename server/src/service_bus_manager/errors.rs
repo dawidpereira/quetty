@@ -51,43 +51,43 @@ pub enum ServiceBusError {
 impl fmt::Display for ServiceBusError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ServiceBusError::ConnectionFailed(msg) => write!(f, "Connection failed: {}", msg),
-            ServiceBusError::ConnectionLost(msg) => write!(f, "Connection lost: {}", msg),
+            ServiceBusError::ConnectionFailed(msg) => write!(f, "Connection failed: {msg}"),
+            ServiceBusError::ConnectionLost(msg) => write!(f, "Connection lost: {msg}"),
             ServiceBusError::AuthenticationFailed(msg) => {
-                write!(f, "Authentication failed: {}", msg)
+                write!(f, "Authentication failed: {msg}")
             }
 
             ServiceBusError::ConsumerCreationFailed(msg) => {
-                write!(f, "Consumer creation failed: {}", msg)
+                write!(f, "Consumer creation failed: {msg}")
             }
             ServiceBusError::ConsumerNotFound => write!(f, "Consumer not found"),
             ServiceBusError::ConsumerAlreadyExists(queue) => {
-                write!(f, "Consumer already exists for queue: {}", queue)
+                write!(f, "Consumer already exists for queue: {queue}")
             }
 
             ServiceBusError::ProducerCreationFailed(msg) => {
-                write!(f, "Producer creation failed: {}", msg)
+                write!(f, "Producer creation failed: {msg}")
             }
             ServiceBusError::ProducerNotFound(queue) => {
-                write!(f, "Producer not found for queue: {}", queue)
+                write!(f, "Producer not found for queue: {queue}")
             }
 
             ServiceBusError::MessageReceiveFailed(msg) => {
-                write!(f, "Message receive failed: {}", msg)
+                write!(f, "Message receive failed: {msg}")
             }
-            ServiceBusError::MessageSendFailed(msg) => write!(f, "Message send failed: {}", msg),
+            ServiceBusError::MessageSendFailed(msg) => write!(f, "Message send failed: {msg}"),
             ServiceBusError::MessageCompleteFailed(msg) => {
-                write!(f, "Message complete failed: {}", msg)
+                write!(f, "Message complete failed: {msg}")
             }
             ServiceBusError::MessageAbandonFailed(msg) => {
-                write!(f, "Message abandon failed: {}", msg)
+                write!(f, "Message abandon failed: {msg}")
             }
             ServiceBusError::MessageDeadLetterFailed(msg) => {
-                write!(f, "Message dead letter failed: {}", msg)
+                write!(f, "Message dead letter failed: {msg}")
             }
 
             ServiceBusError::BulkOperationFailed(msg) => {
-                write!(f, "Bulk operation failed: {}", msg)
+                write!(f, "Bulk operation failed: {msg}")
             }
             ServiceBusError::BulkOperationPartialFailure {
                 successful,
@@ -103,19 +103,19 @@ impl fmt::Display for ServiceBusError {
                 )
             }
 
-            ServiceBusError::QueueNotFound(queue) => write!(f, "Queue not found: {}", queue),
-            ServiceBusError::QueueSwitchFailed(msg) => write!(f, "Queue switch failed: {}", msg),
-            ServiceBusError::InvalidQueueName(queue) => write!(f, "Invalid queue name: {}", queue),
+            ServiceBusError::QueueNotFound(queue) => write!(f, "Queue not found: {queue}"),
+            ServiceBusError::QueueSwitchFailed(msg) => write!(f, "Queue switch failed: {msg}"),
+            ServiceBusError::InvalidQueueName(queue) => write!(f, "Invalid queue name: {queue}"),
 
-            ServiceBusError::ConfigurationError(msg) => write!(f, "Configuration error: {}", msg),
+            ServiceBusError::ConfigurationError(msg) => write!(f, "Configuration error: {msg}"),
             ServiceBusError::InvalidConfiguration(msg) => {
-                write!(f, "Invalid configuration: {}", msg)
+                write!(f, "Invalid configuration: {msg}")
             }
 
-            ServiceBusError::OperationTimeout(msg) => write!(f, "Operation timeout: {}", msg),
+            ServiceBusError::OperationTimeout(msg) => write!(f, "Operation timeout: {msg}"),
 
-            ServiceBusError::InternalError(msg) => write!(f, "Internal error: {}", msg),
-            ServiceBusError::Unknown(msg) => write!(f, "Unknown error: {}", msg),
+            ServiceBusError::InternalError(msg) => write!(f, "Internal error: {msg}"),
+            ServiceBusError::Unknown(msg) => write!(f, "Unknown error: {msg}"),
         }
     }
 }

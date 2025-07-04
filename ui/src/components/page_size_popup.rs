@@ -88,7 +88,7 @@ impl PageSizePopup {
 
                 Line::from(vec![
                     Span::styled(prefix, style),
-                    Span::styled(format!("{} messages per page", size), style),
+                    Span::styled(format!("{size} messages per page"), style),
                 ])
             })
             .collect()

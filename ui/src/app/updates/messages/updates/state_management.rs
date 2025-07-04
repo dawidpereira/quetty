@@ -68,7 +68,7 @@ where
         // Load messages for the new queue using the current page size
         let page_size = config::get_current_page_size();
         if let Err(e) = self.load_messages_from_api_with_count(page_size) {
-            log::error!("Failed to load messages after queue switch: {}", e);
+            log::error!("Failed to load messages after queue switch: {e}");
         }
 
         None
@@ -109,11 +109,7 @@ where
         let should_advance = self.queue_state().message_pagination.advance_after_load;
 
         log::debug!(
-            "Messages loaded: count={}, total={}, current_page={}, should_advance={}",
-            message_count,
-            total_messages,
-            current_page,
-            should_advance
+            "Messages loaded: count={message_count}, total={total_messages}, current_page={current_page}, should_advance={should_advance}"
         );
 
         // Handle page advancement if requested
@@ -164,7 +160,7 @@ where
                 match self.should_auto_fill() {
                     Ok(true) => {
                         if let Err(e) = self.execute_auto_fill() {
-                            log::error!("Failed to execute auto-fill: {}", e);
+                            log::error!("Failed to execute auto-fill: {e}");
                         } else {
                             log::debug!("Auto-fill initiated for incomplete page");
                             // Auto-fill will trigger another message load, so return early
@@ -175,7 +171,7 @@ where
                         log::debug!("Auto-fill not needed or not possible");
                     }
                     Err(e) => {
-                        log::error!("Error checking auto-fill: {}", e);
+                        log::error!("Error checking auto-fill: {e}");
                     }
                 }
             }
@@ -186,7 +182,7 @@ where
 
         // Update current page view to show the correct messages for the current page
         if let Err(e) = self.update_current_page_view() {
-            log::error!("Failed to update current page view after loading: {}", e);
+            log::error!("Failed to update current page view after loading: {e}");
         }
 
         // Focus the messages component if we have messages
@@ -195,12 +191,12 @@ where
                 .app
                 .active(&crate::components::common::ComponentId::Messages)
             {
-                log::error!("Failed to activate messages component: {}", e);
+                log::error!("Failed to activate messages component: {e}");
             }
 
             // Also remount message details for the first message
             if let Err(e) = self.remount_message_details(0) {
-                log::error!("Failed to remount message details: {}", e);
+                log::error!("Failed to remount message details: {e}");
             }
         }
 
@@ -222,7 +218,7 @@ where
             message_ids.len()
         );
         for msg_id in &message_ids {
-            log::debug!("Removing message ID: {}", msg_id);
+            log::debug!("Removing message ID: {msg_id}");
         }
 
         // Invalidate and refresh stats cache for current queue since its size is changing
@@ -238,10 +234,7 @@ where
 
             // Immediately refresh the statistics to show updated counts
             if let Err(e) = self.load_queue_statistics_from_api(&base_queue_name) {
-                log::error!(
-                    "Failed to refresh queue statistics after bulk removal: {}",
-                    e
-                );
+                log::error!("Failed to refresh queue statistics after bulk removal: {e}");
             }
         }
 
@@ -303,7 +296,6 @@ where
         if let Err(e) = self.remount_messages_with_cursor_control(false) {
             self.error_reporter
                 .report_simple(e, "MessageState", "cursor_reset");
-            return None;
         }
 
         self.remount_message_details_safe()
@@ -331,7 +323,6 @@ where
         if let Err(e) = self.remount_message_details(index) {
             self.error_reporter
                 .report_simple(e, "MessageState", "safe_remount");
-            return None;
         }
 
         None
@@ -377,11 +368,7 @@ where
         };
 
         log::debug!(
-            "calculate_pagination_after_removal: current_page={}, total_remaining={}, total_possible_pages={}, target_page={}",
-            current_page,
-            total_remaining_messages,
-            total_possible_pages,
-            target_page
+            "calculate_pagination_after_removal: current_page={current_page}, total_remaining={total_remaining_messages}, total_possible_pages={total_possible_pages}, target_page={target_page}"
         );
 
         (target_page, total_remaining_messages)
@@ -390,7 +377,7 @@ where
     /// Remove messages from pagination state and return count removed
     pub fn remove_messages_from_pagination_state(&mut self, message_ids: &[String]) -> usize {
         let initial_count = self.get_loaded_message_count();
-        log::debug!("Initial message count: {}", initial_count);
+        log::debug!("Initial message count: {initial_count}");
 
         let removed_count = self.remove_from_loaded_messages(message_ids);
         self.remove_from_current_messages(message_ids);
@@ -480,9 +467,7 @@ where
     fn log_removal_summary(&self, _initial_count: usize, removed_count: usize) {
         let final_count = self.get_loaded_message_count();
         log::info!(
-            "Removed {} messages from pagination state (remaining: {})",
-            removed_count,
-            final_count
+            "Removed {removed_count} messages from pagination state (remaining: {final_count})"
         );
     }
 
@@ -598,10 +583,7 @@ where
         if messages_available_for_future_pages >= future_pages_worth && actual_messages_on_page > 0
         {
             log::debug!(
-                "Current page has {} messages, {} messages available for future pages (>= {} threshold) - likely bulk deletion scenario, skipping auto-fill",
-                actual_messages_on_page,
-                messages_available_for_future_pages,
-                future_pages_worth
+                "Current page has {actual_messages_on_page} messages, {messages_available_for_future_pages} messages available for future pages (>= {future_pages_worth} threshold) - likely bulk deletion scenario, skipping auto-fill"
             );
             return Ok(false);
         }
@@ -811,10 +793,7 @@ where
 
             // Immediately refresh the statistics to show updated counts
             if let Err(e) = self.load_queue_statistics_from_api(&base_queue_name) {
-                log::error!(
-                    "Failed to refresh queue statistics after bulk delete: {}",
-                    e
-                );
+                log::error!("Failed to refresh queue statistics after bulk delete: {e}");
             }
         }
 
@@ -855,7 +834,7 @@ where
 
         // Remount to show updated stats
         if let Err(e) = self.remount_messages() {
-            log::error!("Failed to remount messages after stats update: {}", e);
+            log::error!("Failed to remount messages after stats update: {e}");
         }
 
         None
@@ -870,7 +849,7 @@ where
         let service_bus_manager = self.get_service_bus_manager();
         let tx_to_main = self.state_manager.tx_to_main.clone();
 
-        log::info!("Loading statistics from API for queue: {}", queue_name);
+        log::info!("Loading statistics from API for queue: {queue_name}");
 
         self.task_manager.execute_background(async move {
             use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
@@ -896,10 +875,7 @@ where
                     let dlq_count = dead_letter_message_count.unwrap_or(0);
 
                     log::info!(
-                        "Loaded stats for {}: active={}, dlq={}",
-                        queue_name,
-                        active_count,
-                        dlq_count
+                        "Loaded stats for {queue_name}: active={active_count}, dlq={dlq_count}"
                     );
 
                     let stats_cache =
@@ -916,17 +892,14 @@ where
                             ),
                         ))
                     {
-                        log::error!("Failed to send queue stats update: {}", e);
+                        log::error!("Failed to send queue stats update: {e}");
                     }
                 }
                 ServiceBusResponse::Error { error } => {
-                    log::warn!("Failed to load queue stats for {}: {}", queue_name, error);
+                    log::warn!("Failed to load queue stats for {queue_name}: {error}");
                 }
                 _ => {
-                    log::warn!(
-                        "Unexpected response for queue statistics for {}",
-                        queue_name
-                    );
+                    log::warn!("Unexpected response for queue statistics for {queue_name}");
                 }
             }
 
@@ -945,7 +918,7 @@ where
                 queue_name.clone()
             };
 
-            log::info!("Refreshing queue statistics for: {}", base_queue_name);
+            log::info!("Refreshing queue statistics for: {base_queue_name}");
 
             // Invalidate current cache to force fresh data
             self.queue_state_mut()
@@ -954,7 +927,7 @@ where
 
             // Load fresh statistics from API
             if let Err(e) = self.load_queue_statistics_from_api(&base_queue_name) {
-                log::error!("Failed to refresh queue statistics: {}", e);
+                log::error!("Failed to refresh queue statistics: {e}");
             }
         }
         None

@@ -45,8 +45,7 @@ where
         Some(Msg::PopupActivity(PopupActivityMsg::ShowNumberInput {
             title: "Set Repeat Count".to_string(),
             message: format!(
-                "Enter the number of times to repeat sending selected messages (Min: 1, Max: {})",
-                max_batch_size
+                "Enter the number of times to repeat sending selected messages (Min: 1, Max: {max_batch_size})"
             ),
             min_value: 1,
             max_value: max_batch_size,
@@ -74,10 +73,7 @@ where
 
             // Immediately refresh the statistics to show updated counts
             if let Err(e) = self.load_queue_statistics_from_api(&base_queue_name) {
-                log::error!(
-                    "Failed to refresh queue statistics after message send: {}",
-                    e
-                );
+                log::error!("Failed to refresh queue statistics after message send: {e}");
             }
         }
 
@@ -144,8 +140,7 @@ where
             ServiceBusResponse::MessagesReceived { messages } => messages,
             ServiceBusResponse::Error { error } => {
                 return Err(AppError::ServiceBus(format!(
-                    "Failed to peek messages from beginning: {}",
-                    error
+                    "Failed to peek messages from beginning: {error}"
                 )));
             }
             _ => {

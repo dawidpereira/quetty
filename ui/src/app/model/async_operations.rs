@@ -27,10 +27,7 @@ where
     pub fn handle_force_reload_messages(&mut self) -> Option<Msg> {
         log::info!("Force reloading messages after bulk operation with backfill");
         let current_page_size = crate::config::get_current_page_size();
-        log::info!(
-            "Force reload will use current page size: {} messages",
-            current_page_size
-        );
+        log::info!("Force reload will use current page size: {current_page_size} messages");
 
         // Reset pagination state but preserve the knowledge of current page size
         self.reset_pagination_state();
@@ -41,10 +38,7 @@ where
             .app
             .active(&crate::components::common::ComponentId::Messages)
         {
-            log::warn!(
-                "Failed to activate messages component during force reload: {}",
-                e
-            );
+            log::warn!("Failed to activate messages component during force reload: {e}");
         }
 
         // Start a reload that will fill the current page size, adding backfill if needed
@@ -62,10 +56,7 @@ where
 
         self.task_manager
             .execute("Reloading messages...", async move {
-                log::info!(
-                    "Starting page reload with target page size: {}",
-                    target_page_size
-                );
+                log::info!("Starting page reload with target page size: {target_page_size}");
 
                 let result = Self::execute_reload_task(
                     tx_to_main.clone(),
@@ -76,7 +67,7 @@ where
 
                 // Always send a message to clear loading state, even on error
                 if let Err(e) = &result {
-                    log::error!("Error in reload task: {}", e);
+                    log::error!("Error in reload task: {e}");
                     // Send empty message list to clear loading state
                     let _ = tx_to_main.send(crate::components::common::Msg::MessageActivity(
                         crate::components::common::MessageActivityMsg::MessagesLoaded(Vec::new()),
@@ -100,7 +91,7 @@ where
         let max_attempts = 5; // Prevent infinite loops
         let target_size = target_page_size as usize;
 
-        log::info!("Page reload targeting {} messages", target_size);
+        log::info!("Page reload targeting {target_size} messages");
 
         // Progressive loading loop to handle sequence gaps
         while all_loaded_messages.len() < target_size && total_attempts < max_attempts {
@@ -111,11 +102,7 @@ where
             let load_count = messages_needed;
 
             log::debug!(
-                "Page reload attempt {}: need {} more messages, loading {} (from_sequence: {:?})",
-                total_attempts,
-                messages_needed,
-                load_count,
-                current_sequence
+                "Page reload attempt {total_attempts}: need {messages_needed} more messages, loading {load_count} (from_sequence: {current_sequence:?})"
             );
 
             let batch_messages =
@@ -159,8 +146,7 @@ where
         if all_loaded_messages.len() > target_size {
             all_loaded_messages.truncate(target_size);
             log::debug!(
-                "Page reload truncated to {} messages to match target page size",
-                target_size
+                "Page reload truncated to {target_size} messages to match target page size"
             );
         }
 
@@ -175,7 +161,7 @@ where
         if let Err(e) = tx_to_main.send(crate::components::common::Msg::MessageActivity(
             crate::components::common::MessageActivityMsg::MessagesLoaded(all_loaded_messages),
         )) {
-            log::error!("Failed to send page reload messages: {}", e);
+            log::error!("Failed to send page reload messages: {e}");
             return Err(crate::error::AppError::Component(e.to_string()));
         }
 

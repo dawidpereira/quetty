@@ -95,7 +95,7 @@ impl Messages {
         // Simplified title - just show queue info, no pagination details
         let title = if let Some(info) = &pagination_info {
             let queue_display = format_queue_display(info);
-            format!(" {} ", queue_display)
+            format!(" {queue_display} ")
         } else {
             " Messages ".to_string()
         };
@@ -385,7 +385,7 @@ impl MockComponent for Messages {
         match attr {
             Attribute::Custom("cursor_position") => {
                 if let AttrValue::Number(position) = value {
-                    log::debug!("Received cursor position attribute: {}", position);
+                    log::debug!("Received cursor position attribute: {position}");
                     let target_position = position as usize;
                     let max_index = self.message_count().saturating_sub(1);
 
@@ -404,9 +404,7 @@ impl MockComponent for Messages {
                     }
 
                     log::debug!(
-                        "Moved cursor to position: {} (requested: {})",
-                        bounded_position,
-                        target_position
+                        "Moved cursor to position: {bounded_position} (requested: {target_position})"
                     );
                 }
             }

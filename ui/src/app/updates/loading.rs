@@ -11,7 +11,7 @@ where
     pub fn update_loading(&mut self, msg: LoadingActivityMsg) -> Option<Msg> {
         match msg {
             LoadingActivityMsg::Start(message) => {
-                log::debug!("Starting loading: {}", message);
+                log::debug!("Starting loading: {message}");
 
                 // Store current state to return to later
                 let previous_state = self.state_manager.app_state.clone();
@@ -69,7 +69,7 @@ where
                 None
             }
             LoadingActivityMsg::Update(progress_message) => {
-                log::debug!("Updating loading progress: {}", progress_message);
+                log::debug!("Updating loading progress: {progress_message}");
 
                 // For progress updates, we'll store the progress and remount the loading indicator
                 // This is simpler than trying to access component internals through tuirealm
@@ -95,7 +95,7 @@ where
                                 Sub::new(SubEventClause::Any, SubClause::Always),
                             ],
                         ) {
-                            log::error!("Failed to remount loading indicator with progress: {}", e);
+                            log::error!("Failed to remount loading indicator with progress: {e}");
                         }
                     }
                 }
@@ -104,7 +104,7 @@ where
                 None
             }
             LoadingActivityMsg::ShowCancelButton(operation_id) => {
-                log::debug!("Showing cancel button for operation: {}", operation_id);
+                log::debug!("Showing cancel button for operation: {operation_id}");
 
                 // Store the cancel button state
                 self.state_manager.loading_cancel_button = Some(operation_id.clone());
@@ -128,8 +128,7 @@ where
                             ],
                         ) {
                             log::error!(
-                                "Failed to remount loading indicator with cancel button: {}",
-                                e
+                                "Failed to remount loading indicator with cancel button: {e}",
                             );
                         }
                     }
@@ -162,8 +161,7 @@ where
                             ],
                         ) {
                             log::error!(
-                                "Failed to remount loading indicator without cancel button: {}",
-                                e
+                                "Failed to remount loading indicator without cancel button: {e}",
                             );
                         }
                     }
@@ -178,7 +176,7 @@ where
                 // Get the active operations from task manager and cancel them
                 let active_operations = self.task_manager.get_active_operations();
                 for operation_id in active_operations {
-                    log::info!("Cancelling operation: {}", operation_id);
+                    log::info!("Cancelling operation: {operation_id}");
                     self.task_manager.cancel_operation(&operation_id);
 
                     // If the user aborted a queue switch, inform the UI so it can roll back
@@ -189,7 +187,7 @@ where
                                 crate::components::common::QueueActivityMsg::QueueSwitchCancelled,
                             ))
                         {
-                            log::error!("Failed to notify queue switch cancellation: {}", e);
+                            log::error!("Failed to notify queue switch cancellation: {e}");
                         }
                     }
                 }

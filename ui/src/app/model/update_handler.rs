@@ -39,7 +39,7 @@ where
                 Msg::LoadingActivity(msg) => self.update_loading(msg),
                 Msg::PopupActivity(msg) => self.update_popup(msg),
                 Msg::Error(e) => {
-                    log::error!("Error received: {}", e);
+                    log::error!("Error received: {e}");
                     self.update_popup(PopupActivityMsg::ShowError(e))
                 }
                 Msg::ClipboardError(error_msg) => {
@@ -62,7 +62,7 @@ where
             };
 
             if let Some(Msg::Error(e)) = result {
-                log::error!("Error from message processing: {}", e);
+                log::error!("Error from message processing: {e}");
                 if let Err(err) = self.mount_error_popup(&e) {
                     self.error_reporter
                         .report_mount_error("ErrorPopup", "mount", err);

@@ -55,7 +55,7 @@ pub async fn acquire_lock_with_timeout<'a, T>(
     timeout_duration: Duration,
     cancel_token: Option<&CancellationToken>,
 ) -> Result<tokio::sync::MutexGuard<'a, T>, Box<dyn Error + Send + Sync>> {
-    log::debug!("Attempting to acquire lock for {}", operation_name);
+    log::debug!("Attempting to acquire lock for {operation_name}");
 
     let lock_future = mutex.lock();
 
@@ -65,23 +65,21 @@ pub async fn acquire_lock_with_timeout<'a, T>(
             guard = timeout(timeout_duration, lock_future) => {
                 match guard {
                     Ok(guard) => {
-                        log::debug!("Successfully acquired lock for {}", operation_name);
+                        log::debug!("Successfully acquired lock for {operation_name}");
                         Ok(guard)
                     }
                     Err(_) => {
                         let error_msg = format!(
-                            "Timeout acquiring lock for {} after {:?}",
-                            operation_name,
-                            timeout_duration
+                            "Timeout acquiring lock for {operation_name} after {timeout_duration:?}"
                         );
-                        log::error!("{}", error_msg);
+                        log::error!("{error_msg}");
                         Err(Box::new(std::io::Error::new(std::io::ErrorKind::TimedOut, error_msg)))
                     }
                 }
             }
             _ = token.cancelled() => {
-                let error_msg = format!("Lock acquisition for {} was cancelled", operation_name);
-                log::warn!("{}", error_msg);
+                let error_msg = format!("Lock acquisition for {operation_name} was cancelled");
+                log::warn!("{error_msg}");
                 Err(Box::new(std::io::Error::new(std::io::ErrorKind::Interrupted, error_msg)))
             }
         }
@@ -89,15 +87,14 @@ pub async fn acquire_lock_with_timeout<'a, T>(
         // No cancellation token, just use timeout
         match timeout(timeout_duration, lock_future).await {
             Ok(guard) => {
-                log::debug!("Successfully acquired lock for {}", operation_name);
+                log::debug!("Successfully acquired lock for {operation_name}");
                 Ok(guard)
             }
             Err(_) => {
                 let error_msg = format!(
-                    "Timeout acquiring lock for {} after {:?}",
-                    operation_name, timeout_duration
+                    "Timeout acquiring lock for {operation_name} after {timeout_duration:?}"
                 );
-                log::error!("{}", error_msg);
+                log::error!("{error_msg}");
                 Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
                     error_msg,

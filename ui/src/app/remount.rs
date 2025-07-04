@@ -62,16 +62,13 @@ where
     }
 
     pub fn remount_messages_with_cursor_control(&mut self, preserve_cursor: bool) -> AppResult<()> {
-        log::debug!(
-            "Remounting messages component, preserve_cursor: {}",
-            preserve_cursor
-        );
+        log::debug!("Remounting messages component, preserve_cursor: {preserve_cursor}");
 
         // Preserve the current cursor position only if requested
         let current_position = if preserve_cursor && self.app.mounted(&ComponentId::Messages) {
             match self.app.state(&ComponentId::Messages) {
                 Ok(tuirealm::State::One(tuirealm::StateValue::Usize(index))) => {
-                    log::debug!("Preserving cursor position: {}", index);
+                    log::debug!("Preserving cursor position: {index}");
                     Some(index)
                 }
                 _ => {
@@ -112,14 +109,14 @@ where
         // Restore cursor position using the Application's attr method (or reset to 0)
         let target_position = current_position.unwrap_or(0);
         if target_position > 0 || !preserve_cursor {
-            log::debug!("Setting cursor position to: {}", target_position);
+            log::debug!("Setting cursor position to: {target_position}");
             match self.app.attr(
                 &ComponentId::Messages,
                 tuirealm::Attribute::Custom("cursor_position"),
                 tuirealm::AttrValue::Number(target_position as isize),
             ) {
                 Ok(_) => log::debug!("Successfully set cursor position attribute"),
-                Err(e) => log::warn!("Failed to set cursor position attribute: {}", e),
+                Err(e) => log::warn!("Failed to set cursor position attribute: {e}"),
             }
         }
 
@@ -141,16 +138,14 @@ where
         is_focused: bool,
     ) -> AppResult<()> {
         log::debug!(
-            "Remounting messages component, preserve_cursor: {}, is_focused: {}",
-            preserve_cursor,
-            is_focused
+            "Remounting messages component, preserve_cursor: {preserve_cursor}, is_focused: {is_focused}"
         );
 
         // Preserve the current cursor position only if requested
         let current_position = if preserve_cursor && self.app.mounted(&ComponentId::Messages) {
             match self.app.state(&ComponentId::Messages) {
                 Ok(tuirealm::State::One(tuirealm::StateValue::Usize(index))) => {
-                    log::debug!("Preserving cursor position: {}", index);
+                    log::debug!("Preserving cursor position: {index}");
                     Some(index)
                 }
                 _ => {
@@ -192,14 +187,14 @@ where
         // Restore cursor position using the Application's attr method (or reset to 0)
         let target_position = current_position.unwrap_or(0);
         if target_position > 0 || !preserve_cursor {
-            log::debug!("Setting cursor position to: {}", target_position);
+            log::debug!("Setting cursor position to: {target_position}");
             match self.app.attr(
                 &ComponentId::Messages,
                 tuirealm::Attribute::Custom("cursor_position"),
                 tuirealm::AttrValue::Number(target_position as isize),
             ) {
                 Ok(_) => log::debug!("Successfully set cursor position attribute"),
-                Err(e) => log::warn!("Failed to set cursor position attribute: {}", e),
+                Err(e) => log::warn!("Failed to set cursor position attribute: {e}"),
             }
         }
 

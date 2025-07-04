@@ -197,11 +197,10 @@ fn extract_message_data_from_current_state<T: TerminalAdapter>(
                 BodyData::RawString(s) => s.as_bytes().to_vec(),
             };
             messages_data.push((message_id.clone(), body));
-            log::debug!("Extracted message data for {}", message_id);
+            log::debug!("Extracted message data for {message_id}");
         } else {
             let error = AppError::State(format!(
-                "Message {} not found in current state for send operation",
-                message_id
+                "Message {message_id} not found in current state for send operation"
             ));
             model
                 .error_reporter
@@ -249,7 +248,7 @@ async fn execute_bulk_send_with_data(
                 "Completed: {} successful, {} failed",
                 stats.successful, stats.failed
             ));
-            log::info!("Bulk send with data completed successfully: {:?}", stats);
+            log::info!("Bulk send with data completed successfully: {stats:?}");
 
             // Convert OperationStats to BulkOperationResult
             let mut result = server::bulk_operations::BulkOperationResult::new(messages_data.len());
@@ -258,7 +257,7 @@ async fn execute_bulk_send_with_data(
             Ok(result)
         }
         ServiceBusResponse::Error { error } => {
-            log::error!("Bulk send with data failed: {}", error);
+            log::error!("Bulk send with data failed: {error}");
             Err(AppError::ServiceBus(error.to_string()))
         }
         _ => Err(AppError::ServiceBus(
@@ -299,11 +298,11 @@ async fn execute_bulk_send_with_ids(
                 "Completed: {} successful, {} failed",
                 result.successful, result.failed
             ));
-            log::info!("Bulk send with IDs completed successfully: {:?}", result);
+            log::info!("Bulk send with IDs completed successfully: {result:?}");
             Ok(result)
         }
         ServiceBusResponse::Error { error } => {
-            log::error!("Bulk send with IDs failed: {}", error);
+            log::error!("Bulk send with IDs failed: {error}");
             Err(AppError::ServiceBus(error.to_string()))
         }
         _ => Err(AppError::ServiceBus(
