@@ -16,6 +16,10 @@ pub enum AppError {
     State(String),
     /// Configuration errors
     Config(String),
+    /// Authentication errors
+    Auth(String),
+    /// Channel communication errors
+    Channel(String),
 }
 
 impl Display for AppError {
@@ -26,6 +30,8 @@ impl Display for AppError {
             AppError::Component(msg) => write!(f, "Component Error: {msg}"),
             AppError::State(msg) => write!(f, "State Error: {msg}"),
             AppError::Config(msg) => write!(f, "Configuration Error: {msg}"),
+            AppError::Auth(msg) => write!(f, "Authentication Error: {msg}"),
+            AppError::Channel(msg) => write!(f, "Channel Error: {msg}"),
         }
     }
 }
@@ -171,6 +177,11 @@ impl ErrorReporter {
         self.report(error, context);
     }
 
+    /// Report error with auto-generated context
+    pub fn report_error(&self, error: AppError) {
+        self.report_simple(error, "Application", "operation");
+    }
+
     /// Report error with full context
     pub fn report(&self, error: AppError, context: ErrorContext) {
         let contextual_error = ContextualError::new(error.clone(), context.clone());
@@ -289,6 +300,8 @@ impl ErrorReporter {
             AppError::Component(_) => "🎛️",
             AppError::State(_) => "📊",
             AppError::Io(_) => "📁",
+            AppError::Auth(_) => "🔐",
+            AppError::Channel(_) => "📡",
         };
 
         // Add error title with emoji
@@ -314,6 +327,8 @@ impl ErrorReporter {
             AppError::Component(_) => AppError::Component(formatted_message),
             AppError::State(_) => AppError::State(formatted_message),
             AppError::Io(_) => AppError::Io(formatted_message),
+            AppError::Auth(_) => AppError::Auth(formatted_message),
+            AppError::Channel(_) => AppError::Channel(formatted_message),
         }
     }
 
@@ -325,6 +340,8 @@ impl ErrorReporter {
             AppError::Component(_) => "Component Error".to_string(),
             AppError::State(_) => "Application State Error".to_string(),
             AppError::Io(_) => "File System Error".to_string(),
+            AppError::Auth(_) => "Authentication Error".to_string(),
+            AppError::Channel(_) => "Communication Error".to_string(),
         }
     }
 

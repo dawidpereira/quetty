@@ -29,6 +29,14 @@ pub enum ConfigValidationError {
         min_limit: u64,
         max_limit: u64,
     },
+    #[error("Invalid authentication method: {method}")]
+    InvalidAuthMethod { method: String },
+    #[error("Missing required Azure AD configuration: {field}")]
+    MissingAzureAdField { field: String },
+    #[error("Invalid Azure AD flow: {flow}")]
+    InvalidAzureAdFlow { flow: String },
+    #[error("Conflicting authentication configuration: {message}")]
+    ConflictingAuthConfig { message: String },
 }
 
 impl ConfigValidationError {
@@ -84,6 +92,37 @@ impl ConfigValidationError {
                 format!(
                     "Queue statistics cache TTL out of range!\n\nYour configured value: {configured} seconds\nValid range: {min_limit} - {max_limit} seconds\n\nPlease update queue_stats_cache_ttl_seconds in config.toml to a value between {min_limit} and {max_limit} seconds."
                 )
+            }
+            ConfigValidationError::InvalidAuthMethod { method } => {
+                format!(
+                    "Invalid authentication method!\n\n\
+                    Your configured value: {method}\n\
+                    Valid methods: connection_string, azure_ad\n\n\
+                    Please update auth.method in config.toml."
+                )
+            }
+            ConfigValidationError::MissingAzureAdField { field } => {
+                format!(
+                    "Missing required Azure AD configuration!\n\n\
+                    Missing field: {field}\n\n\
+                    When using azure_ad authentication with device_code flow, you must provide:\n\
+                    - azure_ad.tenant_id (or AZURE_AD__TENANT_ID env var)\n\
+                    - azure_ad.client_id (or AZURE_AD__CLIENT_ID env var)\n\
+                    - azure_ad.subscription_id (or AZURE_AD__SUBSCRIPTION_ID env var)\n\
+                    - azure_ad.resource_group (or AZURE_AD__RESOURCE_GROUP env var)\n\
+                    - azure_ad.namespace (or AZURE_AD__NAMESPACE env var)"
+                )
+            }
+            ConfigValidationError::InvalidAzureAdFlow { flow } => {
+                format!(
+                    "Invalid Azure AD authentication flow!\n\n\
+                    Your configured value: {flow}\n\
+                    Valid flow: device_code\n\n\
+                    Please update azure_ad.flow in config.toml."
+                )
+            }
+            ConfigValidationError::ConflictingAuthConfig { message } => {
+                format!("Conflicting authentication configuration!\n\n{message}")
             }
         }
     }

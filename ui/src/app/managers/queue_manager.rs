@@ -34,6 +34,8 @@ impl QueueManager {
 
     /// Load namespaces using TaskManager with timeout
     pub fn load_namespaces(&self) {
+        // Check if authentication is in progress via a message
+        // We can't directly access state_manager here, so we'll handle this differently
         let tx_to_main = self.tx_to_main.clone();
 
         // Use execute with built-in timeout for namespace loading

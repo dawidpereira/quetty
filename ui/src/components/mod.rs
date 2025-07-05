@@ -13,6 +13,7 @@ pub mod queue_picker;
 pub mod theme_picker;
 
 // Popup components
+pub mod auth_popup;
 pub mod confirmation_popup;
 pub mod error_popup;
 pub mod number_input_popup;

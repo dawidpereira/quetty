@@ -82,6 +82,7 @@ where
                 && !self.app.mounted(&ComponentId::NumberInputPopup)
                 && !self.app.mounted(&ComponentId::PageSizePopup)
                 && !self.app.mounted(&ComponentId::ThemePicker)
+                && !self.app.mounted(&ComponentId::AuthPopup)
             {
                 // Create a temporary help bar with the active component
                 let mut help_bar = HelpBar::new();

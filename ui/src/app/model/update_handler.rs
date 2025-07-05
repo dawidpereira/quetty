@@ -8,6 +8,11 @@ where
 {
     pub fn handle_update(&mut self, msg: Option<Msg>) -> Option<Msg> {
         if let Some(msg) = msg {
+            // Log all messages during startup
+            if self.state_manager.is_authenticating {
+                log::debug!("Update during auth: {:?}", msg);
+            }
+
             // Set redraw
             self.set_redraw(true);
 
@@ -63,6 +68,26 @@ where
                     } else {
                         None
                     }
+                }
+                Msg::AuthActivity(msg) => {
+                    match self.update_auth(msg) {
+                        Ok(next_msg) => next_msg,
+                        Err(e) => {
+                            self.error_reporter.report_error(e);
+                            None
+                        }
+                    }
+                }
+                Msg::ShowError(error_msg) => {
+                    self.update_popup(PopupActivityMsg::ShowError(crate::error::AppError::Component(error_msg)))
+                }
+                Msg::ShowSuccess(success_msg) => {
+                    self.update_popup(PopupActivityMsg::ShowSuccess(success_msg))
+                }
+                Msg::Tick => {
+                    // Tick is used to refresh components that need periodic updates
+                    // Currently only used for the auth popup timer
+                    None
                 }
 
                 _ => None,

@@ -1,6 +1,6 @@
 use super::{
-    LoggingConfig, azure::ServicebusConfig, keys::KeyBindingsConfig, limits::*, ui::UIConfig,
-    validation::ConfigValidationError,
+    LoggingConfig, auth::AuthConfig, azure::ServicebusConfig, keys::KeyBindingsConfig, limits::*,
+    ui::UIConfig, validation::ConfigValidationError,
 };
 use crate::theme::types::ThemeConfig;
 use serde::Deserialize;
@@ -31,6 +31,8 @@ pub struct AppConfig {
     servicebus: ServicebusConfig,
     #[serde(default)]
     azure_ad: AzureAdConfig,
+    #[serde(default)]
+    auth: AuthConfig,
     #[serde(default)]
     logging: LoggingConfig,
     theme: Option<ThemeConfig>,
@@ -111,6 +113,9 @@ impl AppConfig {
             });
         }
 
+        // Validate authentication configuration
+        self.validate_auth_config(&mut errors);
+
         if errors.is_empty() {
             Ok(())
         } else {
@@ -178,11 +183,108 @@ impl AppConfig {
         &self.azure_ad
     }
 
+    pub fn auth(&self) -> &AuthConfig {
+        &self.auth
+    }
+
     pub fn logging(&self) -> &LoggingConfig {
         &self.logging
     }
 
     pub fn theme(&self) -> ThemeConfig {
         self.theme.clone().unwrap_or_default()
+    }
+
+    /// Validate authentication configuration
+    fn validate_auth_config(&self, errors: &mut Vec<ConfigValidationError>) {
+        let auth_method = self.auth.method();
+
+        // Validate authentication method
+        match auth_method {
+            "connection_string" => {
+                // When using connection_string, ensure we have a connection string
+                if self.servicebus.connection_string().is_none() {
+                    errors.push(ConfigValidationError::ConflictingAuthConfig {
+                        message: "Authentication method is set to 'connection_string' but no Service Bus connection string is provided.\n\n\
+                                  Please either:\n\
+                                  1. Add servicebus.connection_string to your config.toml\n\
+                                  2. Set SERVICEBUS__CONNECTION_STRING environment variable\n\
+                                  3. Change auth.method to 'azure_ad' for Azure AD authentication".to_string()
+                    });
+                }
+            }
+            "azure_ad" => {
+                // Validate Azure AD configuration
+                self.validate_azure_ad_config(errors);
+            }
+            method => {
+                errors.push(ConfigValidationError::InvalidAuthMethod {
+                    method: method.to_string(),
+                });
+            }
+        }
+    }
+
+    /// Validate Azure AD specific configuration
+    fn validate_azure_ad_config(&self, errors: &mut Vec<ConfigValidationError>) {
+        let flow = &self.azure_ad.flow;
+
+        // Validate flow type
+        match flow.as_str() {
+            "device_code" => {}
+            _ => {
+                errors.push(ConfigValidationError::InvalidAzureAdFlow { flow: flow.clone() });
+                return; // No point validating fields if flow is invalid
+            }
+        }
+
+        // Common required fields for device_code flow
+        if !self.azure_ad.has_tenant_id() && std::env::var("AZURE_AD__TENANT_ID").is_err() {
+            errors.push(ConfigValidationError::MissingAzureAdField {
+                field: "tenant_id".to_string(),
+            });
+        }
+        if !self.azure_ad.has_client_id() && std::env::var("AZURE_AD__CLIENT_ID").is_err() {
+            errors.push(ConfigValidationError::MissingAzureAdField {
+                field: "client_id".to_string(),
+            });
+        }
+
+        // Fields required for management API operations
+        if self.queue_stats_use_management_api() {
+            if !self.azure_ad.has_subscription_id()
+                && std::env::var("AZURE_AD__SUBSCRIPTION_ID").is_err()
+            {
+                errors.push(ConfigValidationError::MissingAzureAdField {
+                    field: "subscription_id".to_string(),
+                });
+            }
+            if !self.azure_ad.has_resource_group()
+                && std::env::var("AZURE_AD__RESOURCE_GROUP").is_err()
+            {
+                errors.push(ConfigValidationError::MissingAzureAdField {
+                    field: "resource_group".to_string(),
+                });
+            }
+            if !self.azure_ad.has_namespace() && std::env::var("AZURE_AD__NAMESPACE").is_err() {
+                errors.push(ConfigValidationError::MissingAzureAdField {
+                    field: "namespace".to_string(),
+                });
+            }
+        }
+
+        // Device code flow specific validations
+        if flow == "device_code" {
+            // Device code flow doesn't need client_secret
+            // Note: Having both connection string and device_code is valid
+            // Azure AD is used for management API, connection string for SDK operations
+
+            // If using device_code without connection string, warn about limitations
+            if self.servicebus.connection_string().is_none() {
+                log::warn!(
+                    "Using Azure AD device code flow without a connection string. Note that Service Bus SDK operations will be limited due to SDK constraints."
+                );
+            }
+        }
     }
 }

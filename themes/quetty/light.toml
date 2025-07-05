@@ -1,0 +1,57 @@
+# A clean light theme for Quetty with excellent readability and professional appearance
+
+[metadata]
+name = "Quetty Light"
+description = "A clean light theme for Quetty with excellent readability and professional appearance"
+author = "Dawid Pereira"
+theme_name = "quetty"
+flavor_name = "light"
+theme_icon = "⚡"
+flavor_icon = "☀️"
+
+[colors]
+# === Core Text Colors ===
+text_primary = "#24292f" # Dark charcoal - primary text throughout app
+text_muted = "#8c959f"   # Light gray - help bar separators
+
+# === Layout Colors ===
+surface = "#f7f9fc" # Very light blue-gray - background for pickers
+
+# === Accent Colors ===
+primary_accent = "#0969da" # GitHub blue - focused borders, active states, status text
+title_accent = "#24292f"   # Dark charcoal - component titles
+header_accent = "#1a7f37"  # Forest green - table headers and line numbers
+
+# === Selection Colors ===
+selection_bg = "#8250df" # Purple - selection background
+selection_fg = "#ffffff" # White - selection foreground
+
+# === Message Table Colors ===
+message_sequence = "#9a6700"       # Dark yellow - sequence numbers
+message_id = "#cf222e"             # Red - message identifiers
+message_timestamp = "#0969da"      # Blue - timestamps
+message_delivery_count = "#8250df" # Purple - delivery counts
+message_state_ready = "#1a7f37"    # Forest green - Ready for delivery (Active, Scheduled)
+message_state_deferred = "#9a6700" # Dark yellow - Deferred handling (Deferred)
+message_state_outcome = "#8250df"  # Purple - Processing outcome (Completed, Abandoned)
+message_state_failed = "#cf222e"   # Red - Failed delivery (Dead-lettered)
+queue_count = "#1a7f37"            # Forest green - for queue counts (legacy field)
+
+# === List Item Colors ===
+namespace_list_item = "#8250df" # Purple - namespace picker items
+
+# === Status Colors ===
+status_success = "#1a7f37" # Forest green - success messages
+status_warning = "#9a6700" # Dark yellow - warning messages
+status_error = "#cf222e"   # Red - error messages
+status_info = "#0969da"    # Blue - queue picker items
+status_loading = "#8250df" # Purple - loading indicator
+
+# === Help System Colors ===
+shortcut_key = "#9a6700"         # Dark yellow - keyboard shortcuts
+shortcut_description = "#656d76" # Medium gray - help descriptions
+help_section_title = "#8250df"   # Purple - help section titles
+
+# === Popup System Colors (used by confirmation popup) ===
+popup_background = "#ffffff" # White background
+popup_text = "#656d76"       # Medium gray text

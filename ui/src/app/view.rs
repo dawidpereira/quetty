@@ -33,7 +33,8 @@ pub fn view_success_popup(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,
     f: &mut Frame,
 ) -> Result<(), AppError> {
-    let popup_area = PopupLayout::medium(f.area());
+    // Use a smaller popup area for success messages so they don't cover other popups
+    let popup_area = PopupLayout::small(f.area());
     app.view(&ComponentId::SuccessPopup, f, popup_area);
     app.active(&ComponentId::SuccessPopup)
         .map_err(|e| AppError::Component(e.to_string()))?;
@@ -78,7 +79,24 @@ where
         &[Rect],
     ) -> Result<(), AppError>,
 {
-    // First, try to render the page size popup if it exists (highest priority)
+    // Special handling for auth popup - it can coexist with success popup
+    let auth_popup_mounted = app.mounted(&ComponentId::AuthPopup);
+    let success_popup_mounted = app.mounted(&ComponentId::SuccessPopup);
+
+    // When success popup is shown with auth popup, only show success popup
+    // This prevents visual confusion from overlapping popups
+    if auth_popup_mounted && success_popup_mounted {
+        // Only render success popup when both are mounted
+        view_success_popup(app, f)?;
+        return Ok(());
+    }
+
+    // First, try to render the auth popup if it exists (highest priority for authentication flow)
+    if auth_popup_mounted {
+        return view_auth_popup(app, f);
+    }
+
+    // Then, try to render the page size popup if it exists
     if app.mounted(&ComponentId::PageSizePopup) {
         return view_page_size_popup(app, f);
     }
@@ -94,7 +112,7 @@ where
     }
 
     // Then, try to render the success popup if it exists
-    if app.mounted(&ComponentId::SuccessPopup) {
+    if success_popup_mounted {
         return view_success_popup(app, f);
     }
 
@@ -211,6 +229,18 @@ pub fn view_theme_picker(
     let popup_area = PopupLayout::medium(f.area());
     app.view(&ComponentId::ThemePicker, f, popup_area);
     app.active(&ComponentId::ThemePicker)
+        .map_err(|e| AppError::Component(e.to_string()))?;
+    Ok(())
+}
+
+// View function for auth popup using standardized sizing
+pub fn view_auth_popup(
+    app: &mut Application<ComponentId, Msg, NoUserEvent>,
+    f: &mut Frame,
+) -> Result<(), AppError> {
+    let popup_area = PopupLayout::medium(f.area());
+    app.view(&ComponentId::AuthPopup, f, popup_area);
+    app.active(&ComponentId::AuthPopup)
         .map_err(|e| AppError::Component(e.to_string()))?;
     Ok(())
 }

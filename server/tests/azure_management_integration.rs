@@ -72,7 +72,7 @@ mod azure_management_client_creation {
             Err(ManagementApiError::MissingConfiguration(_)) => {
                 // Expected error type
             }
-            Err(other) => panic!("Expected MissingConfiguration error, got: {:?}", other),
+            Err(other) => panic!("Expected MissingConfiguration error, got: {other:?}"),
             Ok(_) => panic!("Expected error, got success"),
         }
     }
@@ -229,8 +229,7 @@ mod resilience_integration {
         // With exponential backoff and max 3 retries, it should complete within reasonable time
         assert!(
             elapsed < Duration::from_secs(10),
-            "Retry logic should complete within reasonable time, took: {:?}",
-            elapsed
+            "Retry logic should complete within reasonable time, took: {elapsed:?}"
         );
     }
 }
@@ -245,7 +244,7 @@ mod performance_integration {
 
         // Create many errors rapidly
         for i in 0..1000 {
-            let _error = ManagementApiError::QueueNotFound(format!("queue-{}", i));
+            let _error = ManagementApiError::QueueNotFound(format!("queue-{i}"));
         }
 
         let duration = start.elapsed();
@@ -253,8 +252,7 @@ mod performance_integration {
         // Error creation should be very fast
         assert!(
             duration < Duration::from_millis(100),
-            "Creating 1000 errors should be very fast, took: {:?}",
-            duration
+            "Creating 1000 errors should be very fast, took: {duration:?}"
         );
     }
 }

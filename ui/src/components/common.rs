@@ -1,3 +1,4 @@
+use crate::app::updates::messages::pagination::QueueStatsCache;
 use crate::error::AppError;
 use server::bulk_operations::MessageIdentifier;
 use server::model::MessageModel;
@@ -23,6 +24,7 @@ pub enum ComponentId {
     HelpScreen,
     ThemePicker,
     TextLabel,
+    AuthPopup,
 }
 
 impl fmt::Display for ComponentId {
@@ -42,6 +44,7 @@ impl fmt::Display for ComponentId {
             ComponentId::NumberInputPopup => write!(f, "NumberInputPopup"),
             ComponentId::PageSizePopup => write!(f, "PageSizePopup"),
             ComponentId::ThemePicker => write!(f, "ThemePicker"),
+            ComponentId::AuthPopup => write!(f, "AuthPopup"),
         }
     }
 }
@@ -50,6 +53,7 @@ impl fmt::Display for ComponentId {
 pub enum Msg {
     AppClose,
     ForceRedraw,
+    Tick,
 
     MessageActivity(MessageActivityMsg),
     QueueActivity(QueueActivityMsg),
@@ -59,9 +63,27 @@ pub enum Msg {
     PopupActivity(PopupActivityMsg),
     Error(AppError),
     ShowError(String),
+    ShowSuccess(String),
     ClipboardError(String),
     ToggleHelpScreen,
     ToggleThemePicker,
+    AuthActivity(AuthActivityMsg),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum AuthActivityMsg {
+    Login,
+    ShowDeviceCode {
+        user_code: String,
+        verification_url: String,
+        message: String,
+        expires_in: u64, // Seconds until expiry
+    },
+    AuthenticationSuccess,
+    AuthenticationFailed(String),
+    CancelAuthentication,
+    CopyDeviceCode,
+    OpenVerificationUrl,
 }
 
 #[derive(Debug, PartialEq)]
@@ -104,7 +126,7 @@ pub enum MessageActivityMsg {
     PreviousPage,
 
     NewMessagesLoaded(Vec<MessageModel>),
-    QueueStatsUpdated(crate::app::updates::messages::pagination::QueueStatsCache),
+    QueueStatsUpdated(QueueStatsCache),
     ToggleMessageSelectionByIndex(usize),
     SelectAllCurrentPage,
     SelectAllLoadedMessages,

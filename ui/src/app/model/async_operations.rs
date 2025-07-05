@@ -8,6 +8,12 @@ where
 {
     /// Load namespaces using QueueManager
     pub fn load_namespaces(&self) {
+        // Don't load namespaces if authentication is in progress
+        if self.state_manager.is_authenticating {
+            log::info!("Skipping namespace loading - authentication in progress");
+            return;
+        }
+        log::info!("Proceeding with namespace loading - not authenticating");
         self.queue_manager.load_namespaces();
     }
 

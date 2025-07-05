@@ -26,6 +26,8 @@ pub struct StateManager {
     pub is_editing_message: bool,
     pub tx_to_main: Sender<Msg>,
     pub current_page_size: Option<u32>, // Dynamic page size that can be changed during runtime
+    pub is_authenticating: bool,        // Track if authentication is in progress
+    pub last_device_code_copy: Option<std::time::Instant>, // Track last copy time to prevent spam
 }
 
 impl StateManager {
@@ -44,6 +46,8 @@ impl StateManager {
             is_editing_message: false,
             tx_to_main,
             current_page_size: None,
+            is_authenticating: false,
+            last_device_code_copy: None,
         }
     }
 

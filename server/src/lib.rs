@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod bulk_operations;
 pub mod consumer;
 pub mod model;

@@ -3,6 +3,7 @@ mod components;
 mod config;
 mod error;
 mod logger;
+mod services;
 mod theme;
 mod validation;
 

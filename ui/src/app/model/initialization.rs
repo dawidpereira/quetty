@@ -94,17 +94,26 @@ impl Model<CrosstermTerminalAdapter> {
     pub async fn new() -> AppResult<Self> {
         // Create the underlying Azure Service Bus client
         let config = config::get_config_or_panic();
-        let connection_string = config
-            .servicebus()
-            .connection_string()
-            .map_err(|e| AppError::Config(format!("Failed to get connection string: {e}")))?;
+        let connection_string_opt = config.servicebus().connection_string();
 
-        let azure_service_bus_client = AzureServiceBusClient::new_from_connection_string(
-            connection_string,
-            ServiceBusClientOptions::default(),
-        )
-        .await
-        .map_err(|e| AppError::ServiceBus(e.to_string()))?;
+        // Check authentication method from config
+        let auth_config = config.auth();
+        let needs_auth = auth_config.method() == "azure_ad";
+
+        // Create Azure Service Bus client
+        let azure_service_bus_client = if let Some(connection_string) = connection_string_opt {
+            // Connection string available - use it for Service Bus operations
+            AzureServiceBusClient::new_from_connection_string(
+                connection_string,
+                ServiceBusClientOptions::default(),
+            )
+            .await
+            .map_err(|e| AppError::ServiceBus(e.to_string()))?
+        } else {
+            return Err(AppError::Config(
+                "Connection string is required for Service Bus message operations".to_string(),
+            ));
+        };
 
         let azure_ad_config = config.azure_ad().clone();
         let statistics_config =
@@ -113,12 +122,28 @@ impl Model<CrosstermTerminalAdapter> {
                 config.queue_stats_cache_ttl_seconds(),
                 config.queue_stats_use_management_api(),
             );
+        // Log authentication configuration
+        let auth_config = config.auth();
+        if auth_config.method() == "azure_ad" {
+            log::info!("Azure AD authentication configured for management operations");
+            log::info!("Flow: {}", azure_ad_config.flow);
+            if azure_ad_config.flow == "device_code" {
+                log::info!("Device code flow: You'll be prompted to authenticate in your browser");
+                log::info!("This will happen when accessing queue statistics or listing queues");
+            }
+            log::warn!(
+                "Note: Service Bus message operations still use connection string due to SDK limitations"
+            );
+        } else {
+            log::info!("Using connection string authentication");
+        }
+
         let service_bus_manager = Arc::new(Mutex::new(ServiceBusManager::new(
             Arc::new(Mutex::new(azure_service_bus_client)),
             azure_ad_config,
             statistics_config,
             config.batch().clone(),
-            connection_string.to_string(),
+            connection_string_opt.unwrap_or("").to_string(),
         )));
 
         let (tx_to_main, rx_to_main) = mpsc::channel();
@@ -139,6 +164,22 @@ impl Model<CrosstermTerminalAdapter> {
             tx_to_main.clone(),
         );
 
+        // Create auth service if Azure AD is configured as the method
+        let auth_service = if config.auth().method() == "azure_ad" {
+            let auth_service = Arc::new(
+                crate::services::AuthService::new(config.azure_ad(), tx_to_main.clone())
+                    .map_err(|e| AppError::Component(e.to_string()))?,
+            );
+
+            // Set the global auth state for server components to use
+            let auth_state = auth_service.auth_state_manager();
+            server::auth::set_global_auth_state(auth_state);
+
+            Some(auth_service)
+        } else {
+            None
+        };
+
         let queue_state = QueueState::new();
         let mut app = Self {
             app: Self::init_app(&queue_state)?,
@@ -151,17 +192,56 @@ impl Model<CrosstermTerminalAdapter> {
             task_manager,
             state_manager,
             queue_manager,
+            auth_service,
         };
 
-        // Initialize loading indicator with ComponentState pattern using extension trait
-        app.app.mount_with_state(
-            ComponentId::LoadingIndicator,
-            LoadingIndicator::new("Loading...", true),
-            Vec::default(),
-        )?;
+        // Don't mount loading indicator if we need authentication
+        if !needs_auth {
+            // Initialize loading indicator with ComponentState pattern using extension trait
+            app.app.mount_with_state(
+                ComponentId::LoadingIndicator,
+                LoadingIndicator::new("Loading...", true),
+                Vec::default(),
+            )?;
+        }
 
-        // Use queue manager for loading namespaces instead of direct error handling
-        app.queue_manager.load_namespaces();
+        // If we need authentication, trigger it before loading namespaces
+        log::info!(
+            "Authentication check: needs_auth = {}, has_auth_service = {}",
+            needs_auth,
+            app.auth_service.is_some()
+        );
+        if needs_auth {
+            if let Some(ref auth_service) = app.auth_service {
+                // Set authentication flag to prevent namespace loading
+                app.state_manager.is_authenticating = true;
+
+                // Clone auth_service to move into async task
+                let auth_service = auth_service.clone();
+
+                // Start authentication process immediately (not in background)
+                // This will show the device code popup
+                let tx = app.state_manager.tx_to_main.clone();
+                tokio::spawn(async move {
+                    // Small delay to ensure UI is ready
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+                    // Initiate authentication - this will show device code popup
+                    if let Err(e) = auth_service.initiate_authentication().await {
+                        log::error!("Failed to initiate authentication: {}", e);
+                        let _ = tx.send(Msg::Error(e));
+                    }
+                });
+            } else {
+                // No auth service but needs auth - this shouldn't happen
+                return Err(AppError::Config(
+                    "Authentication required but auth service not initialized".to_string(),
+                ));
+            }
+        } else {
+            // No authentication needed, load namespaces directly
+            app.queue_manager.load_namespaces();
+        }
 
         Ok(app)
     }

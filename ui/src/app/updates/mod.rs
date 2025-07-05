@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod help;
 pub mod loading;
 pub mod messages;

@@ -6,6 +6,7 @@ pub enum ServiceBusError {
     ConnectionFailed(String),
     ConnectionLost(String),
     AuthenticationFailed(String),
+    AuthenticationError(String),
 
     /// Consumer related errors
     ConsumerCreationFailed(String),
@@ -55,6 +56,9 @@ impl fmt::Display for ServiceBusError {
             ServiceBusError::ConnectionLost(msg) => write!(f, "Connection lost: {msg}"),
             ServiceBusError::AuthenticationFailed(msg) => {
                 write!(f, "Authentication failed: {msg}")
+            }
+            ServiceBusError::AuthenticationError(msg) => {
+                write!(f, "Authentication error: {msg}")
             }
 
             ServiceBusError::ConsumerCreationFailed(msg) => {

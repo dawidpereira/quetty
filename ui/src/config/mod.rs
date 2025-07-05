@@ -3,6 +3,7 @@ use serde::Deserialize;
 
 // Re-export all submodules
 pub mod app;
+pub mod auth;
 pub mod azure;
 pub mod keys;
 pub mod limits;

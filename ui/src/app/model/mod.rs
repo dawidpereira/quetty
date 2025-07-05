@@ -5,6 +5,7 @@ use crate::app::task_manager::TaskManager;
 use crate::components::common::{ComponentId, Msg};
 use crate::error::AppError;
 use crate::error::ErrorReporter;
+use crate::services::AuthService;
 use server::service_bus_manager::ServiceBusManager;
 use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 use server::taskpool::TaskPool;
@@ -47,6 +48,9 @@ where
     // Managers for different concerns
     pub state_manager: StateManager,
     pub queue_manager: QueueManager,
+
+    // Authentication service
+    pub auth_service: Option<Arc<AuthService>>,
 }
 
 impl<T> Model<T>

@@ -1,5 +1,5 @@
 use crate::app::model::Model;
-use crate::components::common::{Msg, PopupActivityMsg};
+use crate::components::common::{ComponentId, Msg, PopupActivityMsg};
 use crate::error::AppError;
 use tuirealm::terminal::TerminalAdapter;
 
@@ -70,14 +70,27 @@ where
                 .report_mount_error("SuccessPopup", "mount", e);
             return None;
         }
+
+        // Auto-close success popup after 1.5 seconds if auth popup is shown
+        if self.app.mounted(&ComponentId::AuthPopup) {
+            let tx = self.state_manager.tx_to_main.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+                let _ = tx.send(Msg::PopupActivity(PopupActivityMsg::CloseSuccess));
+            });
+        }
+
         None
     }
 
     fn handle_close_success(&mut self) -> Option<Msg> {
-        if let Err(e) = self.unmount_success_popup() {
-            self.error_reporter
-                .report_mount_error("SuccessPopup", "unmount", e);
-            return None;
+        // Only try to unmount if it's actually mounted
+        if self.app.mounted(&ComponentId::SuccessPopup) {
+            if let Err(e) = self.unmount_success_popup() {
+                self.error_reporter
+                    .report_mount_error("SuccessPopup", "unmount", e);
+                return None;
+            }
         }
         None
     }

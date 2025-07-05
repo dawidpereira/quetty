@@ -1,0 +1,52 @@
+# Authentication Configuration Example
+
+[auth]
+# Primary authentication method: "connection_string" or "azure_ad"
+primary_method = "azure_ad"
+# Enable fallback to alternative method if primary fails
+fallback_enabled = true
+
+# Connection String Authentication
+[auth.connection_string]
+# Azure Service Bus connection string with SAS token
+value = "Endpoint=sb://namespace.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=..."
+
+# Azure AD Authentication
+[auth.azure_ad]
+# Authentication flow type:
+# - "device_code": Interactive device code flow
+flow = "device_code"
+
+# Required for most flows (except managed_identity)
+tenant_id = "your-tenant-id"
+client_id = "your-client-id"
+
+# Optional: Include client_secret only if your Azure AD app is configured as a confidential client
+# For public clients (common for device code flow), omit the client_secret
+# client_secret = "your-client-secret"
+
+# Required for Azure management operations
+subscription_id = "your-subscription-id"
+resource_group = "your-resource-group"
+namespace = "your-servicebus-namespace"
+
+# Optional: Override default authority host
+# authority_host = "https://login.microsoftonline.com"
+
+# Optional: Override default scope
+# Default is "https://servicebus.azure.net/.default" for Service Bus access
+# scope = "https://servicebus.azure.net/.default"
+
+# Example: Device Code Flow Configuration
+# [auth.azure_ad]
+# flow = "device_code"
+# tenant_id = "your-tenant-id"
+# client_id = "your-client-id"
+# # Note: Include client_secret only if your Azure AD app is configured as a confidential client
+# # For public clients (common for device code flow), omit the client_secret
+# # client_secret = "your-client-secret"
+# subscription_id = "your-subscription-id"
+# resource_group = "your-resource-group"
+# namespace = "your-servicebus-namespace"
+
+

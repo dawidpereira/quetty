@@ -86,9 +86,13 @@ where
             Vec::default(),
         )?;
 
-        self.app
-            .active(&ComponentId::SuccessPopup)
-            .map_err(|e| AppError::Component(e.to_string()))?;
+        // Only take focus if auth popup is not shown
+        // This prevents keyboard input confusion when copying device code
+        if !self.app.mounted(&ComponentId::AuthPopup) {
+            self.app
+                .active(&ComponentId::SuccessPopup)
+                .map_err(|e| AppError::Component(e.to_string()))?;
+        }
 
         self.set_redraw(true);
 
@@ -242,6 +246,14 @@ where
 
     /// Helper method to activate the appropriate component for the current state
     fn activate_component_for_current_state(&mut self) -> AppResult<()> {
+        // Check if auth popup is still mounted - it has priority
+        if self.app.mounted(&ComponentId::AuthPopup) {
+            self.app
+                .active(&ComponentId::AuthPopup)
+                .map_err(|e| AppError::Component(e.to_string()))?;
+            return Ok(());
+        }
+
         match self.state_manager.app_state {
             AppState::NamespacePicker => {
                 self.app

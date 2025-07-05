@@ -37,6 +37,11 @@ queue_stats_cache_ttl_seconds = 60 # Cache duration in seconds (0 = no caching)
 theme_name = "nightfox"
 flavor_name = "duskfox"
 
+# Authentication configuration
+[auth]
+# Authentication method: "connection_string" or "azure_ad"
+method = "connection_string"
+
 # Service Bus configuration
 [servicebus]
 # connection_string = ""  # Required - set via environment variable (e.g., AZURE_SERVICEBUS_CONNECTION_STRING)
@@ -44,6 +49,9 @@ flavor_name = "duskfox"
 
 # Azure AD configuration (for Azure Service Bus with Azure AD authentication)
 [azure_ad]
+# Authentication flow type:
+# - "device_code": Interactive device code flow
+flow = "device_code"
 # tenant_id = ""       # Required - Azure AD tenant ID (set via environment variable)
 # client_id = ""       # Required - Azure AD application client ID (set via environment variable)
 # client_secret = ""   # Required - Azure AD application client secret (set via environment variable)

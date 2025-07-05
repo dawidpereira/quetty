@@ -18,12 +18,18 @@ pub mod types;
 
 #[derive(Clone, Debug, serde::Deserialize, Default)]
 pub struct AzureAdConfig {
+    #[serde(default = "default_flow")]
+    pub flow: String,
     tenant_id: Option<String>,
     client_id: Option<String>,
     client_secret: Option<String>,
     subscription_id: Option<String>,
     resource_group: Option<String>,
     pub namespace: Option<String>,
+}
+
+fn default_flow() -> String {
+    "device_code".to_string()
 }
 
 impl AzureAdConfig {
@@ -69,25 +75,50 @@ impl AzureAdConfig {
             ))
     }
 
-    /// Azure AD operations
+    // Helper methods for validation - check if fields are present in config (not env vars)
+    pub fn has_tenant_id(&self) -> bool {
+        self.tenant_id.is_some()
+    }
+
+    pub fn has_client_id(&self) -> bool {
+        self.client_id.is_some()
+    }
+
+    pub fn has_client_secret(&self) -> bool {
+        self.client_secret.is_some()
+    }
+
+    pub fn has_subscription_id(&self) -> bool {
+        self.subscription_id.is_some()
+    }
+
+    pub fn has_resource_group(&self) -> bool {
+        self.resource_group.is_some()
+    }
+
+    pub fn has_namespace(&self) -> bool {
+        self.namespace.is_some()
+    }
+
+    /// Azure AD operations using the new auth system
     pub async fn get_azure_ad_token(&self) -> Result<String, Box<dyn std::error::Error>> {
-        let url = format!(
-            "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
-            self.tenant_id()?
-        );
-        let client = reqwest::Client::new();
-        let params = [
-            ("grant_type", "client_credentials"),
-            ("client_id", self.client_id()?),
-            ("client_secret", self.client_secret()?),
-            ("scope", "https://management.azure.com/.default"),
-        ];
-        let resp = client.post(url).form(&params).send().await?;
-        let json: serde_json::Value = resp.json().await?;
-        let token = json["access_token"]
-            .as_str()
-            .ok_or("No access_token in response")?
-            .to_string();
+        use crate::auth::{
+            create_auth_provider, create_service_bus_auth_provider, get_azure_ad_token_with_auth,
+        };
+
+        // If device code flow is configured, try to use UI-integrated auth first
+        if self.flow == "device_code" {
+            if let Ok(ui_provider) = create_auth_provider(None) {
+                if let Ok(token) = get_azure_ad_token_with_auth(&ui_provider).await {
+                    return Ok(token);
+                }
+            }
+        }
+
+        // Fallback to regular auth provider
+        let auth_provider = create_service_bus_auth_provider("azure_ad", None, self)?;
+
+        let token = get_azure_ad_token_with_auth(&auth_provider).await?;
         Ok(token)
     }
 
