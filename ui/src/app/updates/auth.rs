@@ -1,6 +1,6 @@
 use crate::app::model::Model;
 use crate::components::auth_popup::{AuthPopup, AuthPopupState};
-use crate::components::common::{AuthActivityMsg, ComponentId, Msg};
+use crate::components::common::{AuthActivityMsg, AzureDiscoveryMsg, ComponentId, Msg};
 use crate::components::state::ComponentStateMount;
 use crate::error::AppResult;
 use tuirealm::terminal::TerminalAdapter;
@@ -97,10 +97,29 @@ where
                 // Clear authentication flag
                 self.state_manager.is_authenticating = false;
 
-                // Load namespaces after successful authentication
-                self.queue_manager.load_namespaces();
+                // Check if we need to start Azure discovery
+                let config = crate::config::get_config_or_panic();
+                let has_connection_string = config.servicebus().connection_string().is_some();
 
-                Ok(None)
+                log::info!("Authentication successful! Checking next steps...");
+                log::info!("Has connection string: {}", has_connection_string);
+                log::info!(
+                    "Service bus manager initialized: {}",
+                    self.service_bus_manager.is_some()
+                );
+
+                if !has_connection_string {
+                    // No connection string configured, start discovery
+                    log::info!("No connection string found, starting Azure discovery flow");
+                    Ok(Some(Msg::AzureDiscoveryMsg(
+                        AzureDiscoveryMsg::StartDiscovery,
+                    )))
+                } else {
+                    // Connection string available, load namespaces directly
+                    log::info!("Connection string available, loading namespaces directly");
+                    self.queue_manager.load_namespaces();
+                    Ok(None)
+                }
             }
 
             AuthActivityMsg::AuthenticationFailed(error) => {
@@ -131,6 +150,9 @@ where
                     self.app
                         .umount(&ComponentId::AuthPopup)
                         .map_err(|e| crate::error::AppError::Component(e.to_string()))?;
+
+                    // Force redraw after unmounting auth popup
+                    self.state_manager.set_redraw(true);
                 }
 
                 // If we're still in the authentication phase (not logged in anywhere), close the app

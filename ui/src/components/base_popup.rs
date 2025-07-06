@@ -113,15 +113,11 @@ impl PopupBuilder {
         self
     }
 
-    //TODO: Remove artibute or fn if not needed
-    #[allow(dead_code)]
     pub fn add_empty_line(mut self) -> Self {
         self.content_lines.push(Line::from(""));
         self
     }
 
-    //TODO: Remove attrigube or fn if not needed
-    #[allow(dead_code)]
     pub fn add_line(mut self, spans: Vec<Span<'static>>) -> Self {
         self.content_lines.push(Line::from(spans));
         self

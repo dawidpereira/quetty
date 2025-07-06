@@ -383,7 +383,10 @@ fn start_bulk_send_generic<T: TerminalAdapter>(
     context: BulkOperationContext,
     max_position: usize,
 ) -> Option<Msg> {
-    let service_bus_manager = model.service_bus_manager.clone();
+    let Some(service_bus_manager) = model.service_bus_manager.clone() else {
+        log::warn!("Service bus manager not initialized");
+        return None;
+    };
     let loading_message = operation_params
         .loading_message_template
         .replace("{}", &bulk_data.message_count().to_string());

@@ -65,7 +65,10 @@ where
                 qs.bulk_selection.clear_all();
 
                 // Dispose all backend resources using task manager with progress tracking
-                let service_bus_manager = self.service_bus_manager.clone();
+                let Some(service_bus_manager) = self.service_bus_manager.clone() else {
+                    log::warn!("Service bus manager not initialized");
+                    return None;
+                };
                 let error_reporter = self.error_reporter.clone();
                 let tx_to_main = self.tx_to_main().clone();
 
@@ -127,8 +130,29 @@ where
             QueueActivityMsg::ExitQueueFinalized => {
                 log::info!("Finalizing queue exit - returning to queue selection");
 
-                // Load queues to return to queue picker
-                self.load_queues();
+                // Check if we're in discovery mode
+                if let (
+                    Some(subscription_id),
+                    Some(resource_group),
+                    Some(namespace),
+                    Some(auth_service),
+                ) = (
+                    &self.state_manager.selected_subscription,
+                    &self.state_manager.selected_resource_group,
+                    &self.state_manager.selected_namespace,
+                    &self.auth_service,
+                ) {
+                    log::info!("In discovery mode - loading queues with discovered values");
+                    self.queue_manager.load_queues_with_discovery(
+                        subscription_id.clone(),
+                        resource_group.clone(),
+                        namespace.clone(),
+                        auth_service.clone(),
+                    );
+                } else {
+                    log::info!("Using regular queue loading");
+                    self.load_queues();
+                }
                 None
             }
             QueueActivityMsg::QueueSwitchCancelled => {
@@ -142,7 +166,10 @@ where
                 qs.message_pagination.reset();
 
                 // Dispose all backend resources first, then reload queue list in sequence
-                let service_bus_manager = self.service_bus_manager.clone();
+                let Some(service_bus_manager) = self.service_bus_manager.clone() else {
+                    log::warn!("Service bus manager not initialized");
+                    return None;
+                };
                 let task_manager = self.task_manager.clone();
                 let tx_to_main = self.tx_to_main().clone();
 

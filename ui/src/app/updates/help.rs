@@ -51,6 +51,9 @@ where
                                 .report_activation_error("ThemePicker", &e);
                         }
                     }
+                    AppState::AzureDiscovery => {
+                        // Active component is managed by discovery flow
+                    }
                     _ => {}
                 }
             } else {

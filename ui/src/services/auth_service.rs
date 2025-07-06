@@ -162,4 +162,25 @@ impl AuthService {
     pub async fn get_device_code_info(&self) -> Option<server::auth::DeviceCodeInfo> {
         self.auth_state.get_device_code_info().await
     }
+
+    /// Get a token for Azure Management API operations
+    pub async fn get_management_token(&self) -> Result<String, AppError> {
+        // For now, we'll use the same token as Service Bus
+        // In the future, we might need to request a different scope
+        match self.auth_state.get_azure_ad_token().await {
+            Some(token) => Ok(token),
+            None => {
+                // Try to authenticate if not already authenticated
+                self.initiate_authentication().await?;
+
+                // Wait a bit for authentication to complete
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+                self.auth_state
+                    .get_azure_ad_token()
+                    .await
+                    .ok_or_else(|| AppError::Auth("Failed to obtain management token".to_string()))
+            }
+        }
+    }
 }

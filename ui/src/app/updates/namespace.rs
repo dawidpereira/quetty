@@ -1,5 +1,7 @@
 use crate::app::model::Model;
-use crate::components::common::{ComponentId, Msg, NamespaceActivityMsg};
+use crate::components::common::{
+    AzureDiscoveryMsg, ComponentId, Msg, NamespaceActivityMsg, QueueActivityMsg,
+};
 use tuirealm::State;
 use tuirealm::terminal::TerminalAdapter;
 
@@ -18,11 +20,81 @@ where
                 None
             }
             NamespaceActivityMsg::NamespaceSelected => self.handle_namespace_selection(),
+            NamespaceActivityMsg::NamespaceCancelled => {
+                // In discovery mode, go back to resource group selection
+                if self.state_manager.selected_subscription.is_some()
+                    && self.state_manager.selected_resource_group.is_some()
+                {
+                    log::info!("Discovery mode: Going back to resource group selection");
+                    // Clear selected namespace
+                    self.set_selected_namespace(None);
+
+                    // Change state to AzureDiscovery before unmounting to avoid rendering issues
+                    self.set_app_state(crate::app::model::AppState::AzureDiscovery);
+
+                    // Unmount namespace picker
+                    if let Err(e) = self.app.umount(&ComponentId::NamespacePicker) {
+                        log::error!("Failed to unmount namespace picker: {}", e);
+                    }
+                    // Go back to resource group selection
+                    return Some(Msg::AzureDiscoveryMsg(
+                        AzureDiscoveryMsg::DiscoveringResourceGroups(
+                            self.state_manager.selected_subscription.clone().unwrap(),
+                        ),
+                    ));
+                } else {
+                    // Not in discovery mode, just close
+                    log::info!("Not in discovery mode, closing namespace picker");
+                    if let Err(e) = self.app.umount(&ComponentId::NamespacePicker) {
+                        log::error!("Failed to unmount namespace picker: {}", e);
+                    }
+                    self.set_quit(true);
+                    return Some(Msg::AppClose);
+                }
+            }
             NamespaceActivityMsg::NamespaceUnselected => {
                 // Clear selected namespace
                 self.set_selected_namespace(None);
 
-                self.load_namespaces();
+                // Check if we're in discovery mode
+                if self.state_manager.selected_subscription.is_some()
+                    && self.state_manager.selected_resource_group.is_some()
+                    && !self.state_manager.discovered_namespaces.is_empty()
+                {
+                    // In discovery mode - go back to namespace selection
+                    log::info!("Discovery mode: Going back to namespace selection");
+                    let namespaces: Vec<String> = self
+                        .state_manager
+                        .discovered_namespaces
+                        .iter()
+                        .map(|ns| ns.name.clone())
+                        .collect();
+                    return Some(Msg::NamespaceActivity(
+                        NamespaceActivityMsg::NamespacesLoaded(namespaces),
+                    ));
+                } else {
+                    // Check if we have configuration-based subscription ID
+                    let config = crate::config::get_config_or_panic();
+                    let has_subscription_id = config.azure_ad().subscription_id().is_ok();
+
+                    if !has_subscription_id && !self.state_manager.discovered_namespaces.is_empty()
+                    {
+                        // Still in discovery mode
+                        log::info!("Using discovered namespaces for namespace picker");
+                        let namespaces: Vec<String> = self
+                            .state_manager
+                            .discovered_namespaces
+                            .iter()
+                            .map(|ns| ns.name.clone())
+                            .collect();
+                        return Some(Msg::NamespaceActivity(
+                            NamespaceActivityMsg::NamespacesLoaded(namespaces),
+                        ));
+                    } else {
+                        // Normal mode - load namespaces from Azure
+                        self.load_namespaces();
+                    }
+                }
                 None
             }
         }
@@ -35,10 +107,79 @@ where
             self.app.state(&ComponentId::NamespacePicker)
         {
             log::info!("Selected namespace: {namespace}");
-            self.set_selected_namespace(Some(namespace));
+
+            // Store the selected namespace first
+            self.set_selected_namespace(Some(namespace.clone()));
+
+            // Check if we're in discovery mode and need to fetch connection string
+            if self.state_manager.discovered_connection_string.is_none()
+                && self.state_manager.selected_subscription.is_some()
+                && self.state_manager.selected_resource_group.is_some()
+            {
+                // Find the full namespace object
+                if let Some(_ns) = self
+                    .state_manager
+                    .discovered_namespaces
+                    .iter()
+                    .find(|n| n.name == namespace)
+                {
+                    let subscription_id = self.state_manager.selected_subscription.clone().unwrap();
+                    let resource_group =
+                        self.state_manager.selected_resource_group.clone().unwrap();
+
+                    return Some(Msg::AzureDiscoveryMsg(
+                        AzureDiscoveryMsg::FetchingConnectionString {
+                            subscription_id,
+                            resource_group,
+                            namespace: namespace.clone(),
+                        },
+                    ));
+                }
+            }
         }
 
-        self.load_queues();
+        // Check if we're using discovered resources (no subscription ID in config)
+        let config = crate::config::get_config_or_panic();
+        let has_subscription_id = config.azure_ad().subscription_id().is_ok();
+
+        if !has_subscription_id && self.state_manager.discovered_connection_string.is_some() {
+            // We're in discovery mode - unmount the namespace picker before transitioning
+            // to prevent it from intercepting events meant for the queue picker
+            if self.app.mounted(&ComponentId::NamespacePicker) {
+                log::info!("Unmounting namespace picker before transitioning to queue picker");
+                if let Err(e) = self.app.umount(&ComponentId::NamespacePicker) {
+                    log::error!("Failed to unmount namespace picker: {}", e);
+                }
+            }
+
+            // In discovery mode, we can still list queues using the discovered resources
+            if let (
+                Some(subscription_id),
+                Some(resource_group),
+                Some(namespace),
+                Some(auth_service),
+            ) = (
+                &self.state_manager.selected_subscription,
+                &self.state_manager.selected_resource_group,
+                &self.state_manager.selected_namespace,
+                &self.auth_service,
+            ) {
+                log::info!("Discovery mode: Loading queues for namespace {}", namespace);
+                self.queue_manager.load_queues_with_discovery(
+                    subscription_id.clone(),
+                    resource_group.clone(),
+                    namespace.clone(),
+                    auth_service.clone(),
+                );
+            } else {
+                log::warn!("Discovery mode but missing required information to list queues");
+                return Some(Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(vec![])));
+            }
+        } else {
+            // Normal mode with subscription ID configured
+            self.load_queues();
+        }
+
         None
     }
 }

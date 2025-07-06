@@ -37,6 +37,12 @@ where
             ],
         )?;
 
+        self.app
+            .active(&ComponentId::LoadingIndicator)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        self.set_redraw(true);
+
         log::debug!("Loading indicator mounted successfully");
         Ok(())
     }
@@ -291,6 +297,9 @@ where
                 self.app
                     .active(&ComponentId::NamespacePicker)
                     .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::AzureDiscovery => {
+                // Stay in discovery mode - the active component will be managed by discovery flow
             }
         }
         Ok(())

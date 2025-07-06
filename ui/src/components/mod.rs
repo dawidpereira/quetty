@@ -10,6 +10,8 @@ pub mod validation_patterns;
 // Input components
 pub mod namespace_picker;
 pub mod queue_picker;
+pub mod resource_group_picker;
+pub mod subscription_picker;
 pub mod theme_picker;
 
 // Popup components

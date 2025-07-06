@@ -83,16 +83,36 @@ impl MockComponent for QueuePicker {
         let popup_block =
             PopupBuilder::new("Queue Picker").create_block_with_title("  🗂️  Select a Queue  ");
 
-        let list = List::new(items)
-            .block(popup_block)
-            .highlight_style(
-                Style::default()
-                    .fg(ThemeManager::status_info())
-                    .bg(ThemeManager::surface())
-                    .add_modifier(TextModifiers::BOLD),
-            )
-            .highlight_symbol("▶ ");
-        frame.render_widget(list, area);
+        if self.queues.is_empty() {
+            // Show a helpful message when no queues are available
+            use tuirealm::ratatui::layout::Alignment;
+            use tuirealm::ratatui::widgets::Paragraph;
+
+            let help_text = vec![
+                "",
+                "No queues available",
+                "",
+                "• Press ESC to go back and select a different namespace",
+            ];
+
+            let paragraph = Paragraph::new(help_text.join("\n"))
+                .block(popup_block)
+                .style(Style::default().fg(ThemeManager::status_warning()))
+                .alignment(Alignment::Center);
+
+            frame.render_widget(paragraph, area);
+        } else {
+            let list = List::new(items)
+                .block(popup_block)
+                .highlight_style(
+                    Style::default()
+                        .fg(ThemeManager::status_info())
+                        .bg(ThemeManager::surface())
+                        .add_modifier(TextModifiers::BOLD),
+                )
+                .highlight_symbol("▶ ");
+            frame.render_widget(list, area);
+        }
     }
     fn query(&self, _attr: tuirealm::Attribute) -> Option<tuirealm::AttrValue> {
         None
@@ -193,7 +213,7 @@ impl Component<Msg, NoUserEvent> for QueuePicker {
                 NamespaceActivityMsg::NamespaceUnselected,
             )),
             CmdResult::Changed(_) => Some(Msg::ForceRedraw),
-            _ => Some(Msg::ForceRedraw),
+            _ => None,
         }
     }
 }

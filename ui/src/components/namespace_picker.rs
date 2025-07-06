@@ -124,6 +124,9 @@ impl Component<Msg, NoUserEvent> for NamespacePicker {
                     CmdResult::None
                 }
             }
+            Event::Keyboard(KeyEvent { code: Key::Esc, .. }) => {
+                CmdResult::Custom("NamespaceCancelled", State::None)
+            }
             Event::Keyboard(KeyEvent {
                 code: Key::Char(c), ..
             }) => {
@@ -164,7 +167,11 @@ impl Component<Msg, NoUserEvent> for NamespacePicker {
                     None
                 }
             }
-            _ => Some(Msg::ForceRedraw),
+            CmdResult::Custom("NamespaceCancelled", _) => Some(Msg::NamespaceActivity(
+                NamespaceActivityMsg::NamespaceCancelled,
+            )),
+            CmdResult::Changed(_) => Some(Msg::ForceRedraw),
+            _ => None,
         }
     }
 }

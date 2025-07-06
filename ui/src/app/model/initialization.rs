@@ -91,6 +91,7 @@ where
 }
 
 impl Model<CrosstermTerminalAdapter> {
+    //TODO: I think we need to simplify it and split for readebility
     pub async fn new() -> AppResult<Self> {
         // Create the underlying Azure Service Bus client
         let config = config::get_config_or_panic();
@@ -100,34 +101,50 @@ impl Model<CrosstermTerminalAdapter> {
         let auth_config = config.auth();
         let needs_auth = auth_config.method() == "azure_ad";
 
-        // Create Azure Service Bus client
-        let azure_service_bus_client = if let Some(connection_string) = connection_string_opt {
-            // Connection string available - use it for Service Bus operations
-            AzureServiceBusClient::new_from_connection_string(
+        // Create Service Bus manager only if we have a connection string
+        let service_bus_manager = if let Some(connection_string) = connection_string_opt {
+            // Connection string available - create the client and manager
+            let azure_service_bus_client = AzureServiceBusClient::new_from_connection_string(
                 connection_string,
                 ServiceBusClientOptions::default(),
             )
             .await
-            .map_err(|e| AppError::ServiceBus(e.to_string()))?
+            .map_err(|e| AppError::ServiceBus(e.to_string()))?;
+
+            // Extract config components
+            let azure_ad_config = config.azure_ad();
+            let statistics_config =
+                server::service_bus_manager::azure_management_client::StatisticsConfig::new(
+                    config.queue_stats_display_enabled(),
+                    config.queue_stats_cache_ttl_seconds(),
+                    config.queue_stats_use_management_api(),
+                );
+            let batch_config = config.batch();
+
+            Some(Arc::new(Mutex::new(ServiceBusManager::new(
+                Arc::new(Mutex::new(azure_service_bus_client)),
+                azure_ad_config.clone(),
+                statistics_config,
+                batch_config.clone(),
+                connection_string.to_string(),
+            ))))
+        } else if needs_auth {
+            // No connection string but Azure AD auth is configured
+            // We'll create the manager later after discovery
+            log::info!("No connection string configured, will discover from Azure");
+            None
         } else {
             return Err(AppError::Config(
-                "Connection string is required for Service Bus message operations".to_string(),
+                "Either connection string or Azure AD authentication must be configured"
+                    .to_string(),
             ));
         };
 
-        let azure_ad_config = config.azure_ad().clone();
-        let statistics_config =
-            server::service_bus_manager::azure_management_client::StatisticsConfig::new(
-                config.queue_stats_display_enabled(),
-                config.queue_stats_cache_ttl_seconds(),
-                config.queue_stats_use_management_api(),
-            );
         // Log authentication configuration
-        let auth_config = config.auth();
-        if auth_config.method() == "azure_ad" {
+        if needs_auth {
             log::info!("Azure AD authentication configured for management operations");
-            log::info!("Flow: {}", azure_ad_config.flow);
-            if azure_ad_config.flow == "device_code" {
+            log::info!("Flow: {}", config.azure_ad().flow);
+            if config.azure_ad().flow == "device_code" {
                 log::info!("Device code flow: You'll be prompted to authenticate in your browser");
                 log::info!("This will happen when accessing queue statistics or listing queues");
             }
@@ -137,14 +154,6 @@ impl Model<CrosstermTerminalAdapter> {
         } else {
             log::info!("Using connection string authentication");
         }
-
-        let service_bus_manager = Arc::new(Mutex::new(ServiceBusManager::new(
-            Arc::new(Mutex::new(azure_service_bus_client)),
-            azure_ad_config,
-            statistics_config,
-            config.batch().clone(),
-            connection_string_opt.unwrap_or("").to_string(),
-        )));
 
         let (tx_to_main, rx_to_main) = mpsc::channel();
         let taskpool = TaskPool::new(10);

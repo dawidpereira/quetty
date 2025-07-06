@@ -2,7 +2,8 @@ use super::{AppState, Model};
 use crate::app::view::*;
 use crate::components::common::ComponentId;
 use crate::components::help_bar::HelpBar;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
+use std::io::{self, Write};
 use tuirealm::ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::terminal::TerminalAdapter;
 
@@ -23,7 +24,14 @@ where
             AppState::Loading => ComponentId::LoadingIndicator,
             AppState::HelpScreen => ComponentId::HelpScreen,
             AppState::ThemePicker => ComponentId::ThemePicker,
+            AppState::AzureDiscovery => ComponentId::SubscriptionPicker, // Default to subscription picker
         };
+
+        log::debug!(
+            "View called - AppState: {:?}, Active: {:?}",
+            current_app_state,
+            active_component
+        );
 
         // Update active component before drawing
         self.set_active_component(active_component.clone());
@@ -40,7 +48,8 @@ where
             (None, None, None)
         };
 
-        let _ = self.terminal.draw(|f| {
+        // Draw to the terminal and handle any errors
+        if let Err(e) = self.terminal.draw(|f| {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(1)
@@ -73,6 +82,10 @@ where
                 AppState::Loading => with_popup(&mut self.app, f, &chunks, view_loading),
                 AppState::HelpScreen => with_popup(&mut self.app, f, &chunks, view_help_screen),
                 AppState::ThemePicker => view_theme_picker(&mut self.app, f, &chunks),
+                AppState::AzureDiscovery => {
+                    // During Azure discovery, show the current picker (subscription, resource group, or namespace)
+                    with_popup(&mut self.app, f, &chunks, view_azure_discovery)
+                }
             };
 
             // View help bar (if not showing any popup) with active component
@@ -96,7 +109,20 @@ where
                     selected_count,
                 );
             }
-        });
+        }) {
+            // Log the error but don't propagate it - drawing errors shouldn't crash the app
+            log::error!("Terminal draw error: {:?}", e);
+            return Err(AppError::Component(format!(
+                "Failed to draw to terminal: {}",
+                e
+            )));
+        }
+
+        // Flush stdout to ensure the terminal updates immediately
+        // This is crucial for crossterm to actually display the changes
+        if let Err(e) = io::stdout().flush() {
+            log::error!("Failed to flush stdout: {:?}", e);
+        }
 
         view_result
     }

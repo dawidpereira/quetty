@@ -37,7 +37,7 @@ where
     pub rx_to_main: Receiver<Msg>,
 
     /// Service bus manager - direct access to server-side manager
-    pub service_bus_manager: Arc<Mutex<ServiceBusManager>>,
+    pub service_bus_manager: Option<Arc<Mutex<ServiceBusManager>>>,
 
     // Enhanced error reporting system
     pub error_reporter: ErrorReporter,
@@ -80,24 +80,25 @@ where
         // Set quit flag through state manager
         self.state_manager.shutdown();
 
-        // Dispose service bus resources
-        let service_bus_manager = self.service_bus_manager.clone();
-        self.task_manager
-            .execute("Disposing service bus resources...", async move {
-                let command = ServiceBusCommand::DisposeAllResources;
-                let response = service_bus_manager
-                    .lock()
-                    .await
-                    .execute_command(command)
-                    .await;
-                match response {
-                    ServiceBusResponse::AllResourcesDisposed => Ok(()),
-                    ServiceBusResponse::Error { error } => {
-                        Err(AppError::ServiceBus(error.to_string()))
+        // Dispose service bus resources if initialized
+        if let Some(service_bus_manager) = self.service_bus_manager.clone() {
+            self.task_manager
+                .execute("Disposing service bus resources...", async move {
+                    let command = ServiceBusCommand::DisposeAllResources;
+                    let response = service_bus_manager
+                        .lock()
+                        .await
+                        .execute_command(command)
+                        .await;
+                    match response {
+                        ServiceBusResponse::AllResourcesDisposed => Ok(()),
+                        ServiceBusResponse::Error { error } => {
+                            Err(AppError::ServiceBus(error.to_string()))
+                        }
+                        _ => Err(AppError::ServiceBus("Unexpected response".to_string())),
                     }
-                    _ => Err(AppError::ServiceBus("Unexpected response".to_string())),
-                }
-            });
+                });
+        }
     }
 
     // Essential accessor methods

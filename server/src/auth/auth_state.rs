@@ -144,4 +144,3 @@ impl Default for AuthStateManager {
         Self::new()
     }
 }
-

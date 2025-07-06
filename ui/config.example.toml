@@ -44,20 +44,22 @@ method = "connection_string"
 
 # Service Bus configuration
 [servicebus]
-# connection_string = ""  # Required - set via environment variable (e.g., AZURE_SERVICEBUS_CONNECTION_STRING)
-                        # or uncomment and set here (not recommended for sensitive data)
+# connection_string = ""  # Optional - set via environment variable (e.g., AZURE_SERVICEBUS_CONNECTION_STRING)
+                        # If not provided, will use Azure AD discovery to find and connect to Service Bus
+                        # Note: Either connection_string or Azure AD authentication is required
 
 # Azure AD configuration (for Azure Service Bus with Azure AD authentication)
 [azure_ad]
 # Authentication flow type:
 # - "device_code": Interactive device code flow
 flow = "device_code"
-# tenant_id = ""       # Required - Azure AD tenant ID (set via environment variable)
-# client_id = ""       # Required - Azure AD application client ID (set via environment variable)
-# client_secret = ""   # Required - Azure AD application client secret (set via environment variable)
-# subscription_id = "" # Required - Azure subscription ID (set via environment variable)
-# resource_group = ""  # Required - Azure resource group name (set via environment variable)
-# namespace = ""       # Required - Service Bus namespace (set via environment variable)
+# tenant_id = ""       # Optional - Azure AD tenant ID (set via environment variable)
+# client_id = ""       # Optional - Azure AD application client ID (set via environment variable)
+# client_secret = ""   # Optional - Azure AD application client secret (set via environment variable)
+# subscription_id = "" # Optional - Azure subscription ID (set via environment variable)
+# resource_group = ""  # Optional - Azure resource group name (set via environment variable)
+# namespace = ""       # Optional - Service Bus namespace (set via environment variable)
+# Note: If these are not provided, you can interactively select Azure resources after authentication
 
 # Key bindings configuration
 [keys]

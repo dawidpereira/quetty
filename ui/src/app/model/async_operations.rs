@@ -57,7 +57,10 @@ where
 
     /// Start a reload that ensures we have `target_page_size` messages in memory for the first page.
     fn start_page_reload(&self, target_page_size: u32) {
-        let service_bus_manager = self.service_bus_manager.clone();
+        let Some(service_bus_manager) = self.service_bus_manager.clone() else {
+            log::warn!("Service bus manager not initialized, cannot reload messages");
+            return;
+        };
         let tx_to_main = self.state_manager.tx_to_main.clone();
 
         self.task_manager

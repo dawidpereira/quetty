@@ -1,4 +1,5 @@
 use crate::components::common::{ComponentId, Msg};
+use server::azure_management_api::{AzureResourceCache, ServiceBusNamespace};
 use std::sync::mpsc::Sender;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -10,6 +11,7 @@ pub enum AppState {
     Loading,
     HelpScreen,
     ThemePicker,
+    AzureDiscovery,
 }
 
 /// Manages application state transitions and UI state
@@ -28,6 +30,13 @@ pub struct StateManager {
     pub current_page_size: Option<u32>, // Dynamic page size that can be changed during runtime
     pub is_authenticating: bool,        // Track if authentication is in progress
     pub last_device_code_copy: Option<std::time::Instant>, // Track last copy time to prevent spam
+
+    // Azure discovery state
+    pub azure_cache: AzureResourceCache,
+    pub selected_subscription: Option<String>,
+    pub selected_resource_group: Option<String>,
+    pub discovered_namespaces: Vec<ServiceBusNamespace>,
+    pub discovered_connection_string: Option<String>,
 }
 
 impl StateManager {
@@ -48,6 +57,11 @@ impl StateManager {
             current_page_size: None,
             is_authenticating: false,
             last_device_code_copy: None,
+            azure_cache: AzureResourceCache::new(),
+            selected_subscription: None,
+            selected_resource_group: None,
+            discovered_namespaces: Vec::new(),
+            discovered_connection_string: None,
         }
     }
 

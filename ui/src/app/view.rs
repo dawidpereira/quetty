@@ -121,6 +121,34 @@ where
         return view_error_popup(app, f);
     }
 
+    // Then, try to render Azure discovery pickers if they exist
+    if app.mounted(&ComponentId::SubscriptionPicker) {
+        let popup_area = PopupLayout::medium(f.area());
+        app.view(&ComponentId::SubscriptionPicker, f, popup_area);
+        app.active(&ComponentId::SubscriptionPicker)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+        return Ok(());
+    }
+
+    if app.mounted(&ComponentId::ResourceGroupPicker) {
+        let popup_area = PopupLayout::medium(f.area());
+        app.view(&ComponentId::ResourceGroupPicker, f, popup_area);
+        app.active(&ComponentId::ResourceGroupPicker)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+        return Ok(());
+    }
+
+    // During Azure discovery, namespace picker is shown as a popup
+    if app.mounted(&ComponentId::NamespacePicker) {
+        // Check if we're in discovery mode by looking for discovered namespaces
+        // This is a bit of a hack but avoids passing state through the view function
+        let popup_area = PopupLayout::medium(f.area());
+        app.view(&ComponentId::NamespacePicker, f, popup_area);
+        app.active(&ComponentId::NamespacePicker)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+        return Ok(());
+    }
+
     // If no popups, proceed with the original view function
     view_fn(app, f, chunks)
 }
@@ -203,6 +231,32 @@ pub fn view_loading(
 ) -> Result<(), AppError> {
     let popup_area = PopupLayout::small(f.area());
     app.view(&ComponentId::LoadingIndicator, f, popup_area);
+    Ok(())
+}
+
+// View function for Azure discovery (subscription/resource group/namespace pickers)
+pub fn view_azure_discovery(
+    app: &mut Application<ComponentId, Msg, NoUserEvent>,
+    f: &mut Frame,
+    _chunks: &[Rect],
+) -> Result<(), AppError> {
+    // Show whichever picker is currently mounted
+    if app.mounted(&ComponentId::SubscriptionPicker) {
+        let popup_area = PopupLayout::medium(f.area());
+        app.view(&ComponentId::SubscriptionPicker, f, popup_area);
+        app.active(&ComponentId::SubscriptionPicker)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+    } else if app.mounted(&ComponentId::ResourceGroupPicker) {
+        let popup_area = PopupLayout::medium(f.area());
+        app.view(&ComponentId::ResourceGroupPicker, f, popup_area);
+        app.active(&ComponentId::ResourceGroupPicker)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+    } else if app.mounted(&ComponentId::NamespacePicker) {
+        let popup_area = PopupLayout::medium(f.area());
+        app.view(&ComponentId::NamespacePicker, f, popup_area);
+        app.active(&ComponentId::NamespacePicker)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+    }
     Ok(())
 }
 

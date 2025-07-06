@@ -107,10 +107,8 @@ impl ConfigValidationError {
                     Missing field: {field}\n\n\
                     When using azure_ad authentication with device_code flow, you must provide:\n\
                     - azure_ad.tenant_id (or AZURE_AD__TENANT_ID env var)\n\
-                    - azure_ad.client_id (or AZURE_AD__CLIENT_ID env var)\n\
-                    - azure_ad.subscription_id (or AZURE_AD__SUBSCRIPTION_ID env var)\n\
-                    - azure_ad.resource_group (or AZURE_AD__RESOURCE_GROUP env var)\n\
-                    - azure_ad.namespace (or AZURE_AD__NAMESPACE env var)"
+                    - azure_ad.client_id (or AZURE_AD__CLIENT_ID env var)\n\n\
+                    Other fields (subscription_id, resource_group, namespace) are optional and can be selected interactively after authentication."
                 )
             }
             ConfigValidationError::InvalidAzureAdFlow { flow } => {

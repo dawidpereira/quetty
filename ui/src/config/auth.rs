@@ -6,6 +6,8 @@ pub struct AuthConfig {
     pub method: String,
 }
 
+//TODO: I think in some place we set default method manueally instead of this fn. And default is
+//code
 fn default_method() -> String {
     "connection_string".to_string()
 }

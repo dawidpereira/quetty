@@ -1,0 +1,55 @@
+# Configuration for testing Azure discovery flow
+# This configuration has no connection string or subscription ID
+# The app will discover resources dynamically after authentication
+
+# App configuration
+page_size = 100
+peek_interval = 1
+poll_timeout_ms = 10
+tick_interval_millis = 250
+
+# DLQ operation configuration
+dlq_receive_timeout_secs = 10
+dlq_send_timeout_secs = 10
+dlq_max_attempts = 10
+dlq_overall_timeout_cap_secs = 60
+dlq_receive_timeout_cap_secs = 10
+dlq_send_timeout_cap_secs = 15
+dlq_retry_delay_ms = 500
+
+# Crossterm input listener configuration
+crossterm_input_listener_interval_ms = 20
+crossterm_input_listener_retries = 5
+
+# Bulk operation configuration
+max_batch_size = 200
+max_messages_to_process = 10000
+operation_timeout_secs = 300
+
+# UI configuration
+ui_loading_frame_duration_ms = 100
+
+# Queue statistics display configuration
+queue_stats_display_enabled = true
+queue_stats_cache_ttl_seconds = 60
+queue_stats_use_management_api = false # Don't use management API since we won't have subscription ID
+
+# Theme configuration
+[theme]
+theme_name = "nightfox"
+flavor_name = "duskfox"
+
+# Authentication configuration
+[auth]
+method = "azure_ad"
+
+# Azure AD configuration - minimal setup for discovery
+[azure_ad]
+# tenant_id = ""  # Set via AZURE_TENANT_ID env var
+# client_id = ""  # Set via AZURE_CLIENT_ID env var
+# No subscription_id - will be discovered dynamically
+
+# Service Bus configuration
+[servicebus]
+# No connection_string - will be discovered dynamically
+

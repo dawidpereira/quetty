@@ -12,7 +12,7 @@ use tokio::sync::Mutex;
 /// Manages queue operations and queue state
 pub struct QueueManager {
     pub queue_state: QueueState,
-    service_bus_manager: Arc<Mutex<ServiceBusManager>>,
+    service_bus_manager: Option<Arc<Mutex<ServiceBusManager>>>,
     task_manager: TaskManager,
     tx_to_main: Sender<Msg>,
 }
@@ -20,7 +20,7 @@ pub struct QueueManager {
 impl QueueManager {
     /// Create a new QueueManager
     pub fn new(
-        service_bus_manager: Arc<Mutex<ServiceBusManager>>,
+        service_bus_manager: Option<Arc<Mutex<ServiceBusManager>>>,
         task_manager: TaskManager,
         tx_to_main: Sender<Msg>,
     ) -> Self {
@@ -30,6 +30,11 @@ impl QueueManager {
             task_manager,
             tx_to_main,
         }
+    }
+
+    /// Set the service bus manager after discovery
+    pub fn set_service_bus_manager(&mut self, manager: Arc<Mutex<ServiceBusManager>>) {
+        self.service_bus_manager = Some(manager);
     }
 
     /// Load namespaces using TaskManager with timeout
@@ -96,6 +101,59 @@ impl QueueManager {
         });
     }
 
+    /// Load queues with discovered Azure resources
+    pub fn load_queues_with_discovery(
+        &self,
+        subscription_id: String,
+        resource_group: String,
+        namespace: String,
+        auth_service: Arc<crate::services::AuthService>,
+    ) {
+        let tx_to_main = self.tx_to_main.clone();
+        let Some(_service_bus_manager) = self.service_bus_manager.clone() else {
+            log::warn!("Service bus manager not initialized, cannot load queues");
+            return;
+        };
+
+        self.task_manager.execute("Loading queues...", async move {
+            log::debug!("Requesting queues for discovered namespace: {}", namespace);
+
+            // Get Azure AD token
+            let token = match auth_service.get_management_token().await {
+                Ok(token) => token,
+                Err(e) => {
+                    log::error!("Failed to get management token: {}", e);
+                    return Err(AppError::Auth(e.to_string()));
+                }
+            };
+
+            // Use Azure Management API to list queues
+            let client = server::azure_management_api::AzureManagementClient::new();
+            let queue_names = client
+                .list_queues(&token, &subscription_id, &resource_group, &namespace)
+                .await
+                .map_err(|e| {
+                    log::error!("Failed to list queues: {}", e);
+                    AppError::ServiceBus(e.to_string())
+                })?;
+
+            log::info!(
+                "Loaded {} queues from discovered namespace",
+                queue_names.len()
+            );
+
+            // Send loaded queues
+            if let Err(e) = tx_to_main.send(Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(
+                queue_names,
+            ))) {
+                log::error!("Failed to send queues loaded message: {e}");
+                return Err(AppError::Component(e.to_string()));
+            }
+
+            Ok(())
+        });
+    }
+
     /// Switch to a new queue
     pub fn switch_to_queue(&mut self, queue_name: String) {
         // Store the queue name for later use
@@ -103,7 +161,10 @@ impl QueueManager {
 
         log::info!("Switching to queue: {queue_name}");
 
-        let service_bus_manager = self.service_bus_manager.clone();
+        let Some(service_bus_manager) = self.service_bus_manager.clone() else {
+            log::warn!("Service bus manager not initialized, cannot switch queue");
+            return;
+        };
         let tx_to_main = self.tx_to_main.clone();
         let queue_name_for_update = queue_name.clone();
 

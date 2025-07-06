@@ -119,7 +119,12 @@ where
             format!("Sending message {repeat_count} times...")
         };
 
-        let service_bus_manager = Arc::clone(&self.service_bus_manager);
+        let Some(service_bus_manager) = self.service_bus_manager.clone() else {
+            log::warn!("Service bus manager not initialized");
+            return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(
+                AppError::State("Service bus manager not initialized".to_string()),
+            )));
+        };
         let tx_to_main = self.state_manager.tx_to_main.clone();
 
         // Generate unique operation ID for cancellation support
@@ -232,7 +237,12 @@ where
 
         log::info!("Replacing message {message_id} with edited content in queue: {queue_name}");
 
-        let service_bus_manager = Arc::clone(&self.service_bus_manager);
+        let Some(service_bus_manager) = self.service_bus_manager.clone() else {
+            log::warn!("Service bus manager not initialized");
+            return Some(Msg::PopupActivity(PopupActivityMsg::ShowError(
+                AppError::State("Service bus manager not initialized".to_string()),
+            )));
+        };
         let tx_to_main = self.state_manager.tx_to_main.clone();
         let message_id_str = message_id.to_string();
 

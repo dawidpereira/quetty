@@ -62,7 +62,9 @@ where
     pub(crate) fn get_service_bus_manager(
         &self,
     ) -> std::sync::Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>> {
-        self.service_bus_manager.clone()
+        self.service_bus_manager
+            .clone()
+            .expect("Service bus manager should be initialized")
     }
 
     async fn execute_loading_task(

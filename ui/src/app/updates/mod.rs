@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod azure_discovery;
 pub mod help;
 pub mod loading;
 pub mod messages;

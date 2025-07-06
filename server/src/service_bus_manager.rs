@@ -20,11 +20,11 @@ pub mod types;
 pub struct AzureAdConfig {
     #[serde(default = "default_flow")]
     pub flow: String,
-    tenant_id: Option<String>,
-    client_id: Option<String>,
-    client_secret: Option<String>,
-    subscription_id: Option<String>,
-    resource_group: Option<String>,
+    pub tenant_id: Option<String>,
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+    pub subscription_id: Option<String>,
+    pub resource_group: Option<String>,
     pub namespace: Option<String>,
 }
 

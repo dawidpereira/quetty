@@ -250,8 +250,9 @@ impl AppConfig {
             });
         }
 
-        // Fields required for management API operations
-        if self.queue_stats_use_management_api() {
+        // Fields required for management API operations (optional with device code flow)
+        // With device code flow, these can be discovered interactively after authentication
+        if self.queue_stats_use_management_api() && flow != "device_code" {
             if !self.azure_ad.has_subscription_id()
                 && std::env::var("AZURE_AD__SUBSCRIPTION_ID").is_err()
             {

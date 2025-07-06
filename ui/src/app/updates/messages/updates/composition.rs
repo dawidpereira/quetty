@@ -101,7 +101,12 @@ where
     /// Load messages from the beginning (fresh start), similar to initial queue load
     pub fn load_messages_from_beginning(&self) -> Result<(), AppError> {
         let tx_to_main = self.state_manager.tx_to_main.clone();
-        let service_bus_manager = self.service_bus_manager.clone();
+        let Some(service_bus_manager) = self.service_bus_manager.clone() else {
+            log::warn!("Service bus manager not initialized");
+            return Err(AppError::State(
+                "Service bus manager not initialized".to_string(),
+            ));
+        };
 
         self.task_manager
             .execute("Loading messages...", async move {

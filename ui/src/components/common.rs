@@ -4,6 +4,7 @@ use server::bulk_operations::MessageIdentifier;
 use server::model::MessageModel;
 use server::service_bus_manager::QueueInfo;
 use std::fmt;
+use std::sync::Arc;
 
 // Re-export QueueType from service bus instead of defining locally
 pub use server::service_bus_manager::QueueType;
@@ -25,6 +26,8 @@ pub enum ComponentId {
     ThemePicker,
     TextLabel,
     AuthPopup,
+    SubscriptionPicker,
+    ResourceGroupPicker,
 }
 
 impl fmt::Display for ComponentId {
@@ -45,6 +48,8 @@ impl fmt::Display for ComponentId {
             ComponentId::PageSizePopup => write!(f, "PageSizePopup"),
             ComponentId::ThemePicker => write!(f, "ThemePicker"),
             ComponentId::AuthPopup => write!(f, "AuthPopup"),
+            ComponentId::SubscriptionPicker => write!(f, "SubscriptionPicker"),
+            ComponentId::ResourceGroupPicker => write!(f, "ResourceGroupPicker"),
         }
     }
 }
@@ -68,6 +73,9 @@ pub enum Msg {
     ToggleHelpScreen,
     ToggleThemePicker,
     AuthActivity(AuthActivityMsg),
+    SubscriptionSelectionMsg(SubscriptionSelectionMsg),
+    ResourceGroupSelectionMsg(ResourceGroupSelectionMsg),
+    AzureDiscoveryMsg(AzureDiscoveryMsg),
 }
 
 #[derive(Debug, PartialEq)]
@@ -91,6 +99,7 @@ pub enum NamespaceActivityMsg {
     NamespaceSelected,
     NamespaceUnselected,
     NamespacesLoaded(Vec<String>),
+    NamespaceCancelled,
 }
 
 #[derive(Debug, PartialEq)]
@@ -112,6 +121,143 @@ pub enum QueueActivityMsg {
     ExitQueueConfirmed,
     /// Resource disposal completed - finalize the exit process
     ExitQueueFinalized,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SubscriptionSelectionMsg {
+    SubscriptionSelected(String),
+    SelectionChanged,
+    CancelSelection,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ResourceGroupSelectionMsg {
+    ResourceGroupSelected(String),
+    SelectionChanged,
+    CancelSelection,
+}
+
+pub enum AzureDiscoveryMsg {
+    StartDiscovery,
+    DiscoveringSubscriptions,
+    SubscriptionsDiscovered(Vec<server::azure_management_api::Subscription>),
+    DiscoveringResourceGroups(String), // subscription_id
+    ResourceGroupsDiscovered(Vec<server::azure_management_api::ResourceGroup>),
+    DiscoveringNamespaces(String), // subscription_id
+    NamespacesDiscovered(Vec<server::azure_management_api::ServiceBusNamespace>),
+    FetchingConnectionString {
+        subscription_id: String,
+        resource_group: String,
+        namespace: String,
+    },
+    ConnectionStringFetched(String),
+    ServiceBusManagerCreated,
+    ServiceBusManagerReady(Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>>),
+    DiscoveryError(String),
+    DiscoveryComplete,
+}
+
+impl fmt::Debug for AzureDiscoveryMsg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AzureDiscoveryMsg::StartDiscovery => write!(f, "StartDiscovery"),
+            AzureDiscoveryMsg::DiscoveringSubscriptions => write!(f, "DiscoveringSubscriptions"),
+            AzureDiscoveryMsg::SubscriptionsDiscovered(subs) => {
+                write!(f, "SubscriptionsDiscovered({} items)", subs.len())
+            }
+            AzureDiscoveryMsg::DiscoveringResourceGroups(id) => {
+                write!(f, "DiscoveringResourceGroups({})", id)
+            }
+            AzureDiscoveryMsg::ResourceGroupsDiscovered(groups) => {
+                write!(f, "ResourceGroupsDiscovered({} items)", groups.len())
+            }
+            AzureDiscoveryMsg::DiscoveringNamespaces(id) => {
+                write!(f, "DiscoveringNamespaces({})", id)
+            }
+            AzureDiscoveryMsg::NamespacesDiscovered(ns) => {
+                write!(f, "NamespacesDiscovered({} items)", ns.len())
+            }
+            AzureDiscoveryMsg::FetchingConnectionString {
+                subscription_id,
+                resource_group,
+                namespace,
+            } => {
+                write!(
+                    f,
+                    "FetchingConnectionString {{ subscription_id: {}, resource_group: {}, namespace: {} }}",
+                    subscription_id, resource_group, namespace
+                )
+            }
+            AzureDiscoveryMsg::ConnectionStringFetched(_) => {
+                write!(f, "ConnectionStringFetched(...)")
+            }
+            AzureDiscoveryMsg::ServiceBusManagerCreated => write!(f, "ServiceBusManagerCreated"),
+            AzureDiscoveryMsg::ServiceBusManagerReady(_) => {
+                write!(f, "ServiceBusManagerReady(Arc<Mutex<ServiceBusManager>>)")
+            }
+            AzureDiscoveryMsg::DiscoveryError(e) => write!(f, "DiscoveryError({})", e),
+            AzureDiscoveryMsg::DiscoveryComplete => write!(f, "DiscoveryComplete"),
+        }
+    }
+}
+
+impl PartialEq for AzureDiscoveryMsg {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (AzureDiscoveryMsg::StartDiscovery, AzureDiscoveryMsg::StartDiscovery) => true,
+            (
+                AzureDiscoveryMsg::DiscoveringSubscriptions,
+                AzureDiscoveryMsg::DiscoveringSubscriptions,
+            ) => true,
+            (
+                AzureDiscoveryMsg::SubscriptionsDiscovered(a),
+                AzureDiscoveryMsg::SubscriptionsDiscovered(b),
+            ) => a == b,
+            (
+                AzureDiscoveryMsg::DiscoveringResourceGroups(a),
+                AzureDiscoveryMsg::DiscoveringResourceGroups(b),
+            ) => a == b,
+            (
+                AzureDiscoveryMsg::ResourceGroupsDiscovered(a),
+                AzureDiscoveryMsg::ResourceGroupsDiscovered(b),
+            ) => a == b,
+            (
+                AzureDiscoveryMsg::DiscoveringNamespaces(a),
+                AzureDiscoveryMsg::DiscoveringNamespaces(b),
+            ) => a == b,
+            (
+                AzureDiscoveryMsg::NamespacesDiscovered(a),
+                AzureDiscoveryMsg::NamespacesDiscovered(b),
+            ) => a == b,
+            (
+                AzureDiscoveryMsg::FetchingConnectionString {
+                    subscription_id: a1,
+                    resource_group: a2,
+                    namespace: a3,
+                },
+                AzureDiscoveryMsg::FetchingConnectionString {
+                    subscription_id: b1,
+                    resource_group: b2,
+                    namespace: b3,
+                },
+            ) => a1 == b1 && a2 == b2 && a3 == b3,
+            (
+                AzureDiscoveryMsg::ConnectionStringFetched(a),
+                AzureDiscoveryMsg::ConnectionStringFetched(b),
+            ) => a == b,
+            (
+                AzureDiscoveryMsg::ServiceBusManagerCreated,
+                AzureDiscoveryMsg::ServiceBusManagerCreated,
+            ) => true,
+            (
+                AzureDiscoveryMsg::ServiceBusManagerReady(_),
+                AzureDiscoveryMsg::ServiceBusManagerReady(_),
+            ) => false, // Can't compare managers
+            (AzureDiscoveryMsg::DiscoveryError(a), AzureDiscoveryMsg::DiscoveryError(b)) => a == b,
+            (AzureDiscoveryMsg::DiscoveryComplete, AzureDiscoveryMsg::DiscoveryComplete) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]

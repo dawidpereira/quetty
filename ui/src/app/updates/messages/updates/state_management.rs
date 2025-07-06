@@ -846,7 +846,10 @@ where
         base_queue_name: &str,
     ) -> crate::error::AppResult<()> {
         let queue_name = base_queue_name.to_string();
-        let service_bus_manager = self.get_service_bus_manager();
+        let Some(service_bus_manager) = self.service_bus_manager.clone() else {
+            log::warn!("Service bus manager not initialized, cannot load queue statistics");
+            return Ok(());
+        };
         let tx_to_main = self.state_manager.tx_to_main.clone();
 
         log::info!("Loading statistics from API for queue: {queue_name}");

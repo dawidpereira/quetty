@@ -78,6 +78,9 @@ where
                         }
                     }
                 }
+                Msg::SubscriptionSelectionMsg(msg) => self.handle_subscription_selection(msg),
+                Msg::ResourceGroupSelectionMsg(msg) => self.handle_resource_group_selection(msg),
+                Msg::AzureDiscoveryMsg(msg) => self.handle_azure_discovery(msg),
                 Msg::ShowError(error_msg) => {
                     self.update_popup(PopupActivityMsg::ShowError(crate::error::AppError::Component(error_msg)))
                 }
@@ -90,7 +93,11 @@ where
                     None
                 }
 
-                _ => None,
+                Msg::ForceRedraw => {
+                    // Force a screen redraw
+                    self.set_redraw(true);
+                    None
+                }
             };
 
             if let Some(Msg::Error(e)) = result {

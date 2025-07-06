@@ -34,7 +34,10 @@ pub fn handle_bulk_delete_execution<T: TerminalAdapter>(
     // Get pre-calculated context for post-processing
     let context = validated_operation.calculate_post_processing_context();
 
-    let service_bus_manager = model.service_bus_manager.clone();
+    let Some(service_bus_manager) = model.service_bus_manager.clone() else {
+        log::warn!("Service bus manager not initialized");
+        return None;
+    };
     let loading_message = validated_operation.get_loading_message();
     let tx_to_main = model.tx_to_main().clone();
     let error_reporter = model.error_reporter.clone();
