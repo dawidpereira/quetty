@@ -20,6 +20,9 @@ pub struct AppConfig {
     queue_stats_display_enabled: Option<bool>,
     queue_stats_cache_ttl_seconds: Option<u64>,
     queue_stats_use_management_api: Option<bool>,
+    // Azure resource cache configuration
+    azure_resource_cache_ttl_seconds: Option<u64>,
+    azure_resource_cache_max_entries: Option<usize>,
 
     #[serde(flatten, default)]
     batch: BatchConfig,
@@ -158,6 +161,14 @@ impl AppConfig {
 
     pub fn queue_stats_use_management_api(&self) -> bool {
         self.queue_stats_use_management_api.unwrap_or(true)
+    }
+
+    pub fn azure_resource_cache_ttl_seconds(&self) -> u64 {
+        self.azure_resource_cache_ttl_seconds.unwrap_or(300) // 5 minutes default
+    }
+
+    pub fn azure_resource_cache_max_entries(&self) -> usize {
+        self.azure_resource_cache_max_entries.unwrap_or(100) // 100 entries default
     }
 
     // Configuration section accessors

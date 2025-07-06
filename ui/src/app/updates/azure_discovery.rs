@@ -203,7 +203,7 @@ where
                 cached_subscriptions.len()
             );
             return Some(Msg::AzureDiscovery(
-                AzureDiscoveryMsg::SubscriptionsDiscovered(cached_subscriptions.clone()),
+                AzureDiscoveryMsg::SubscriptionsDiscovered(cached_subscriptions),
             ));
         }
 
@@ -297,7 +297,7 @@ where
                 cached_groups.len()
             );
             return Some(Msg::AzureDiscovery(
-                AzureDiscoveryMsg::ResourceGroupsDiscovered(cached_groups.clone()),
+                AzureDiscoveryMsg::ResourceGroupsDiscovered(cached_groups),
             ));
         }
 
@@ -393,7 +393,7 @@ where
                 cached_namespaces.len()
             );
             return Some(Msg::AzureDiscovery(
-                AzureDiscoveryMsg::NamespacesDiscovered(cached_namespaces.clone()),
+                AzureDiscoveryMsg::NamespacesDiscovered(cached_namespaces),
             ));
         }
 

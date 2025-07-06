@@ -1,3 +1,4 @@
+use crate::common::{CacheError, HttpError};
 use std::fmt;
 
 #[derive(Debug, Clone)]
@@ -141,6 +142,49 @@ impl From<Box<dyn std::error::Error + Send + Sync>> for ServiceBusError {
 impl From<tokio::time::error::Elapsed> for ServiceBusError {
     fn from(err: tokio::time::error::Elapsed) -> Self {
         ServiceBusError::OperationTimeout(err.to_string())
+    }
+}
+
+impl From<HttpError> for ServiceBusError {
+    fn from(err: HttpError) -> Self {
+        match err {
+            HttpError::ClientCreation { reason } => ServiceBusError::ConfigurationError(format!(
+                "HTTP client creation failed: {reason}"
+            )),
+            HttpError::RequestFailed { url, reason } => {
+                ServiceBusError::InternalError(format!("Request to {url} failed: {reason}"))
+            }
+            HttpError::Timeout { url, seconds } => ServiceBusError::OperationTimeout(format!(
+                "Request to {url} timed out after {seconds}s"
+            )),
+            HttpError::RateLimited {
+                retry_after_seconds,
+            } => ServiceBusError::InternalError(format!(
+                "Rate limited, retry after {retry_after_seconds}s"
+            )),
+            HttpError::InvalidResponse { expected, actual } => ServiceBusError::ConfigurationError(
+                format!("Invalid response: expected {expected}, got {actual}"),
+            ),
+        }
+    }
+}
+
+impl From<CacheError> for ServiceBusError {
+    fn from(err: CacheError) -> Self {
+        match err {
+            CacheError::Expired { key } => {
+                ServiceBusError::InternalError(format!("Cache entry expired: {key}"))
+            }
+            CacheError::Miss { key } => {
+                ServiceBusError::InternalError(format!("Cache miss: {key}"))
+            }
+            CacheError::Full { key } => {
+                ServiceBusError::InternalError(format!("Cache full, cannot add: {key}"))
+            }
+            CacheError::OperationFailed { reason } => {
+                ServiceBusError::InternalError(format!("Cache operation failed: {reason}"))
+            }
+        }
     }
 }
 

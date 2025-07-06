@@ -1,7 +1,8 @@
 use super::{AzureAdConfig, ServiceBusError};
+use crate::common::HttpError;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Azure Management API client for discovering Azure resources and managing Service Bus operations.
 /// This client is used when authentication is done via Azure AD (device code flow).
@@ -154,14 +155,19 @@ impl AzureManagementClient {
             .header(AUTHORIZATION, format!("Bearer {token}"))
             .send()
             .await
-            .map_err(|e| ServiceBusError::InternalError(e.to_string()))?;
+            .map_err(|e| HttpError::RequestFailed {
+                url: url.clone(),
+                reason: e.to_string(),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(ServiceBusError::InternalError(format!(
-                "Failed to list subscriptions: {status} - {error_text}"
-            )));
+            return Err(HttpError::InvalidResponse {
+                expected: "2xx status".to_string(),
+                actual: format!("Failed to list subscriptions: {status} - {error_text}"),
+            }
+            .into());
         }
 
         let list_response: ListResponse<Subscription> = response
@@ -188,14 +194,19 @@ impl AzureManagementClient {
             .header(AUTHORIZATION, format!("Bearer {token}"))
             .send()
             .await
-            .map_err(|e| ServiceBusError::InternalError(e.to_string()))?;
+            .map_err(|e| HttpError::RequestFailed {
+                url: url.clone(),
+                reason: e.to_string(),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(ServiceBusError::InternalError(format!(
-                "Failed to list resource groups: {status} - {error_text}"
-            )));
+            return Err(HttpError::InvalidResponse {
+                expected: "2xx status".to_string(),
+                actual: format!("Failed to list resource groups: {status} - {error_text}"),
+            }
+            .into());
         }
 
         let list_response: ListResponse<ResourceGroup> = response
@@ -222,14 +233,19 @@ impl AzureManagementClient {
             .header(AUTHORIZATION, format!("Bearer {token}"))
             .send()
             .await
-            .map_err(|e| ServiceBusError::InternalError(e.to_string()))?;
+            .map_err(|e| HttpError::RequestFailed {
+                url: url.clone(),
+                reason: e.to_string(),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(ServiceBusError::InternalError(format!(
-                "Failed to list Service Bus namespaces: {status} - {error_text}"
-            )));
+            return Err(HttpError::InvalidResponse {
+                expected: "2xx status".to_string(),
+                actual: format!("Failed to list Service Bus namespaces: {status} - {error_text}"),
+            }
+            .into());
         }
 
         let list_response: ListResponse<ServiceBusNamespace> = response
@@ -261,14 +277,19 @@ impl AzureManagementClient {
             .body("{}") // Empty JSON body required for Azure Management API POST requests
             .send()
             .await
-            .map_err(|e| ServiceBusError::InternalError(e.to_string()))?;
+            .map_err(|e| HttpError::RequestFailed {
+                url: url.clone(),
+                reason: e.to_string(),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(ServiceBusError::InternalError(format!(
-                "Failed to get namespace keys: {status} - {error_text}"
-            )));
+            return Err(HttpError::InvalidResponse {
+                expected: "2xx status".to_string(),
+                actual: format!("Failed to get namespace keys: {status} - {error_text}"),
+            }
+            .into());
         }
 
         let keys: AccessKeys = response
@@ -320,14 +341,19 @@ impl AzureManagementClient {
             .header(AUTHORIZATION, format!("Bearer {token}"))
             .send()
             .await
-            .map_err(|e| ServiceBusError::InternalError(e.to_string()))?;
+            .map_err(|e| HttpError::RequestFailed {
+                url: url.clone(),
+                reason: e.to_string(),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(ServiceBusError::InternalError(format!(
-                "Failed to list queues: {status} - {error_text}"
-            )));
+            return Err(HttpError::InvalidResponse {
+                expected: "2xx status".to_string(),
+                actual: format!("Failed to list queues: {status} - {error_text}"),
+            }
+            .into());
         }
 
         let list_response: ListResponse<serde_json::Value> = response
@@ -380,9 +406,11 @@ impl AzureManagementClient {
                                 return Err(last_error.unwrap());
                             }
                             ServiceBusError::InternalError(msg) if msg.contains("404") => {
-                                return Err(ServiceBusError::InternalError(format!(
-                                    "Queue not found: {queue_name}"
-                                )));
+                                return Err(HttpError::InvalidResponse {
+                                    expected: "2xx status".to_string(),
+                                    actual: format!("Queue not found: {queue_name}"),
+                                }
+                                .into());
                             }
                             _ => {}
                         }
@@ -441,21 +469,28 @@ impl AzureManagementClient {
             .header(CONTENT_TYPE, "application/json")
             .send()
             .await
-            .map_err(|e| ServiceBusError::InternalError(format!("HTTP request failed: {e}")))?;
+            .map_err(|e| HttpError::RequestFailed {
+                url: url.clone(),
+                reason: e.to_string(),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
 
             if status == 404 {
-                return Err(ServiceBusError::InternalError(format!(
-                    "Queue not found: {queue_name}"
-                )));
+                return Err(HttpError::InvalidResponse {
+                    expected: "2xx status".to_string(),
+                    actual: format!("Queue not found: {queue_name}"),
+                }
+                .into());
             }
 
-            return Err(ServiceBusError::InternalError(format!(
-                "API request failed with status {status}: {error_text}"
-            )));
+            return Err(HttpError::InvalidResponse {
+                expected: "2xx status".to_string(),
+                actual: format!("API request failed with status {status}: {error_text}"),
+            }
+            .into());
         }
 
         let response_text = response
@@ -481,26 +516,69 @@ impl AzureManagementClient {
     }
 }
 
+/// Cache entry with TTL tracking
+#[derive(Debug, Clone)]
+struct CacheEntry<T> {
+    data: T,
+    cached_at: Instant,
+}
+
+impl<T> CacheEntry<T> {
+    fn new(data: T) -> Self {
+        Self {
+            data,
+            cached_at: Instant::now(),
+        }
+    }
+
+    fn is_expired(&self, ttl: Duration) -> bool {
+        self.cached_at.elapsed() > ttl
+    }
+}
+
 /// Cache for Azure resources to avoid repeated API calls
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AzureResourceCache {
-    pub subscriptions: Vec<Subscription>,
-    pub resource_groups: std::collections::HashMap<String, Vec<ResourceGroup>>,
-    pub namespaces: std::collections::HashMap<String, Vec<ServiceBusNamespace>>,
-    pub connection_strings: std::collections::HashMap<String, String>,
+    subscriptions: Option<CacheEntry<Vec<Subscription>>>,
+    resource_groups: std::collections::HashMap<String, CacheEntry<Vec<ResourceGroup>>>,
+    namespaces: std::collections::HashMap<String, CacheEntry<Vec<ServiceBusNamespace>>>,
+    connection_strings: std::collections::HashMap<String, CacheEntry<String>>,
+    cache_ttl: Duration,
+    max_entries_per_cache: usize,
 }
 
 impl AzureResourceCache {
     pub fn new() -> Self {
-        Self::default()
+        Self::with_config(Duration::from_secs(300), 100) // 5 minutes TTL, 100 entries max
+    }
+
+    pub fn with_config(cache_ttl: Duration, max_entries: usize) -> Self {
+        Self {
+            subscriptions: None,
+            resource_groups: std::collections::HashMap::new(),
+            namespaces: std::collections::HashMap::new(),
+            connection_strings: std::collections::HashMap::new(),
+            cache_ttl,
+            max_entries_per_cache: max_entries,
+        }
     }
 
     pub fn cache_subscriptions(&mut self, subscriptions: Vec<Subscription>) {
-        self.subscriptions = subscriptions;
+        self.subscriptions = Some(CacheEntry::new(subscriptions));
     }
 
     pub fn cache_resource_groups(&mut self, subscription_id: String, groups: Vec<ResourceGroup>) {
-        self.resource_groups.insert(subscription_id, groups);
+        // Enforce size limit using LRU eviction
+        if self.resource_groups.len() >= self.max_entries_per_cache
+            && !self.resource_groups.contains_key(&subscription_id)
+        {
+            // Remove oldest entry
+            if let Some(oldest_key) = self.find_oldest_entry(&self.resource_groups) {
+                self.resource_groups.remove(&oldest_key);
+            }
+        }
+        self.resource_groups
+            .insert(subscription_id, CacheEntry::new(groups));
     }
 
     pub fn cache_namespaces(
@@ -508,53 +586,117 @@ impl AzureResourceCache {
         subscription_id: String,
         namespaces: Vec<ServiceBusNamespace>,
     ) {
-        self.namespaces.insert(subscription_id, namespaces);
+        // Enforce size limit using LRU eviction
+        if self.namespaces.len() >= self.max_entries_per_cache
+            && !self.namespaces.contains_key(&subscription_id)
+        {
+            // Remove oldest entry
+            if let Some(oldest_key) = self.find_oldest_entry(&self.namespaces) {
+                self.namespaces.remove(&oldest_key);
+            }
+        }
+        self.namespaces
+            .insert(subscription_id, CacheEntry::new(namespaces));
     }
 
     pub fn cache_connection_string(&mut self, namespace_id: String, connection_string: String) {
+        // Enforce size limit using LRU eviction
+        if self.connection_strings.len() >= self.max_entries_per_cache
+            && !self.connection_strings.contains_key(&namespace_id)
+        {
+            // Remove oldest entry
+            if let Some(oldest_key) = self.find_oldest_entry(&self.connection_strings) {
+                self.connection_strings.remove(&oldest_key);
+            }
+        }
         self.connection_strings
-            .insert(namespace_id, connection_string);
+            .insert(namespace_id, CacheEntry::new(connection_string));
     }
 
-    pub fn get_cached_connection_string(&self, namespace_id: &str) -> Option<&String> {
-        self.connection_strings.get(namespace_id)
+    pub fn get_cached_connection_string(&self, namespace_id: &str) -> Option<String> {
+        self.connection_strings
+            .get(namespace_id)
+            .filter(|entry| !entry.is_expired(self.cache_ttl))
+            .map(|entry| entry.data.clone())
     }
 
     /// Get cached subscriptions if available
-    pub fn get_cached_subscriptions(&self) -> Option<&Vec<Subscription>> {
-        if self.subscriptions.is_empty() {
-            None
-        } else {
-            Some(&self.subscriptions)
-        }
+    pub fn get_cached_subscriptions(&self) -> Option<Vec<Subscription>> {
+        self.subscriptions
+            .as_ref()
+            .filter(|entry| !entry.is_expired(self.cache_ttl))
+            .map(|entry| entry.data.clone())
     }
 
     /// Get cached resource groups for a subscription
-    pub fn get_cached_resource_groups(&self, subscription_id: &str) -> Option<&Vec<ResourceGroup>> {
-        self.resource_groups.get(subscription_id)
+    pub fn get_cached_resource_groups(&self, subscription_id: &str) -> Option<Vec<ResourceGroup>> {
+        self.resource_groups
+            .get(subscription_id)
+            .filter(|entry| !entry.is_expired(self.cache_ttl))
+            .map(|entry| entry.data.clone())
     }
 
     /// Get cached namespaces for a subscription
-    pub fn get_cached_namespaces(
-        &self,
-        subscription_id: &str,
-    ) -> Option<&Vec<ServiceBusNamespace>> {
-        self.namespaces.get(subscription_id)
+    pub fn get_cached_namespaces(&self, subscription_id: &str) -> Option<Vec<ServiceBusNamespace>> {
+        self.namespaces
+            .get(subscription_id)
+            .filter(|entry| !entry.is_expired(self.cache_ttl))
+            .map(|entry| entry.data.clone())
     }
 
     /// Check if cache is empty (no resources cached)
     pub fn is_empty(&self) -> bool {
-        self.subscriptions.is_empty()
+        self.subscriptions.is_none()
             && self.resource_groups.is_empty()
             && self.namespaces.is_empty()
+            && self.connection_strings.is_empty()
     }
 
     /// Clear all cached data
     pub fn clear(&mut self) {
-        self.subscriptions.clear();
+        self.subscriptions = None;
         self.resource_groups.clear();
         self.namespaces.clear();
         self.connection_strings.clear();
+    }
+
+    /// Remove expired entries from all caches
+    pub fn clean_expired(&mut self) {
+        // Clean subscriptions
+        if let Some(ref entry) = self.subscriptions {
+            if entry.is_expired(self.cache_ttl) {
+                self.subscriptions = None;
+            }
+        }
+
+        // Clean resource groups
+        self.resource_groups
+            .retain(|_, entry| !entry.is_expired(self.cache_ttl));
+
+        // Clean namespaces
+        self.namespaces
+            .retain(|_, entry| !entry.is_expired(self.cache_ttl));
+
+        // Clean connection strings
+        self.connection_strings
+            .retain(|_, entry| !entry.is_expired(self.cache_ttl));
+    }
+
+    /// Find the oldest entry in a cache map for LRU eviction
+    fn find_oldest_entry<T>(
+        &self,
+        cache: &std::collections::HashMap<String, CacheEntry<T>>,
+    ) -> Option<String> {
+        cache
+            .iter()
+            .min_by_key(|(_, entry)| entry.cached_at)
+            .map(|(key, _)| key.clone())
+    }
+}
+
+impl Default for AzureResourceCache {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -3,6 +3,7 @@ use server::service_bus_manager::azure_management_client::{
     AzureResourceCache, ServiceBusNamespace,
 };
 use std::sync::mpsc::Sender;
+use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppState {
@@ -44,6 +45,11 @@ pub struct StateManager {
 impl StateManager {
     /// Create a new StateManager
     pub fn new(tx_to_main: Sender<Msg>) -> Self {
+        // Get cache configuration from app config
+        let config = crate::config::get_config_or_panic();
+        let cache_ttl = Duration::from_secs(config.azure_resource_cache_ttl_seconds());
+        let max_entries = config.azure_resource_cache_max_entries();
+
         Self {
             app_state: AppState::Loading,
             active_component: ComponentId::LoadingIndicator,
@@ -59,7 +65,7 @@ impl StateManager {
             current_page_size: None,
             is_authenticating: false,
             last_device_code_copy: None,
-            azure_cache: AzureResourceCache::new(),
+            azure_cache: AzureResourceCache::with_config(cache_ttl, max_entries),
             selected_subscription: None,
             selected_resource_group: None,
             discovered_namespaces: Vec::new(),
