@@ -90,7 +90,12 @@ where
         match msg {
             SubscriptionSelectionMsg::SubscriptionSelected(subscription_id) => {
                 log::info!("Subscription selected: {subscription_id}");
-                self.state_manager.selected_subscription = Some(subscription_id.clone());
+                // Use atomic update to ensure state consistency
+                self.state_manager.update_azure_selection(
+                    Some(subscription_id.clone()),
+                    None,
+                    None,
+                );
                 if let Err(e) = self.app.umount(&ComponentId::SubscriptionPicker) {
                     log::error!("Failed to unmount subscription picker: {e}");
                 }
@@ -126,12 +131,20 @@ where
         match msg {
             ResourceGroupSelectionMsg::ResourceGroupSelected(resource_group) => {
                 log::info!("Resource group selected: {resource_group}");
-                self.state_manager.selected_resource_group = Some(resource_group);
+                // Use atomic update to ensure state consistency
+                let subscription = self.state_manager.selected_subscription.clone();
+                if let Some(sub_id) = subscription.clone() {
+                    self.state_manager.update_azure_selection(
+                        Some(sub_id.clone()),
+                        Some(resource_group),
+                        None,
+                    );
+                }
                 if let Err(e) = self.app.umount(&ComponentId::ResourceGroupPicker) {
                     log::error!("Failed to unmount resource group picker: {e}");
                 }
 
-                if let Some(subscription_id) = &self.state_manager.selected_subscription {
+                if let Some(subscription_id) = &subscription {
                     Some(Msg::AzureDiscovery(
                         AzureDiscoveryMsg::DiscoveringNamespaces(subscription_id.clone()),
                     ))
@@ -159,6 +172,9 @@ where
     }
 
     fn start_azure_discovery(&mut self) -> Option<Msg> {
+        // Reset any previous discovery state
+        self.state_manager.reset_azure_discovery_state();
+
         // Check if we already have a connection string configured
         let config = crate::config::get_config_or_panic();
         if config.servicebus().connection_string().is_some() {
@@ -234,6 +250,11 @@ where
         });
 
         // Show loading indicator
+        // Use atomic loading state update
+        self.state_manager.set_loading_state(
+            "Discovering Azure subscriptions...".to_string(),
+            AppState::AzureDiscovery,
+        );
         let _ = self.mount_loading_indicator("Discovering Azure subscriptions...");
         None
     }
@@ -326,6 +347,11 @@ where
             Ok(())
         });
 
+        // Use atomic loading state update
+        self.state_manager.set_loading_state(
+            "Discovering resource groups...".to_string(),
+            AppState::AzureDiscovery,
+        );
         let _ = self.mount_loading_indicator("Discovering resource groups...");
         None
     }
@@ -422,6 +448,11 @@ where
             Ok(())
         });
 
+        // Use atomic loading state update
+        self.state_manager.set_loading_state(
+            "Discovering Service Bus namespaces...".to_string(),
+            AppState::AzureDiscovery,
+        );
         let _ = self.mount_loading_indicator("Discovering Service Bus namespaces...");
         None
     }
@@ -483,7 +514,9 @@ where
                 }
 
                 // Store the full namespace objects for later use
-                self.state_manager.discovered_namespaces = namespaces;
+                // Use atomic update for discovered resources
+                self.state_manager
+                    .update_discovered_resources(namespaces, None);
                 None
             }
             Err(e) => Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryError(
@@ -526,6 +559,11 @@ where
             Ok(())
         });
 
+        // Use atomic loading state update
+        self.state_manager.set_loading_state(
+            "Fetching connection string...".to_string(),
+            AppState::AzureDiscovery,
+        );
         let _ = self.mount_loading_indicator("Fetching connection string...");
         None
     }
@@ -537,7 +575,10 @@ where
         }
 
         // Store the connection string in state
-        self.state_manager.discovered_connection_string = Some(connection_string.clone());
+        // Use atomic update for connection string
+        let namespaces = self.state_manager.discovered_namespaces.clone();
+        self.state_manager
+            .update_discovered_resources(namespaces, Some(connection_string.clone()));
 
         // Since we have the connection string, we can now create the Service Bus manager
         // We'll do this synchronously since we're already in the main thread
@@ -645,7 +686,8 @@ where
         log::info!("Finalizing Azure discovery");
 
         // Clear authentication flag since discovery is complete
-        self.state_manager.is_authenticating = false;
+        // Use atomic authentication state update
+        self.state_manager.set_authentication_state(false);
 
         // If we have a discovered connection string and namespace, we can proceed
         if self.state_manager.discovered_connection_string.is_some() {
