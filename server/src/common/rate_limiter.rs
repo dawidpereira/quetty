@@ -60,10 +60,25 @@ impl RateLimiter {
 
     /// Get the current available capacity
     pub fn available_capacity(&self) -> u32 {
-        self.inner
-            .check_n(NonZeroU32::new(u32::MAX).unwrap())
-            .map(|_| u32::MAX)
-            .unwrap_or_else(|_| 0)
+        // Use binary search to find the maximum available capacity
+        let mut low = 0;
+        let mut high = 10000; // reasonable upper bound for most use cases
+
+        #[allow(clippy::manual_div_ceil)]
+        while low < high {
+            let mid = low + (high - low + 1) / 2;
+            if let Some(nz) = NonZeroU32::new(mid) {
+                if self.inner.check_n(nz).is_ok() {
+                    low = mid;
+                } else {
+                    high = mid - 1;
+                }
+            } else {
+                break;
+            }
+        }
+
+        low
     }
 }
 
