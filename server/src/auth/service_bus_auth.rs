@@ -1,7 +1,7 @@
 use super::azure_ad::AzureAdProvider;
 use super::connection_string::ConnectionStringProvider;
 use super::provider::AuthProvider;
-use super::types::{AuthType, AzureAdAuthConfig, AzureAdFlowType, ConnectionStringConfig};
+use super::types::{AuthType, AzureAdAuthConfig, ConnectionStringConfig};
 use crate::service_bus_manager::{AzureAdConfig, ServiceBusError};
 use std::sync::Arc;
 
@@ -36,10 +36,8 @@ fn create_provider_for_type(
             Ok(Arc::new(provider))
         }
         AuthType::AzureAd => {
-            let flow_type = AzureAdFlowType::DeviceCode;
-
             let azure_auth_config = AzureAdAuthConfig {
-                flow: flow_type,
+                auth_method: azure_ad_config.auth_method.clone(),
                 tenant_id: azure_ad_config.tenant_id().ok().map(|s| s.to_string()),
                 client_id: azure_ad_config.client_id().ok().map(|s| s.to_string()),
                 client_secret: azure_ad_config.client_secret().ok().map(|s| s.to_string()),

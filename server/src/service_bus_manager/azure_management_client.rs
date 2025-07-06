@@ -118,14 +118,16 @@ impl AzureManagementClient {
         azure_ad_config.subscription_id()?;
         azure_ad_config.resource_group()?;
         azure_ad_config.namespace()?;
-        
+
         Ok(Self::with_config(azure_ad_config))
     }
 
     /// Get access token from Azure AD config if available
     async fn get_management_api_token(&self) -> Result<String, ServiceBusError> {
         match &self.azure_ad_config {
-            Some(config) => config.get_azure_ad_token().await
+            Some(config) => config
+                .get_azure_ad_token()
+                .await
                 .map_err(|e| ServiceBusError::AuthenticationError(e.to_string())),
             None => Err(ServiceBusError::ConfigurationError(
                 "Azure AD configuration not available for this operation".to_string(),
@@ -140,9 +142,8 @@ impl AzureManagementClient {
         &self,
         token: &str,
     ) -> Result<Vec<Subscription>, ServiceBusError> {
-        let url = format!(
-            "{AZURE_MANAGEMENT_URL}/subscriptions?api-version={API_VERSION_SUBSCRIPTIONS}"
-        );
+        let url =
+            format!("{AZURE_MANAGEMENT_URL}/subscriptions?api-version={API_VERSION_SUBSCRIPTIONS}");
 
         let response = self
             .client
@@ -343,19 +344,13 @@ impl AzureManagementClient {
     // ===== Queue Statistics Operations =====
 
     /// Get the actual message count for a queue from Azure Management API
-    pub async fn get_queue_message_count(
-        &self,
-        queue_name: &str,
-    ) -> Result<u64, ServiceBusError> {
+    pub async fn get_queue_message_count(&self, queue_name: &str) -> Result<u64, ServiceBusError> {
         let (active_count, _) = self.get_queue_counts(queue_name).await?;
         Ok(active_count)
     }
 
     /// Get both active and dead-letter counts from Azure Management API
-    pub async fn get_queue_counts(
-        &self,
-        queue_name: &str,
-    ) -> Result<(u64, u64), ServiceBusError> {
+    pub async fn get_queue_counts(&self, queue_name: &str) -> Result<(u64, u64), ServiceBusError> {
         self.get_queue_counts_with_retry(queue_name, 3).await
     }
 
@@ -460,9 +455,10 @@ impl AzureManagementClient {
             )));
         }
 
-        let response_text = response.text().await.map_err(|e| {
-            ServiceBusError::InternalError(format!("Failed to read response: {e}"))
-        })?;
+        let response_text = response
+            .text()
+            .await
+            .map_err(|e| ServiceBusError::InternalError(format!("Failed to read response: {e}")))?;
 
         let queue_response: QueuePropertiesResponse = serde_json::from_str(&response_text)
             .map_err(|e| {
@@ -545,3 +541,4 @@ impl StatisticsConfig {
         }
     }
 }
+

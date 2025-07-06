@@ -93,7 +93,7 @@ where
 impl Model<CrosstermTerminalAdapter> {
     pub async fn new() -> AppResult<Self> {
         let config = config::get_config_or_panic();
-        let needs_auth = config.auth().primary_method() == "azure_ad";
+        let needs_auth = config.azure_ad().auth_method != "connection_string";
 
         // Create Service Bus manager
         let service_bus_manager = Self::create_service_bus_manager(config).await?;
@@ -151,7 +151,7 @@ impl Model<CrosstermTerminalAdapter> {
         config: &crate::config::AppConfig,
     ) -> AppResult<Option<Arc<Mutex<ServiceBusManager>>>> {
         let connection_string_opt = config.servicebus().connection_string();
-        let needs_auth = config.auth().primary_method() == "azure_ad";
+        let needs_auth = config.azure_ad().auth_method != "connection_string";
 
         if let Some(connection_string) = connection_string_opt {
             // Connection string available - create the client and manager
@@ -194,10 +194,10 @@ impl Model<CrosstermTerminalAdapter> {
 
     /// Log authentication configuration information
     fn log_authentication_info(config: &crate::config::AppConfig) {
-        if config.auth().primary_method() == "azure_ad" {
+        if config.azure_ad().auth_method != "connection_string" {
             log::info!("Azure AD authentication configured for management operations");
-            log::info!("Flow: {}", config.azure_ad().flow);
-            if config.azure_ad().flow == "device_code" {
+            log::info!("Flow: {}", config.azure_ad().auth_method);
+            if config.azure_ad().auth_method == "device_code" {
                 log::info!("Device code flow: You'll be prompted to authenticate in your browser");
                 log::info!("This will happen when accessing queue statistics or listing queues");
             }
@@ -238,7 +238,7 @@ impl Model<CrosstermTerminalAdapter> {
         config: &crate::config::AppConfig,
         tx_to_main: mpsc::Sender<Msg>,
     ) -> AppResult<Option<Arc<crate::services::AuthService>>> {
-        if config.auth().primary_method() == "azure_ad" {
+        if config.azure_ad().auth_method != "connection_string" {
             let auth_service = Arc::new(
                 crate::services::AuthService::new(config.azure_ad(), tx_to_main.clone())
                     .map_err(|e| AppError::Component(e.to_string()))?,

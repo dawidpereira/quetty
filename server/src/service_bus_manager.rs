@@ -18,8 +18,8 @@ pub mod types;
 
 #[derive(Clone, Debug, serde::Deserialize, Default)]
 pub struct AzureAdConfig {
-    #[serde(default = "default_flow")]
-    pub flow: String,
+    #[serde(default = "default_auth_method")]
+    pub auth_method: String,
     pub tenant_id: Option<String>,
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
@@ -28,8 +28,8 @@ pub struct AzureAdConfig {
     pub namespace: Option<String>,
 }
 
-fn default_flow() -> String {
-    "device_code".to_string()
+fn default_auth_method() -> String {
+    "connection_string".to_string()
 }
 
 impl AzureAdConfig {
@@ -107,7 +107,7 @@ impl AzureAdConfig {
         };
 
         // If device code flow is configured, try to use UI-integrated auth first
-        if self.flow == "device_code" {
+        if self.auth_method == "device_code" {
             if let Ok(ui_provider) = create_auth_provider(None) {
                 if let Ok(token) = get_azure_ad_token_with_auth(&ui_provider).await {
                     return Ok(token);

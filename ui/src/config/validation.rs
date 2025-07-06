@@ -97,8 +97,8 @@ impl ConfigValidationError {
                 format!(
                     "Invalid authentication method!\n\n\
                     Your configured value: {method}\n\
-                    Valid methods: connection_string, azure_ad\n\n\
-                    Please update auth.method in config.toml."
+                    Valid methods: connection_string, device_code, client_credentials, managed_identity\n\n\
+                    Please update azure_ad.auth_method in config.toml."
                 )
             }
             ConfigValidationError::MissingAzureAdField { field } => {
@@ -116,7 +116,7 @@ impl ConfigValidationError {
                     "Invalid Azure AD authentication flow!\n\n\
                     Your configured value: {flow}\n\
                     Valid flow: device_code\n\n\
-                    Please update azure_ad.flow in config.toml."
+                    Please update azure_ad.auth_method in config.toml."
                 )
             }
             ConfigValidationError::ConflictingAuthConfig { message } => {

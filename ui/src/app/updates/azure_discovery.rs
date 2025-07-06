@@ -166,7 +166,24 @@ where
             return Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryComplete));
         }
 
+        let azure_ad_config = config.azure_ad();
+
+        // Check if we have all required Azure AD config to skip discovery
+        if let (Ok(subscription_id), Ok(resource_group), Ok(namespace)) = (
+            azure_ad_config.subscription_id(),
+            azure_ad_config.resource_group(),
+            azure_ad_config.namespace(),
+        ) {
+            log::info!("Azure AD config complete, skipping discovery and fetching connection string directly");
+            return Some(Msg::AzureDiscovery(AzureDiscoveryMsg::FetchingConnectionString {
+                subscription_id: subscription_id.to_string(),
+                resource_group: resource_group.to_string(),
+                namespace: namespace.to_string(),
+            }));
+        }
+
         // Start with subscription discovery
+        log::info!("Azure AD config incomplete, starting discovery process");
         Some(Msg::AzureDiscovery(
             AzureDiscoveryMsg::DiscoveringSubscriptions,
         ))

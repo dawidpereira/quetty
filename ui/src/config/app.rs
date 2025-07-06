@@ -1,5 +1,5 @@
 use super::{
-    LoggingConfig, auth::AuthConfig, azure::ServicebusConfig, keys::KeyBindingsConfig, limits::*,
+    LoggingConfig, azure::ServicebusConfig, keys::KeyBindingsConfig, limits::*,
     ui::UIConfig, validation::ConfigValidationError,
 };
 use crate::theme::types::ThemeConfig;
@@ -31,8 +31,6 @@ pub struct AppConfig {
     servicebus: ServicebusConfig,
     #[serde(default)]
     azure_ad: AzureAdConfig,
-    #[serde(default)]
-    auth: AuthConfig,
     #[serde(default)]
     logging: LoggingConfig,
     theme: Option<ThemeConfig>,
@@ -183,10 +181,6 @@ impl AppConfig {
         &self.azure_ad
     }
 
-    pub fn auth(&self) -> &AuthConfig {
-        &self.auth
-    }
-
     pub fn logging(&self) -> &LoggingConfig {
         &self.logging
     }
@@ -197,10 +191,10 @@ impl AppConfig {
 
     /// Validate authentication configuration
     fn validate_auth_config(&self, errors: &mut Vec<ConfigValidationError>) {
-        let auth_method = self.auth.primary_method();
+        let auth_method = &self.azure_ad.auth_method;
 
         // Validate authentication method
-        match auth_method {
+        match auth_method.as_str() {
             "connection_string" => {
                 // When using connection_string, ensure we have a connection string
                 if self.servicebus.connection_string().is_none() {
@@ -209,12 +203,12 @@ impl AppConfig {
                                   Please either:\n\
                                   1. Add servicebus.connection_string to your config.toml\n\
                                   2. Set SERVICEBUS__CONNECTION_STRING environment variable\n\
-                                  3. Change auth.method to 'azure_ad' for Azure AD authentication".to_string()
+                                  3. Change azure_ad.auth_method to 'device_code' for Azure AD authentication".to_string()
                     });
                 }
             }
-            "azure_ad" => {
-                // Validate Azure AD configuration
+            "device_code" | "client_credentials" | "managed_identity" => {
+                // Validate Azure AD configuration for these auth methods
                 self.validate_azure_ad_config(errors);
             }
             method => {
@@ -227,7 +221,7 @@ impl AppConfig {
 
     /// Validate Azure AD specific configuration
     fn validate_azure_ad_config(&self, errors: &mut Vec<ConfigValidationError>) {
-        let flow = &self.azure_ad.flow;
+        let flow = &self.azure_ad.auth_method;
 
         // Validate flow type
         match flow.as_str() {

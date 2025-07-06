@@ -23,7 +23,7 @@ pub struct ConnectionStringConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AzureAdAuthConfig {
-    pub flow: AzureAdFlowType,
+    pub auth_method: String,
     pub tenant_id: Option<String>,
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
@@ -34,11 +34,6 @@ pub struct AzureAdAuthConfig {
     pub scope: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum AzureAdFlowType {
-    DeviceCode,
-}
 
 #[derive(Clone, Debug)]
 pub struct CachedToken {

@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Example 2: Using Azure AD device code flow
     println!("\n=== Azure AD Device Code Flow ===");
     let mut azure_ad_config = AzureAdConfig::default();
-    azure_ad_config.flow = "device_code".to_string();
+    azure_ad_config.auth_method = "device_code".to_string();
 
     let auth_provider =
         create_auth_provider("azure_ad", connection_string.as_deref(), &azure_ad_config)?;

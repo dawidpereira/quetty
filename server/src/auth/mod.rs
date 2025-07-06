@@ -11,7 +11,7 @@ pub mod types;
 
 pub use auth_setup::{create_auth_provider, set_global_auth_state};
 pub use auth_state::{AuthStateManager, AuthenticationState};
-pub use azure_ad::{AzureAdFlow, AzureAdProvider, DeviceCodeFlowInfo};
+pub use azure_ad::{AzureAdProvider, DeviceCodeFlowInfo};
 pub use connection_string::ConnectionStringProvider;
 pub use provider::{AuthProvider, AuthToken};
 pub use sas_token_generator::SasTokenGenerator;

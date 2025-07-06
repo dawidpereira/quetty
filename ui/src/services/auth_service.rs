@@ -1,7 +1,6 @@
 use crate::components::common::{AuthActivityMsg, Msg};
 use crate::error::{AppError, AppResult};
 use server::auth::auth_state::AuthStateManager;
-use server::auth::types::AzureAdFlowType;
 use server::auth::{AuthProvider, AzureAdProvider};
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
@@ -23,7 +22,7 @@ impl AuthService {
 
         // Convert AzureAdConfig to AzureAdAuthConfig
         let auth_config = server::auth::types::AzureAdAuthConfig {
-            flow: server::auth::types::AzureAdFlowType::DeviceCode,
+            auth_method: config.auth_method.clone(),
             tenant_id: config.tenant_id().ok().map(|s| s.to_string()),
             client_id: config.client_id().ok().map(|s| s.to_string()),
             client_secret: config.client_secret().ok().map(|s| s.to_string()),
@@ -53,7 +52,7 @@ impl AuthService {
             .ok_or_else(|| AppError::Auth("Azure AD not configured".to_string()))?;
 
         // Check if device code flow is configured
-        if provider.flow_type() == &AzureAdFlowType::DeviceCode {
+        if provider.flow_type() == "device_code" {
             return self.handle_device_code_flow(provider.clone()).await;
         }
 

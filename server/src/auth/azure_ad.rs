@@ -1,10 +1,8 @@
 use super::provider::{AuthProvider, AuthToken};
-use super::types::{AuthType, AzureAdAuthConfig, AzureAdFlowType};
+use super::types::{AuthType, AzureAdAuthConfig};
 use crate::service_bus_manager::ServiceBusError;
 use async_trait::async_trait;
 use serde::Deserialize;
-
-pub use super::types::AzureAdFlowType as AzureAdFlow;
 
 #[derive(Clone, Debug)]
 pub struct DeviceCodeFlowInfo {
@@ -54,8 +52,8 @@ impl AzureAdProvider {
         })
     }
 
-    pub fn flow_type(&self) -> &AzureAdFlowType {
-        &self.config.flow
+    pub fn flow_type(&self) -> &str {
+        &self.config.auth_method
     }
 
     fn authority_host(&self) -> &str {
@@ -269,8 +267,12 @@ impl AzureAdProvider {
 #[async_trait]
 impl AuthProvider for AzureAdProvider {
     async fn authenticate(&self) -> Result<AuthToken, ServiceBusError> {
-        match self.config.flow {
-            AzureAdFlowType::DeviceCode => self.device_code_flow().await,
+        match self.config.auth_method.as_str() {
+            "device_code" => self.device_code_flow().await,
+            _ => Err(ServiceBusError::ConfigurationError(format!(
+                "Unsupported auth method: {}",
+                self.config.auth_method
+            ))),
         }
     }
 
