@@ -1,27 +1,26 @@
 use serde::Deserialize;
-
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct AuthConfig {
-    #[serde(default = "default_method")]
-    pub method: String,
+    #[serde(default = "default_primary_method")]
+    pub primary_method: String,
+    #[serde(default = "default_fallback_enabled")]
+    pub fallback_enabled: bool,
 }
 
-//TODO: I think in some place we set default method manueally instead of this fn. And default is
-//code
-fn default_method() -> String {
+fn default_primary_method() -> String {
     "connection_string".to_string()
 }
 
-impl Default for AuthConfig {
-    fn default() -> Self {
-        Self {
-            method: default_method(),
-        }
-    }
+fn default_fallback_enabled() -> bool {
+    true
 }
 
 impl AuthConfig {
-    pub fn method(&self) -> &str {
-        &self.method
+    pub fn primary_method(&self) -> &str {
+        &self.primary_method
+    }
+
+    pub fn fallback_enabled(&self) -> bool {
+        self.fallback_enabled
     }
 }

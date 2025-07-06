@@ -197,7 +197,7 @@ impl AppConfig {
 
     /// Validate authentication configuration
     fn validate_auth_config(&self, errors: &mut Vec<ConfigValidationError>) {
-        let auth_method = self.auth.method();
+        let auth_method = self.auth.primary_method();
 
         // Validate authentication method
         match auth_method {

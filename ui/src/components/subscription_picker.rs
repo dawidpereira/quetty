@@ -1,7 +1,7 @@
 use crate::components::base_popup::PopupBuilder;
 use crate::components::common::{Msg, SubscriptionSelectionMsg};
 use crate::theme::ThemeManager;
-use server::azure_management_api::Subscription;
+use server::service_bus_manager::azure_management_client::Subscription;
 use tuirealm::command::{Cmd, CmdResult};
 use tuirealm::event::{Event, Key, KeyEvent, NoUserEvent};
 use tuirealm::props::TextModifiers;
@@ -21,11 +21,6 @@ impl SubscriptionPicker {
             subscriptions: subscriptions.unwrap_or_default(),
             selected: 0,
         }
-    }
-
-    pub fn update_subscriptions(&mut self, subscriptions: Vec<Subscription>) {
-        self.subscriptions = subscriptions;
-        self.selected = 0;
     }
 }
 
@@ -90,27 +85,23 @@ impl MockComponent for SubscriptionPicker {
 impl Component<Msg, NoUserEvent> for SubscriptionPicker {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
         match ev {
-            Event::Keyboard(KeyEvent { code: Key::Esc, .. }) => Some(
-                Msg::SubscriptionSelectionMsg(SubscriptionSelectionMsg::CancelSelection),
-            ),
+            Event::Keyboard(KeyEvent { code: Key::Esc, .. }) => Some(Msg::SubscriptionSelection(
+                SubscriptionSelectionMsg::CancelSelection,
+            )),
             Event::Keyboard(KeyEvent {
                 code: Key::Enter, ..
-            }) => {
-                if let Some(sub) = self.subscriptions.get(self.selected) {
-                    Some(Msg::SubscriptionSelectionMsg(
-                        SubscriptionSelectionMsg::SubscriptionSelected(sub.subscription_id.clone()),
-                    ))
-                } else {
-                    None
-                }
-            }
+            }) => self.subscriptions.get(self.selected).map(|sub| {
+                Msg::SubscriptionSelection(SubscriptionSelectionMsg::SubscriptionSelected(
+                    sub.subscription_id.clone(),
+                ))
+            }),
             Event::Keyboard(KeyEvent {
                 code: Key::Up | Key::Char('k'),
                 ..
             }) => {
                 if self.selected > 0 {
                     self.selected -= 1;
-                    Some(Msg::SubscriptionSelectionMsg(
+                    Some(Msg::SubscriptionSelection(
                         SubscriptionSelectionMsg::SelectionChanged,
                     ))
                 } else {
@@ -123,7 +114,7 @@ impl Component<Msg, NoUserEvent> for SubscriptionPicker {
             }) => {
                 if self.selected < self.subscriptions.len().saturating_sub(1) {
                     self.selected += 1;
-                    Some(Msg::SubscriptionSelectionMsg(
+                    Some(Msg::SubscriptionSelection(
                         SubscriptionSelectionMsg::SelectionChanged,
                     ))
                 } else {

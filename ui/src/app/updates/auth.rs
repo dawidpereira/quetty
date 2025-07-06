@@ -102,7 +102,7 @@ where
                 let has_connection_string = config.servicebus().connection_string().is_some();
 
                 log::info!("Authentication successful! Checking next steps...");
-                log::info!("Has connection string: {}", has_connection_string);
+                log::info!("Has connection string: {has_connection_string}");
                 log::info!(
                     "Service bus manager initialized: {}",
                     self.service_bus_manager.is_some()
@@ -111,9 +111,7 @@ where
                 if !has_connection_string {
                     // No connection string configured, start discovery
                     log::info!("No connection string found, starting Azure discovery flow");
-                    Ok(Some(Msg::AzureDiscoveryMsg(
-                        AzureDiscoveryMsg::StartDiscovery,
-                    )))
+                    Ok(Some(Msg::AzureDiscovery(AzureDiscoveryMsg::StartDiscovery)))
                 } else {
                     // Connection string available, load namespaces directly
                     log::info!("Connection string available, loading namespaces directly");
@@ -195,8 +193,7 @@ where
                                             ctx.set_contents(device_info.user_code.clone())
                                         {
                                             let _ = tx.send(Msg::ShowError(format!(
-                                                "Failed to copy device code: {}",
-                                                e
+                                                "Failed to copy device code: {e}"
                                             )));
                                         } else {
                                             log::info!("Device code copied to clipboard");
@@ -206,8 +203,7 @@ where
                                     }
                                     Err(e) => {
                                         let _ = tx.send(Msg::ShowError(format!(
-                                            "Failed to access clipboard: {}",
-                                            e
+                                            "Failed to access clipboard: {e}"
                                         )));
                                     }
                                 }
@@ -233,7 +229,7 @@ where
                             Some(device_info) => {
                                 // Use open crate to open URL in default browser
                                 if let Err(e) = open::that(&device_info.verification_uri) {
-                                    let _ = tx.send(Msg::ShowError(format!("Failed to open URL: {}", e)));
+                                    let _ = tx.send(Msg::ShowError(format!("Failed to open URL: {e}")));
                                 } else {
                                     log::info!("Opened verification URL in browser");
                                     let _ = tx.send(Msg::ShowSuccess("Browser opened! Please enter the device code to authenticate.".to_string()));

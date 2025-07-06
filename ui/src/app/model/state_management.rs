@@ -27,11 +27,7 @@ where
             AppState::AzureDiscovery => ComponentId::SubscriptionPicker, // Default to subscription picker
         };
 
-        log::debug!(
-            "View called - AppState: {:?}, Active: {:?}",
-            current_app_state,
-            active_component
-        );
+        log::debug!("View called - AppState: {current_app_state:?}, Active: {active_component:?}");
 
         // Update active component before drawing
         self.set_active_component(active_component.clone());
@@ -111,17 +107,16 @@ where
             }
         }) {
             // Log the error but don't propagate it - drawing errors shouldn't crash the app
-            log::error!("Terminal draw error: {:?}", e);
+            log::error!("Terminal draw error: {e:?}");
             return Err(AppError::Component(format!(
-                "Failed to draw to terminal: {}",
-                e
+                "Failed to draw to terminal: {e}"
             )));
         }
 
         // Flush stdout to ensure the terminal updates immediately
         // This is crucial for crossterm to actually display the changes
         if let Err(e) = io::stdout().flush() {
-            log::error!("Failed to flush stdout: {:?}", e);
+            log::error!("Failed to flush stdout: {e:?}");
         }
 
         view_result

@@ -10,7 +10,7 @@ where
         if let Some(msg) = msg {
             // Log all messages during startup
             if self.state_manager.is_authenticating {
-                log::debug!("Update during auth: {:?}", msg);
+                log::debug!("Update during auth: {msg:?}");
             }
 
             // Set redraw
@@ -78,9 +78,9 @@ where
                         }
                     }
                 }
-                Msg::SubscriptionSelectionMsg(msg) => self.handle_subscription_selection(msg),
-                Msg::ResourceGroupSelectionMsg(msg) => self.handle_resource_group_selection(msg),
-                Msg::AzureDiscoveryMsg(msg) => self.handle_azure_discovery(msg),
+                Msg::SubscriptionSelection(msg) => self.handle_subscription_selection(msg),
+                Msg::ResourceGroupSelection(msg) => self.handle_resource_group_selection(msg),
+                Msg::AzureDiscovery(msg) => self.handle_azure_discovery(msg),
                 Msg::ShowError(error_msg) => {
                     self.update_popup(PopupActivityMsg::ShowError(crate::error::AppError::Component(error_msg)))
                 }

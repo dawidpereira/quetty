@@ -15,7 +15,6 @@ where
                 if let Err(e) = self.remount_namespace_picker(Some(namespace)) {
                     self.error_reporter
                         .report_simple(e, "NamespaceHandler", "update_namespace");
-                    return None;
                 }
                 None
             }
@@ -34,22 +33,22 @@ where
 
                     // Unmount namespace picker
                     if let Err(e) = self.app.umount(&ComponentId::NamespacePicker) {
-                        log::error!("Failed to unmount namespace picker: {}", e);
+                        log::error!("Failed to unmount namespace picker: {e}");
                     }
                     // Go back to resource group selection
-                    return Some(Msg::AzureDiscoveryMsg(
+                    Some(Msg::AzureDiscovery(
                         AzureDiscoveryMsg::DiscoveringResourceGroups(
                             self.state_manager.selected_subscription.clone().unwrap(),
                         ),
-                    ));
+                    ))
                 } else {
                     // Not in discovery mode, just close
                     log::info!("Not in discovery mode, closing namespace picker");
                     if let Err(e) = self.app.umount(&ComponentId::NamespacePicker) {
-                        log::error!("Failed to unmount namespace picker: {}", e);
+                        log::error!("Failed to unmount namespace picker: {e}");
                     }
                     self.set_quit(true);
-                    return Some(Msg::AppClose);
+                    Some(Msg::AppClose)
                 }
             }
             NamespaceActivityMsg::NamespaceUnselected => {
@@ -127,7 +126,7 @@ where
                     let resource_group =
                         self.state_manager.selected_resource_group.clone().unwrap();
 
-                    return Some(Msg::AzureDiscoveryMsg(
+                    return Some(Msg::AzureDiscovery(
                         AzureDiscoveryMsg::FetchingConnectionString {
                             subscription_id,
                             resource_group,
@@ -148,7 +147,7 @@ where
             if self.app.mounted(&ComponentId::NamespacePicker) {
                 log::info!("Unmounting namespace picker before transitioning to queue picker");
                 if let Err(e) = self.app.umount(&ComponentId::NamespacePicker) {
-                    log::error!("Failed to unmount namespace picker: {}", e);
+                    log::error!("Failed to unmount namespace picker: {e}");
                 }
             }
 
@@ -164,7 +163,7 @@ where
                 &self.state_manager.selected_namespace,
                 &self.auth_service,
             ) {
-                log::info!("Discovery mode: Loading queues for namespace {}", namespace);
+                log::info!("Discovery mode: Loading queues for namespace {namespace}");
                 self.queue_manager.load_queues_with_discovery(
                     subscription_id.clone(),
                     resource_group.clone(),

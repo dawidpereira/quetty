@@ -1,7 +1,7 @@
 use crate::components::base_popup::PopupBuilder;
 use crate::components::common::{Msg, ResourceGroupSelectionMsg};
 use crate::theme::ThemeManager;
-use server::azure_management_api::ResourceGroup;
+use server::service_bus_manager::azure_management_client::ResourceGroup;
 use tuirealm::command::{Cmd, CmdResult};
 use tuirealm::event::{Event, Key, KeyEvent, NoUserEvent};
 use tuirealm::props::TextModifiers;
@@ -21,11 +21,6 @@ impl ResourceGroupPicker {
             resource_groups: resource_groups.unwrap_or_default(),
             selected: 0,
         }
-    }
-
-    pub fn update_resource_groups(&mut self, resource_groups: Vec<ResourceGroup>) {
-        self.resource_groups = resource_groups;
-        self.selected = 0;
     }
 }
 
@@ -89,27 +84,23 @@ impl MockComponent for ResourceGroupPicker {
 impl Component<Msg, NoUserEvent> for ResourceGroupPicker {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
         match ev {
-            Event::Keyboard(KeyEvent { code: Key::Esc, .. }) => Some(
-                Msg::ResourceGroupSelectionMsg(ResourceGroupSelectionMsg::CancelSelection),
-            ),
+            Event::Keyboard(KeyEvent { code: Key::Esc, .. }) => Some(Msg::ResourceGroupSelection(
+                ResourceGroupSelectionMsg::CancelSelection,
+            )),
             Event::Keyboard(KeyEvent {
                 code: Key::Enter, ..
-            }) => {
-                if let Some(group) = self.resource_groups.get(self.selected) {
-                    Some(Msg::ResourceGroupSelectionMsg(
-                        ResourceGroupSelectionMsg::ResourceGroupSelected(group.name.clone()),
-                    ))
-                } else {
-                    None
-                }
-            }
+            }) => self.resource_groups.get(self.selected).map(|group| {
+                Msg::ResourceGroupSelection(ResourceGroupSelectionMsg::ResourceGroupSelected(
+                    group.name.clone(),
+                ))
+            }),
             Event::Keyboard(KeyEvent {
                 code: Key::Up | Key::Char('k'),
                 ..
             }) => {
                 if self.selected > 0 {
                     self.selected -= 1;
-                    Some(Msg::ResourceGroupSelectionMsg(
+                    Some(Msg::ResourceGroupSelection(
                         ResourceGroupSelectionMsg::SelectionChanged,
                     ))
                 } else {
@@ -122,7 +113,7 @@ impl Component<Msg, NoUserEvent> for ResourceGroupPicker {
             }) => {
                 if self.selected < self.resource_groups.len().saturating_sub(1) {
                     self.selected += 1;
-                    Some(Msg::ResourceGroupSelectionMsg(
+                    Some(Msg::ResourceGroupSelection(
                         ResourceGroupSelectionMsg::SelectionChanged,
                     ))
                 } else {

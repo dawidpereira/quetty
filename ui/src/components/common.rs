@@ -73,9 +73,9 @@ pub enum Msg {
     ToggleHelpScreen,
     ToggleThemePicker,
     AuthActivity(AuthActivityMsg),
-    SubscriptionSelectionMsg(SubscriptionSelectionMsg),
-    ResourceGroupSelectionMsg(ResourceGroupSelectionMsg),
-    AzureDiscoveryMsg(AzureDiscoveryMsg),
+    SubscriptionSelection(SubscriptionSelectionMsg),
+    ResourceGroupSelection(ResourceGroupSelectionMsg),
+    AzureDiscovery(AzureDiscoveryMsg),
 }
 
 #[derive(Debug, PartialEq)]
@@ -140,11 +140,11 @@ pub enum ResourceGroupSelectionMsg {
 pub enum AzureDiscoveryMsg {
     StartDiscovery,
     DiscoveringSubscriptions,
-    SubscriptionsDiscovered(Vec<server::azure_management_api::Subscription>),
+    SubscriptionsDiscovered(Vec<server::service_bus_manager::azure_management_client::Subscription>),
     DiscoveringResourceGroups(String), // subscription_id
-    ResourceGroupsDiscovered(Vec<server::azure_management_api::ResourceGroup>),
+    ResourceGroupsDiscovered(Vec<server::service_bus_manager::azure_management_client::ResourceGroup>),
     DiscoveringNamespaces(String), // subscription_id
-    NamespacesDiscovered(Vec<server::azure_management_api::ServiceBusNamespace>),
+    NamespacesDiscovered(Vec<server::service_bus_manager::azure_management_client::ServiceBusNamespace>),
     FetchingConnectionString {
         subscription_id: String,
         resource_group: String,
@@ -166,13 +166,13 @@ impl fmt::Debug for AzureDiscoveryMsg {
                 write!(f, "SubscriptionsDiscovered({} items)", subs.len())
             }
             AzureDiscoveryMsg::DiscoveringResourceGroups(id) => {
-                write!(f, "DiscoveringResourceGroups({})", id)
+                write!(f, "DiscoveringResourceGroups({id})")
             }
             AzureDiscoveryMsg::ResourceGroupsDiscovered(groups) => {
                 write!(f, "ResourceGroupsDiscovered({} items)", groups.len())
             }
             AzureDiscoveryMsg::DiscoveringNamespaces(id) => {
-                write!(f, "DiscoveringNamespaces({})", id)
+                write!(f, "DiscoveringNamespaces({id})")
             }
             AzureDiscoveryMsg::NamespacesDiscovered(ns) => {
                 write!(f, "NamespacesDiscovered({} items)", ns.len())
@@ -184,8 +184,7 @@ impl fmt::Debug for AzureDiscoveryMsg {
             } => {
                 write!(
                     f,
-                    "FetchingConnectionString {{ subscription_id: {}, resource_group: {}, namespace: {} }}",
-                    subscription_id, resource_group, namespace
+                    "FetchingConnectionString {{ subscription_id: {subscription_id}, resource_group: {resource_group}, namespace: {namespace} }}"
                 )
             }
             AzureDiscoveryMsg::ConnectionStringFetched(_) => {
@@ -195,7 +194,7 @@ impl fmt::Debug for AzureDiscoveryMsg {
             AzureDiscoveryMsg::ServiceBusManagerReady(_) => {
                 write!(f, "ServiceBusManagerReady(Arc<Mutex<ServiceBusManager>>)")
             }
-            AzureDiscoveryMsg::DiscoveryError(e) => write!(f, "DiscoveryError({})", e),
+            AzureDiscoveryMsg::DiscoveryError(e) => write!(f, "DiscoveryError({e})"),
             AzureDiscoveryMsg::DiscoveryComplete => write!(f, "DiscoveryComplete"),
         }
     }

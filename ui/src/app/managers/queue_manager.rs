@@ -116,24 +116,24 @@ impl QueueManager {
         };
 
         self.task_manager.execute("Loading queues...", async move {
-            log::debug!("Requesting queues for discovered namespace: {}", namespace);
+            log::debug!("Requesting queues for discovered namespace: {namespace}");
 
             // Get Azure AD token
             let token = match auth_service.get_management_token().await {
                 Ok(token) => token,
                 Err(e) => {
-                    log::error!("Failed to get management token: {}", e);
+                    log::error!("Failed to get management token: {e}");
                     return Err(AppError::Auth(e.to_string()));
                 }
             };
 
             // Use Azure Management API to list queues
-            let client = server::azure_management_api::AzureManagementClient::new();
+            let client = server::service_bus_manager::azure_management_client::AzureManagementClient::new();
             let queue_names = client
                 .list_queues(&token, &subscription_id, &resource_group, &namespace)
                 .await
                 .map_err(|e| {
-                    log::error!("Failed to list queues: {}", e);
+                    log::error!("Failed to list queues: {e}");
                     AppError::ServiceBus(e.to_string())
                 })?;
 

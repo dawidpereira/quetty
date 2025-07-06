@@ -1,4 +1,5 @@
-use super::azure_management_client::{AzureManagementClient, ManagementApiError, StatisticsConfig};
+use super::azure_management_client::{AzureManagementClient, StatisticsConfig};
+use super::ServiceBusError;
 use super::types::QueueType;
 
 /// Service for getting real queue statistics from Azure Management API
@@ -67,11 +68,11 @@ impl QueueStatisticsService {
                 );
                 Some(count)
             }
-            Err(ManagementApiError::QueueNotFound(_)) => {
+            Err(ServiceBusError::InternalError(msg)) if msg.contains("Queue not found") => {
                 log::warn!("Queue not found: {queue_name}");
                 None
             }
-            Err(ManagementApiError::AuthenticationFailed(msg)) => {
+            Err(ServiceBusError::AuthenticationError(msg)) => {
                 log::warn!("Authentication failed for management API: {msg}");
                 None
             }
@@ -110,11 +111,11 @@ impl QueueStatisticsService {
                 log::debug!("Retrieved counts - active: {active}, dlq: {dlq}");
                 (Some(active), Some(dlq))
             }
-            Err(ManagementApiError::QueueNotFound(_)) => {
+            Err(ServiceBusError::InternalError(msg)) if msg.contains("Queue not found") => {
                 log::warn!("Queue not found: {queue_name}");
                 (None, None)
             }
-            Err(ManagementApiError::AuthenticationFailed(msg)) => {
+            Err(ServiceBusError::AuthenticationError(msg)) => {
                 log::warn!("Authentication failed for management API: {msg}");
                 (None, None)
             }

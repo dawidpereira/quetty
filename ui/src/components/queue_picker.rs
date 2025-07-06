@@ -88,7 +88,7 @@ impl MockComponent for QueuePicker {
             use tuirealm::ratatui::layout::Alignment;
             use tuirealm::ratatui::widgets::Paragraph;
 
-            let help_text = vec![
+            let help_text = [
                 "",
                 "No queues available",
                 "",

@@ -6,7 +6,7 @@ use crate::components::namespace_picker::NamespacePicker;
 use crate::components::resource_group_picker::ResourceGroupPicker;
 use crate::components::subscription_picker::SubscriptionPicker;
 use crate::error::AppError;
-use server::azure_management_api::{
+use server::service_bus_manager::azure_management_client::{
     AzureManagementClient, ResourceGroup, ServiceBusNamespace, Subscription,
 };
 use server::service_bus_manager::ServiceBusManager;
@@ -29,29 +29,28 @@ where
                 self.discover_subscriptions()
             }
             AzureDiscoveryMsg::SubscriptionsDiscovered(subscriptions) => {
-                log::info!("Discovered {} subscriptions", subscriptions.len());
+                let count = subscriptions.len();
+                log::info!("Discovered {count} subscriptions");
                 self.handle_subscriptions_discovered(subscriptions)
             }
             AzureDiscoveryMsg::DiscoveringResourceGroups(subscription_id) => {
-                log::info!(
-                    "Discovering resource groups for subscription: {}",
-                    subscription_id
-                );
+                log::info!("Discovering resource groups for subscription: {subscription_id}");
                 self.discover_resource_groups(subscription_id)
             }
             AzureDiscoveryMsg::ResourceGroupsDiscovered(groups) => {
-                log::info!("Discovered {} resource groups", groups.len());
+                let count = groups.len();
+                log::info!("Discovered {count} resource groups");
                 self.handle_resource_groups_discovered(groups)
             }
             AzureDiscoveryMsg::DiscoveringNamespaces(subscription_id) => {
                 log::info!(
-                    "Discovering Service Bus namespaces for subscription: {}",
-                    subscription_id
+                    "Discovering Service Bus namespaces for subscription: {subscription_id}"
                 );
                 self.discover_namespaces(subscription_id)
             }
             AzureDiscoveryMsg::NamespacesDiscovered(namespaces) => {
-                log::info!("Discovered {} Service Bus namespaces", namespaces.len());
+                let count = namespaces.len();
+                log::info!("Discovered {count} Service Bus namespaces");
                 self.handle_namespaces_discovered(namespaces)
             }
             AzureDiscoveryMsg::FetchingConnectionString {
@@ -59,7 +58,7 @@ where
                 resource_group,
                 namespace,
             } => {
-                log::info!("Fetching connection string for namespace: {}", namespace);
+                log::info!("Fetching connection string for namespace: {namespace}");
                 self.fetch_connection_string(subscription_id, resource_group, namespace)
             }
             AzureDiscoveryMsg::ConnectionStringFetched(connection_string) => {
@@ -75,7 +74,7 @@ where
                 self.handle_service_bus_manager_ready(manager)
             }
             AzureDiscoveryMsg::DiscoveryError(error) => {
-                log::error!("Azure discovery error: {}", error);
+                log::error!("Azure discovery error: {error}");
                 self.mount_error_popup(&AppError::ServiceBus(error))
                     .ok()
                     .map(|_| Msg::ForceRedraw)
@@ -90,12 +89,12 @@ where
     pub fn handle_subscription_selection(&mut self, msg: SubscriptionSelectionMsg) -> Option<Msg> {
         match msg {
             SubscriptionSelectionMsg::SubscriptionSelected(subscription_id) => {
-                log::info!("Subscription selected: {}", subscription_id);
+                log::info!("Subscription selected: {subscription_id}");
                 self.state_manager.selected_subscription = Some(subscription_id.clone());
                 if let Err(e) = self.app.umount(&ComponentId::SubscriptionPicker) {
-                    log::error!("Failed to unmount subscription picker: {}", e);
+                    log::error!("Failed to unmount subscription picker: {e}");
                 }
-                Some(Msg::AzureDiscoveryMsg(
+                Some(Msg::AzureDiscovery(
                     AzureDiscoveryMsg::DiscoveringResourceGroups(subscription_id),
                 ))
             }
@@ -107,7 +106,7 @@ where
 
                 // Unmount subscription picker
                 if let Err(e) = self.app.umount(&ComponentId::SubscriptionPicker) {
-                    log::error!("Failed to unmount subscription picker: {}", e);
+                    log::error!("Failed to unmount subscription picker: {e}");
                 }
 
                 // Return AppClose to trigger immediate shutdown
@@ -126,18 +125,18 @@ where
     ) -> Option<Msg> {
         match msg {
             ResourceGroupSelectionMsg::ResourceGroupSelected(resource_group) => {
-                log::info!("Resource group selected: {}", resource_group);
+                log::info!("Resource group selected: {resource_group}");
                 self.state_manager.selected_resource_group = Some(resource_group);
                 if let Err(e) = self.app.umount(&ComponentId::ResourceGroupPicker) {
-                    log::error!("Failed to unmount resource group picker: {}", e);
+                    log::error!("Failed to unmount resource group picker: {e}");
                 }
 
                 if let Some(subscription_id) = &self.state_manager.selected_subscription {
-                    Some(Msg::AzureDiscoveryMsg(
+                    Some(Msg::AzureDiscovery(
                         AzureDiscoveryMsg::DiscoveringNamespaces(subscription_id.clone()),
                     ))
                 } else {
-                    Some(Msg::AzureDiscoveryMsg(AzureDiscoveryMsg::DiscoveryError(
+                    Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryError(
                         "No subscription selected".to_string(),
                     )))
                 }
@@ -145,10 +144,10 @@ where
             ResourceGroupSelectionMsg::CancelSelection => {
                 log::info!("Resource group selection cancelled");
                 if let Err(e) = self.app.umount(&ComponentId::ResourceGroupPicker) {
-                    log::error!("Failed to unmount resource group picker: {}", e);
+                    log::error!("Failed to unmount resource group picker: {e}");
                 }
                 // Go back to subscription selection
-                Some(Msg::AzureDiscoveryMsg(
+                Some(Msg::AzureDiscovery(
                     AzureDiscoveryMsg::DiscoveringSubscriptions,
                 ))
             }
@@ -164,11 +163,11 @@ where
         let config = crate::config::get_config_or_panic();
         if config.servicebus().connection_string().is_some() {
             log::info!("Connection string already configured, skipping discovery");
-            return Some(Msg::AzureDiscoveryMsg(AzureDiscoveryMsg::DiscoveryComplete));
+            return Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryComplete));
         }
 
         // Start with subscription discovery
-        Some(Msg::AzureDiscoveryMsg(
+        Some(Msg::AzureDiscovery(
             AzureDiscoveryMsg::DiscoveringSubscriptions,
         ))
     }
@@ -190,7 +189,7 @@ where
                 .await
                 .map_err(|e| AppError::ServiceBus(e.to_string()))?;
 
-            let _ = tx.send(Msg::AzureDiscoveryMsg(
+            let _ = tx.send(Msg::AzureDiscovery(
                 AzureDiscoveryMsg::SubscriptionsDiscovered(subscriptions),
             ));
 
@@ -205,11 +204,11 @@ where
     fn handle_subscriptions_discovered(&mut self, subscriptions: Vec<Subscription>) -> Option<Msg> {
         // Unmount loading indicator
         if let Err(e) = self.app.umount(&ComponentId::LoadingIndicator) {
-            log::warn!("Failed to unmount loading indicator: {}", e);
+            log::warn!("Failed to unmount loading indicator: {e}");
         }
 
         if subscriptions.is_empty() {
-            return Some(Msg::AzureDiscoveryMsg(AzureDiscoveryMsg::DiscoveryError(
+            return Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryError(
                 "No Azure subscriptions found. Please check your permissions.".to_string(),
             )));
         }
@@ -230,23 +229,20 @@ where
                 // Set the app state to prevent reverting to NamespacePicker
                 self.state_manager.app_state = AppState::AzureDiscovery;
                 if let Err(e) = self.app.active(&ComponentId::SubscriptionPicker) {
-                    log::error!("Failed to activate subscription picker: {}", e);
+                    log::error!("Failed to activate subscription picker: {e}");
                 }
                 self.state_manager.set_redraw(true);
                 log::debug!("Redraw flag set after mounting subscription picker");
 
                 // Force an immediate redraw to ensure the picker is visible
                 if let Err(e) = self.view() {
-                    log::error!(
-                        "Failed to force redraw after mounting subscription picker: {:?}",
-                        e
-                    );
+                    log::error!("Failed to force redraw after mounting subscription picker: {e:?}");
                 }
 
                 None
             }
-            Err(e) => Some(Msg::AzureDiscoveryMsg(AzureDiscoveryMsg::DiscoveryError(
-                format!("Failed to show subscription picker: {}", e),
+            Err(e) => Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryError(
+                format!("Failed to show subscription picker: {e}"),
             ))),
         }
     }
@@ -267,7 +263,7 @@ where
                 .await
                 .map_err(|e| AppError::ServiceBus(e.to_string()))?;
 
-            let _ = tx.send(Msg::AzureDiscoveryMsg(
+            let _ = tx.send(Msg::AzureDiscovery(
                 AzureDiscoveryMsg::ResourceGroupsDiscovered(groups),
             ));
 
@@ -281,11 +277,11 @@ where
     fn handle_resource_groups_discovered(&mut self, groups: Vec<ResourceGroup>) -> Option<Msg> {
         // Unmount loading indicator
         if let Err(e) = self.app.umount(&ComponentId::LoadingIndicator) {
-            log::warn!("Failed to unmount loading indicator: {}", e);
+            log::warn!("Failed to unmount loading indicator: {e}");
         }
 
         if groups.is_empty() {
-            return Some(Msg::AzureDiscoveryMsg(AzureDiscoveryMsg::DiscoveryError(
+            return Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryError(
                 "No resource groups found in this subscription.".to_string(),
             )));
         }
@@ -308,7 +304,7 @@ where
                 // Set the app state to prevent reverting to NamespacePicker
                 self.state_manager.app_state = AppState::AzureDiscovery;
                 if let Err(e) = self.app.active(&ComponentId::ResourceGroupPicker) {
-                    log::error!("Failed to activate resource group picker: {}", e);
+                    log::error!("Failed to activate resource group picker: {e}");
                 }
                 self.state_manager.set_redraw(true);
                 log::debug!("Redraw flag set after mounting resource group picker");
@@ -316,15 +312,14 @@ where
                 // Force an immediate redraw to ensure the picker is visible
                 if let Err(e) = self.view() {
                     log::error!(
-                        "Failed to force redraw after mounting resource group picker: {:?}",
-                        e
+                        "Failed to force redraw after mounting resource group picker: {e:?}"
                     );
                 }
 
                 None
             }
-            Err(e) => Some(Msg::AzureDiscoveryMsg(AzureDiscoveryMsg::DiscoveryError(
-                format!("Failed to show resource group picker: {}", e),
+            Err(e) => Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryError(
+                format!("Failed to show resource group picker: {e}"),
             ))),
         }
     }
@@ -345,7 +340,7 @@ where
                 .await
                 .map_err(|e| AppError::ServiceBus(e.to_string()))?;
 
-            let _ = tx.send(Msg::AzureDiscoveryMsg(
+            let _ = tx.send(Msg::AzureDiscovery(
                 AzureDiscoveryMsg::NamespacesDiscovered(namespaces),
             ));
 
@@ -362,11 +357,11 @@ where
     ) -> Option<Msg> {
         // Unmount loading indicator
         if let Err(e) = self.app.umount(&ComponentId::LoadingIndicator) {
-            log::warn!("Failed to unmount loading indicator: {}", e);
+            log::warn!("Failed to unmount loading indicator: {e}");
         }
 
         if namespaces.is_empty() {
-            return Some(Msg::AzureDiscoveryMsg(AzureDiscoveryMsg::DiscoveryError(
+            return Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryError(
                 "No Service Bus namespaces found. Please create a namespace first.".to_string(),
             )));
         }
@@ -400,8 +395,8 @@ where
                 self.state_manager.discovered_namespaces = namespaces;
                 None
             }
-            Err(e) => Some(Msg::AzureDiscoveryMsg(AzureDiscoveryMsg::DiscoveryError(
-                format!("Failed to show namespace picker: {}", e),
+            Err(e) => Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryError(
+                format!("Failed to show namespace picker: {e}"),
             ))),
         }
     }
@@ -432,7 +427,7 @@ where
                 .await
                 .map_err(|e| AppError::ServiceBus(e.to_string()))?;
 
-            let _ = tx.send(Msg::AzureDiscoveryMsg(
+            let _ = tx.send(Msg::AzureDiscovery(
                 AzureDiscoveryMsg::ConnectionStringFetched(connection_string),
             ));
 
@@ -446,7 +441,7 @@ where
     fn handle_connection_string_fetched(&mut self, connection_string: String) -> Option<Msg> {
         // Unmount loading indicator
         if let Err(e) = self.app.umount(&ComponentId::LoadingIndicator) {
-            log::warn!("Failed to unmount loading indicator: {}", e);
+            log::warn!("Failed to unmount loading indicator: {e}");
         }
 
         // Store the connection string in state
@@ -454,7 +449,7 @@ where
 
         // Since we have the connection string, we can now create the Service Bus manager
         // We'll do this synchronously since we're already in the main thread
-        Some(Msg::AzureDiscoveryMsg(
+        Some(Msg::AzureDiscovery(
             AzureDiscoveryMsg::ServiceBusManagerCreated,
         ))
     }
@@ -467,7 +462,7 @@ where
             Some(cs) => cs.clone(),
             None => {
                 log::error!("No connection string found after discovery");
-                return Some(Msg::AzureDiscoveryMsg(AzureDiscoveryMsg::DiscoveryError(
+                return Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryError(
                     "No connection string found".to_string(),
                 )));
             }
@@ -484,10 +479,7 @@ where
             &self.state_manager.selected_namespace,
         ) {
             log::info!(
-                "Updating Azure AD config with discovered values - subscription: {}, resource_group: {}, namespace: {}",
-                subscription_id,
-                resource_group,
-                namespace
+                "Updating Azure AD config with discovered values - subscription: {subscription_id}, resource_group: {resource_group}, namespace: {namespace}"
             );
             azure_ad_config.subscription_id = Some(subscription_id.clone());
             azure_ad_config.resource_group = Some(resource_group.clone());
@@ -516,7 +508,7 @@ where
             )
             .await
             .map_err(|e| {
-                AppError::ServiceBus(format!("Failed to create Service Bus client: {}", e))
+                AppError::ServiceBus(format!("Failed to create Service Bus client: {e}"))
             })?;
 
             // Create a new service bus manager
@@ -529,7 +521,7 @@ where
             )));
 
             // Send the manager back to the main thread
-            let _ = tx.send(Msg::AzureDiscoveryMsg(
+            let _ = tx.send(Msg::AzureDiscovery(
                 AzureDiscoveryMsg::ServiceBusManagerReady(new_manager.clone()),
             ));
 
@@ -552,7 +544,7 @@ where
         self.queue_manager.set_service_bus_manager(manager);
 
         // Discovery is complete
-        Some(Msg::AzureDiscoveryMsg(AzureDiscoveryMsg::DiscoveryComplete))
+        Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryComplete))
     }
 
     fn finalize_discovery(&mut self) -> Option<Msg> {
@@ -586,7 +578,7 @@ where
                 &self.state_manager.selected_namespace,
                 &self.auth_service,
             ) {
-                log::info!("Loading queues for discovered namespace: {}", namespace);
+                log::info!("Loading queues for discovered namespace: {namespace}");
                 self.queue_manager.load_queues_with_discovery(
                     subscription_id.clone(),
                     resource_group.clone(),

@@ -8,7 +8,7 @@ use tuirealm::{
     ratatui::{Frame, layout::Rect},
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum AuthPopupState {
     ShowingDeviceCode {
         user_code: String,
@@ -16,6 +16,7 @@ pub enum AuthPopupState {
         message: String,
         expires_at: Option<std::time::Instant>,
     },
+    #[default]
     Authenticating,
     Success,
     Failed(String),
@@ -98,7 +99,7 @@ impl MockComponent for AuthPopup {
                         builder = builder.add_line(vec![
                             tuirealm::ratatui::text::Span::raw("Time remaining: "),
                             tuirealm::ratatui::text::Span::styled(
-                                format!("{:02}:{:02}", minutes, seconds),
+                                format!("{minutes:02}:{seconds:02}"),
                                 tuirealm::ratatui::style::Style::default()
                                     .fg(timer_color)
                                     .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
@@ -209,11 +210,5 @@ impl ComponentState for AuthPopup {
     fn mount(&mut self) -> crate::error::AppResult<()> {
         self.is_mounted = true;
         Ok(())
-    }
-}
-
-impl Default for AuthPopupState {
-    fn default() -> Self {
-        AuthPopupState::Authenticating
     }
 }

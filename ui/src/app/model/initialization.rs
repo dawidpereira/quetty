@@ -91,103 +91,29 @@ where
 }
 
 impl Model<CrosstermTerminalAdapter> {
-    //TODO: I think we need to simplify it and split for readebility
     pub async fn new() -> AppResult<Self> {
-        // Create the underlying Azure Service Bus client
         let config = config::get_config_or_panic();
-        let connection_string_opt = config.servicebus().connection_string();
+        let needs_auth = config.auth().primary_method() == "azure_ad";
 
-        // Check authentication method from config
-        let auth_config = config.auth();
-        let needs_auth = auth_config.method() == "azure_ad";
-
-        // Create Service Bus manager only if we have a connection string
-        let service_bus_manager = if let Some(connection_string) = connection_string_opt {
-            // Connection string available - create the client and manager
-            let azure_service_bus_client = AzureServiceBusClient::new_from_connection_string(
-                connection_string,
-                ServiceBusClientOptions::default(),
-            )
-            .await
-            .map_err(|e| AppError::ServiceBus(e.to_string()))?;
-
-            // Extract config components
-            let azure_ad_config = config.azure_ad();
-            let statistics_config =
-                server::service_bus_manager::azure_management_client::StatisticsConfig::new(
-                    config.queue_stats_display_enabled(),
-                    config.queue_stats_cache_ttl_seconds(),
-                    config.queue_stats_use_management_api(),
-                );
-            let batch_config = config.batch();
-
-            Some(Arc::new(Mutex::new(ServiceBusManager::new(
-                Arc::new(Mutex::new(azure_service_bus_client)),
-                azure_ad_config.clone(),
-                statistics_config,
-                batch_config.clone(),
-                connection_string.to_string(),
-            ))))
-        } else if needs_auth {
-            // No connection string but Azure AD auth is configured
-            // We'll create the manager later after discovery
-            log::info!("No connection string configured, will discover from Azure");
-            None
-        } else {
-            return Err(AppError::Config(
-                "Either connection string or Azure AD authentication must be configured"
-                    .to_string(),
-            ));
-        };
+        // Create Service Bus manager
+        let service_bus_manager = Self::create_service_bus_manager(config).await?;
 
         // Log authentication configuration
-        if needs_auth {
-            log::info!("Azure AD authentication configured for management operations");
-            log::info!("Flow: {}", config.azure_ad().flow);
-            if config.azure_ad().flow == "device_code" {
-                log::info!("Device code flow: You'll be prompted to authenticate in your browser");
-                log::info!("This will happen when accessing queue statistics or listing queues");
-            }
-            log::warn!(
-                "Note: Service Bus message operations still use connection string due to SDK limitations"
-            );
-        } else {
-            log::info!("Using connection string authentication");
-        }
+        Self::log_authentication_info(config);
 
         let (tx_to_main, rx_to_main) = mpsc::channel();
         let taskpool = TaskPool::new(10);
 
-        // Create error reporter for enhanced error handling
-        let error_reporter = ErrorReporter::new(tx_to_main.clone());
-
-        // Create task manager for consistent async operations
-        let task_manager =
-            TaskManager::new(taskpool.clone(), tx_to_main.clone(), error_reporter.clone());
-
-        // Create managers
-        let state_manager = StateManager::new(tx_to_main.clone());
-        let queue_manager = QueueManager::new(
-            service_bus_manager.clone(),
-            task_manager.clone(),
-            tx_to_main.clone(),
-        );
-
-        // Create auth service if Azure AD is configured as the method
-        let auth_service = if config.auth().method() == "azure_ad" {
-            let auth_service = Arc::new(
-                crate::services::AuthService::new(config.azure_ad(), tx_to_main.clone())
-                    .map_err(|e| AppError::Component(e.to_string()))?,
+        // Initialize managers
+        let (error_reporter, task_manager, state_manager, queue_manager) =
+            Self::initialize_managers(
+                service_bus_manager.clone(),
+                taskpool.clone(),
+                tx_to_main.clone(),
             );
 
-            // Set the global auth state for server components to use
-            let auth_state = auth_service.auth_state_manager();
-            server::auth::set_global_auth_state(auth_state);
-
-            Some(auth_service)
-        } else {
-            None
-        };
+        // Setup authentication if needed
+        let auth_service = Self::setup_authentication(config, tx_to_main.clone())?;
 
         let queue_state = QueueState::new();
         let mut app = Self {
@@ -214,12 +140,131 @@ impl Model<CrosstermTerminalAdapter> {
             )?;
         }
 
-        // If we need authentication, trigger it before loading namespaces
+        // Trigger initial authentication or load namespaces
+        Self::trigger_initial_flow(needs_auth, &mut app)?;
+
+        Ok(app)
+    }
+
+    /// Create Service Bus manager based on configuration
+    async fn create_service_bus_manager(
+        config: &crate::config::AppConfig,
+    ) -> AppResult<Option<Arc<Mutex<ServiceBusManager>>>> {
+        let connection_string_opt = config.servicebus().connection_string();
+        let needs_auth = config.auth().primary_method() == "azure_ad";
+
+        if let Some(connection_string) = connection_string_opt {
+            // Connection string available - create the client and manager
+            let azure_service_bus_client = AzureServiceBusClient::new_from_connection_string(
+                connection_string,
+                ServiceBusClientOptions::default(),
+            )
+            .await
+            .map_err(|e| AppError::ServiceBus(e.to_string()))?;
+
+            // Extract config components
+            let azure_ad_config = config.azure_ad();
+            let statistics_config =
+                server::service_bus_manager::azure_management_client::StatisticsConfig::new(
+                    config.queue_stats_display_enabled(),
+                    config.queue_stats_cache_ttl_seconds(),
+                    config.queue_stats_use_management_api(),
+                );
+            let batch_config = config.batch();
+
+            Ok(Some(Arc::new(Mutex::new(ServiceBusManager::new(
+                Arc::new(Mutex::new(azure_service_bus_client)),
+                azure_ad_config.clone(),
+                statistics_config,
+                batch_config.clone(),
+                connection_string.to_string(),
+            )))))
+        } else if needs_auth {
+            // No connection string but Azure AD auth is configured
+            // We'll create the manager later after discovery
+            log::info!("No connection string configured, will discover from Azure");
+            Ok(None)
+        } else {
+            Err(AppError::Config(
+                "Either connection string or Azure AD authentication must be configured"
+                    .to_string(),
+            ))
+        }
+    }
+
+    /// Log authentication configuration information
+    fn log_authentication_info(config: &crate::config::AppConfig) {
+        if config.auth().primary_method() == "azure_ad" {
+            log::info!("Azure AD authentication configured for management operations");
+            log::info!("Flow: {}", config.azure_ad().flow);
+            if config.azure_ad().flow == "device_code" {
+                log::info!("Device code flow: You'll be prompted to authenticate in your browser");
+                log::info!("This will happen when accessing queue statistics or listing queues");
+            }
+            log::warn!(
+                "Note: Service Bus message operations still use connection string due to SDK limitations"
+            );
+        } else {
+            log::info!("Using connection string authentication");
+        }
+    }
+
+    /// Initialize all required managers
+    fn initialize_managers(
+        service_bus_manager: Option<Arc<Mutex<ServiceBusManager>>>,
+        taskpool: TaskPool,
+        tx_to_main: mpsc::Sender<Msg>,
+    ) -> (ErrorReporter, TaskManager, StateManager, QueueManager) {
+        // Create error reporter for enhanced error handling
+        let error_reporter = ErrorReporter::new(tx_to_main.clone());
+
+        // Create task manager for consistent async operations
+        let task_manager =
+            TaskManager::new(taskpool.clone(), tx_to_main.clone(), error_reporter.clone());
+
+        // Create managers
+        let state_manager = StateManager::new(tx_to_main.clone());
+        let queue_manager = QueueManager::new(
+            service_bus_manager.clone(),
+            task_manager.clone(),
+            tx_to_main.clone(),
+        );
+
+        (error_reporter, task_manager, state_manager, queue_manager)
+    }
+
+    /// Setup authentication service if Azure AD is configured
+    fn setup_authentication(
+        config: &crate::config::AppConfig,
+        tx_to_main: mpsc::Sender<Msg>,
+    ) -> AppResult<Option<Arc<crate::services::AuthService>>> {
+        if config.auth().primary_method() == "azure_ad" {
+            let auth_service = Arc::new(
+                crate::services::AuthService::new(config.azure_ad(), tx_to_main.clone())
+                    .map_err(|e| AppError::Component(e.to_string()))?,
+            );
+
+            // Set the global auth state for server components to use
+            let auth_state = auth_service.auth_state_manager();
+            server::auth::set_global_auth_state(auth_state);
+
+            Ok(Some(auth_service))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Trigger initial authentication flow or load namespaces
+    fn trigger_initial_flow(
+        needs_auth: bool,
+        app: &mut Model<CrosstermTerminalAdapter>,
+    ) -> AppResult<()> {
         log::info!(
             "Authentication check: needs_auth = {}, has_auth_service = {}",
             needs_auth,
             app.auth_service.is_some()
         );
+
         if needs_auth {
             if let Some(ref auth_service) = app.auth_service {
                 // Set authentication flag to prevent namespace loading
@@ -237,7 +282,7 @@ impl Model<CrosstermTerminalAdapter> {
 
                     // Initiate authentication - this will show device code popup
                     if let Err(e) = auth_service.initiate_authentication().await {
-                        log::error!("Failed to initiate authentication: {}", e);
+                        log::error!("Failed to initiate authentication: {e}");
                         let _ = tx.send(Msg::Error(e));
                     }
                 });
@@ -252,6 +297,6 @@ impl Model<CrosstermTerminalAdapter> {
             app.queue_manager.load_namespaces();
         }
 
-        Ok(app)
+        Ok(())
     }
 }
