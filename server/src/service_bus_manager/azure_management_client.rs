@@ -1,5 +1,5 @@
 use super::{AzureAdConfig, ServiceBusError};
-use crate::common::HttpError;
+use crate::common::{HttpError, RateLimiter, RateLimiterConfig};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
@@ -16,6 +16,8 @@ pub struct AzureManagementClient {
     client: reqwest::Client,
     /// Optional Azure AD configuration for operations that need persistent config
     azure_ad_config: Option<AzureAdConfig>,
+    /// Rate limiter for API requests
+    rate_limiter: RateLimiter,
 }
 
 // Resource discovery types
@@ -102,6 +104,7 @@ impl AzureManagementClient {
         Self {
             client,
             azure_ad_config: None,
+            rate_limiter: RateLimiter::new(10), // 10 requests per second default
         }
     }
 
@@ -110,7 +113,14 @@ impl AzureManagementClient {
         Self {
             client,
             azure_ad_config: Some(azure_ad_config),
+            rate_limiter: RateLimiter::new(10), // 10 requests per second default
         }
+    }
+
+    /// Create a new client with custom rate limiting configuration
+    pub fn with_rate_limit(mut self, config: RateLimiterConfig) -> Self {
+        self.rate_limiter = config.build();
+        self
     }
 
     /// Create a client from configuration (for backward compatibility)
@@ -139,6 +149,38 @@ impl AzureManagementClient {
         }
     }
 
+    /// Execute a request with rate limiting and retry on 429
+    async fn execute_with_rate_limit(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, ServiceBusError> {
+        // Apply rate limiting before making the request
+        self.rate_limiter.wait_until_ready().await;
+
+        let response = request
+            .send()
+            .await
+            .map_err(|e| ServiceBusError::ConnectionFailed(e.to_string()))?;
+
+        // Check for rate limiting response
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            // Extract retry-after header if available
+            let retry_after_seconds = response
+                .headers()
+                .get("retry-after")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(60); // Default to 60 seconds if not specified
+
+            return Err(HttpError::RateLimited {
+                retry_after_seconds,
+            }
+            .into());
+        }
+
+        Ok(response)
+    }
+
     // ===== Resource Discovery Operations =====
 
     /// List all subscriptions accessible to the authenticated user
@@ -149,16 +191,12 @@ impl AzureManagementClient {
         let url =
             format!("{AZURE_MANAGEMENT_URL}/subscriptions?api-version={API_VERSION_SUBSCRIPTIONS}");
 
-        let response = self
+        let request = self
             .client
             .get(&url)
-            .header(AUTHORIZATION, format!("Bearer {token}"))
-            .send()
-            .await
-            .map_err(|e| HttpError::RequestFailed {
-                url: url.clone(),
-                reason: e.to_string(),
-            })?;
+            .header(AUTHORIZATION, format!("Bearer {token}"));
+
+        let response = self.execute_with_rate_limit(request).await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -188,16 +226,12 @@ impl AzureManagementClient {
             "{AZURE_MANAGEMENT_URL}/subscriptions/{subscription_id}/resourcegroups?api-version={API_VERSION_RESOURCE_GROUPS}"
         );
 
-        let response = self
+        let request = self
             .client
             .get(&url)
-            .header(AUTHORIZATION, format!("Bearer {token}"))
-            .send()
-            .await
-            .map_err(|e| HttpError::RequestFailed {
-                url: url.clone(),
-                reason: e.to_string(),
-            })?;
+            .header(AUTHORIZATION, format!("Bearer {token}"));
+
+        let response = self.execute_with_rate_limit(request).await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -227,16 +261,12 @@ impl AzureManagementClient {
             "{AZURE_MANAGEMENT_URL}/subscriptions/{subscription_id}/providers/Microsoft.ServiceBus/namespaces?api-version={API_VERSION_SERVICE_BUS}"
         );
 
-        let response = self
+        let request = self
             .client
             .get(&url)
-            .header(AUTHORIZATION, format!("Bearer {token}"))
-            .send()
-            .await
-            .map_err(|e| HttpError::RequestFailed {
-                url: url.clone(),
-                reason: e.to_string(),
-            })?;
+            .header(AUTHORIZATION, format!("Bearer {token}"));
+
+        let response = self.execute_with_rate_limit(request).await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -269,18 +299,14 @@ impl AzureManagementClient {
             "{AZURE_MANAGEMENT_URL}/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.ServiceBus/namespaces/{namespace}/authorizationRules/RootManageSharedAccessKey/listKeys?api-version={API_VERSION_SERVICE_BUS}"
         );
 
-        let response = self
+        let request = self
             .client
             .post(&url)
             .header(AUTHORIZATION, format!("Bearer {token}"))
             .header(CONTENT_TYPE, "application/json")
-            .body("{}") // Empty JSON body required for Azure Management API POST requests
-            .send()
-            .await
-            .map_err(|e| HttpError::RequestFailed {
-                url: url.clone(),
-                reason: e.to_string(),
-            })?;
+            .body("{}"); // Empty JSON body required for Azure Management API POST requests
+
+        let response = self.execute_with_rate_limit(request).await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -335,16 +361,12 @@ impl AzureManagementClient {
             "{AZURE_MANAGEMENT_URL}/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.ServiceBus/namespaces/{namespace}/queues?api-version={API_VERSION_SERVICE_BUS}"
         );
 
-        let response = self
+        let request = self
             .client
             .get(&url)
-            .header(AUTHORIZATION, format!("Bearer {token}"))
-            .send()
-            .await
-            .map_err(|e| HttpError::RequestFailed {
-                url: url.clone(),
-                reason: e.to_string(),
-            })?;
+            .header(AUTHORIZATION, format!("Bearer {token}"));
+
+        let response = self.execute_with_rate_limit(request).await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -462,17 +484,13 @@ impl AzureManagementClient {
 
         log::debug!("Requesting queue properties from Azure Management API: {url}");
 
-        let response = self
+        let request = self
             .client
             .get(&url)
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
-            .header(CONTENT_TYPE, "application/json")
-            .send()
-            .await
-            .map_err(|e| HttpError::RequestFailed {
-                url: url.clone(),
-                reason: e.to_string(),
-            })?;
+            .header(CONTENT_TYPE, "application/json");
+
+        let response = self.execute_with_rate_limit(request).await?;
 
         if !response.status().is_success() {
             let status = response.status();

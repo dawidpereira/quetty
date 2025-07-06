@@ -92,6 +92,7 @@ pub enum AuthActivityMsg {
     CancelAuthentication,
     CopyDeviceCode,
     OpenVerificationUrl,
+    TokenRefreshFailed(String),
 }
 
 #[derive(Debug, PartialEq)]

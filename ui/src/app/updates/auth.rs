@@ -244,6 +244,41 @@ where
                 }
                 Ok(None)
             }
+
+            AuthActivityMsg::TokenRefreshFailed(error) => {
+                log::error!("Token refresh failed: {error}");
+
+                // Check if it's a critical error that requires re-authentication
+                if error.contains("expired") || error.contains("Invalid refresh token") {
+                    // Clear authentication state
+                    if let Some(auth_service) = &self.auth_service {
+                        let auth_state = auth_service.auth_state_manager();
+                        tokio::spawn(async move {
+                            auth_state.logout().await;
+                        });
+                    }
+
+                    // Show error popup with re-authentication prompt
+                    let error_msg = format!(
+                        "Authentication token refresh failed: {error}. Please log in again."
+                    );
+
+                    // Mount error popup
+                    self.mount_error_popup(&crate::error::AppError::Auth(error_msg.clone()))?;
+
+                    // Trigger re-authentication after a short delay
+                    let tx = self.state_manager.tx_to_main.clone();
+                    tokio::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        let _ = tx.send(Msg::AuthActivity(AuthActivityMsg::Login));
+                    });
+                } else {
+                    // Non-critical error, just log it
+                    log::warn!("Non-critical token refresh error: {error}");
+                }
+
+                Ok(None)
+            }
         }
     }
 }

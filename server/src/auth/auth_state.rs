@@ -1,7 +1,11 @@
+use super::provider::AuthProvider;
+use super::token_cache::TokenCache;
+use super::token_refresh_service::TokenRefreshService;
 use super::types::DeviceCodeInfo;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
 
 #[derive(Clone, Debug)]
 pub enum AuthenticationState {
@@ -22,6 +26,11 @@ pub struct AuthStateManager {
     state: Arc<RwLock<AuthenticationState>>,
     azure_ad_token: Arc<RwLock<Option<(String, Instant)>>>,
     sas_token: Arc<RwLock<Option<(String, Instant)>>>,
+    token_cache: TokenCache,
+    service_bus_provider: Arc<RwLock<Option<Arc<dyn AuthProvider>>>>,
+    management_provider: Arc<RwLock<Option<Arc<dyn AuthProvider>>>>,
+    refresh_service: Arc<RwLock<Option<Arc<TokenRefreshService>>>>,
+    refresh_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
 }
 
 impl AuthStateManager {
@@ -30,6 +39,11 @@ impl AuthStateManager {
             state: Arc::new(RwLock::new(AuthenticationState::NotAuthenticated)),
             azure_ad_token: Arc::new(RwLock::new(None)),
             sas_token: Arc::new(RwLock::new(None)),
+            token_cache: TokenCache::new(),
+            service_bus_provider: Arc::new(RwLock::new(None)),
+            management_provider: Arc::new(RwLock::new(None)),
+            refresh_service: Arc::new(RwLock::new(None)),
+            refresh_handle: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -136,6 +150,81 @@ impl AuthStateManager {
             AuthenticationState::AwaitingDeviceCode { info, .. } => Some(info.clone()),
             _ => None,
         }
+    }
+
+    // Provider management methods
+
+    pub async fn set_service_bus_provider(&self, provider: Arc<dyn AuthProvider>) {
+        let mut p = self.service_bus_provider.write().await;
+        *p = Some(provider);
+    }
+
+    pub async fn get_service_bus_provider(&self) -> Option<Arc<dyn AuthProvider>> {
+        self.service_bus_provider.read().await.clone()
+    }
+
+    pub async fn set_management_provider(&self, provider: Arc<dyn AuthProvider>) {
+        let mut p = self.management_provider.write().await;
+        *p = Some(provider);
+    }
+
+    pub async fn get_management_provider(&self) -> Option<Arc<dyn AuthProvider>> {
+        self.management_provider.read().await.clone()
+    }
+
+    pub fn get_token_cache(&self) -> &TokenCache {
+        &self.token_cache
+    }
+
+    // Token refresh service management
+
+    pub async fn start_refresh_service(self: Arc<Self>) {
+        self.start_refresh_service_with_callback(None).await;
+    }
+
+    pub async fn start_refresh_service_with_callback(
+        self: Arc<Self>,
+        failure_callback: Option<super::token_refresh_service::RefreshFailureCallback>,
+    ) {
+        // Stop any existing service
+        self.stop_refresh_service().await;
+
+        // Create and start new service
+        let mut refresh_service = TokenRefreshService::new(self.clone());
+        if let Some(callback) = failure_callback {
+            refresh_service = refresh_service.with_failure_callback(callback);
+        }
+
+        let refresh_service = Arc::new(refresh_service);
+        let handle = refresh_service.clone().start();
+
+        // Store service and handle
+        let mut service = self.refresh_service.write().await;
+        *service = Some(refresh_service);
+
+        let mut h = self.refresh_handle.write().await;
+        *h = Some(handle);
+
+        log::info!("Token refresh service started");
+    }
+
+    pub async fn stop_refresh_service(&self) {
+        // Signal shutdown
+        if let Some(service) = self.refresh_service.read().await.as_ref() {
+            service.shutdown().await;
+        }
+
+        // Wait for service to stop
+        let mut handle_guard = self.refresh_handle.write().await;
+        if let Some(handle) = handle_guard.take() {
+            let _ = handle.await;
+        }
+
+        // Clear service reference
+        let mut service = self.refresh_service.write().await;
+        *service = None;
+
+        log::info!("Token refresh service stopped");
     }
 }
 

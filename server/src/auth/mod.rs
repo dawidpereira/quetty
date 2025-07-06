@@ -7,6 +7,7 @@ pub mod provider;
 pub mod sas_token_generator;
 pub mod service_bus_auth;
 pub mod token_cache;
+pub mod token_refresh_service;
 pub mod types;
 
 pub use auth_setup::{create_auth_provider, set_global_auth_state};
@@ -18,5 +19,7 @@ pub use sas_token_generator::SasTokenGenerator;
 pub use service_bus_auth::{
     create_auth_provider as create_service_bus_auth_provider, get_azure_ad_token_with_auth,
 };
+pub use crate::common::TokenRefreshError;
 pub use token_cache::TokenCache;
+pub use token_refresh_service::TokenRefreshService;
 pub use types::{AuthConfig, AuthType, DeviceCodeInfo};

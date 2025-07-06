@@ -34,14 +34,25 @@ impl AuthService {
             scope: None,
         };
 
-        let azure_ad_provider = Some(Arc::new(
+        let azure_ad_provider = Arc::new(
             AzureAdProvider::new(auth_config, http_client)
                 .map_err(|e| AppError::Auth(e.to_string()))?,
-        ));
+        );
+
+        // Set the provider in auth state for token refresh service
+        tokio::spawn({
+            let auth_state = auth_state.clone();
+            let provider = azure_ad_provider.clone();
+            async move {
+                // Set as both service bus and management provider
+                auth_state.set_service_bus_provider(provider.clone()).await;
+                auth_state.set_management_provider(provider).await;
+            }
+        });
 
         Ok(Self {
             auth_state,
-            azure_ad_provider,
+            azure_ad_provider: Some(azure_ad_provider),
             tx,
         })
     }
