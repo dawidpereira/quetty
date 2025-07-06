@@ -146,15 +146,8 @@ where
     }
 
     // During Azure discovery, namespace picker is shown as a popup
-    if app.mounted(&ComponentId::NamespacePicker) {
-        // Check if we're in discovery mode by looking for discovered namespaces
-        // This is a bit of a hack but avoids passing state through the view function
-        let popup_area = PopupLayout::medium(f.area());
-        app.view(&ComponentId::NamespacePicker, f, popup_area);
-        app.active(&ComponentId::NamespacePicker)
-            .map_err(|e| AppError::Component(e.to_string()))?;
-        return Ok(());
-    }
+    // Note: We don't check for namespace picker here anymore because it should only
+    // be shown when explicitly set in the app state, not just because it's mounted
 
     // If no popups, proceed with the original view function
     view_fn(app, f, chunks)

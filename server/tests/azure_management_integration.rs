@@ -45,7 +45,8 @@ mod azure_management_client_creation {
         let azure_config = create_mock_server_azure_config();
 
         // Test that client creation succeeds with valid config containing all required fields
-        let result = AzureManagementClient::from_config(azure_config);
+        let http_client = reqwest::Client::new();
+        let result = AzureManagementClient::from_config(http_client, azure_config);
 
         // With complete mock data containing all required fields, creation should succeed
         assert!(
@@ -59,7 +60,8 @@ mod azure_management_client_creation {
         let azure_config = create_incomplete_azure_config();
 
         // Test that client creation fails gracefully with incomplete config
-        let result = AzureManagementClient::from_config(azure_config);
+        let http_client = reqwest::Client::new();
+        let result = AzureManagementClient::from_config(http_client, azure_config);
 
         assert!(
             result.is_err(),
@@ -81,7 +83,8 @@ mod azure_management_client_creation {
         let azure_config = create_mock_server_azure_config();
 
         // Test client creation with config
-        let _client = AzureManagementClient::with_config(azure_config);
+        let http_client = reqwest::Client::new();
+        let _client = AzureManagementClient::with_config(http_client, azure_config);
 
         // Client creation should always succeed (it's just storing the values)
         // Actual API calls will fail with mock data, but that's expected
@@ -137,7 +140,8 @@ mod error_handling_integration {
     async fn test_azure_client_graceful_error_handling() {
         let azure_config = create_mock_server_azure_config();
         // from_config will fail with incomplete config, so use with_config instead
-        let client = AzureManagementClient::with_config(azure_config);
+        let http_client = reqwest::Client::new();
+        let client = AzureManagementClient::with_config(http_client, azure_config);
 
         // Test that API calls fail gracefully with mock credentials
         let result = client.get_queue_message_count("test-queue").await;
@@ -163,7 +167,8 @@ mod error_handling_integration {
     async fn test_azure_client_both_counts_error_handling() {
         let azure_config = create_mock_server_azure_config();
         // from_config will fail with incomplete config, so use with_config instead
-        let client = AzureManagementClient::with_config(azure_config);
+        let http_client = reqwest::Client::new();
+        let client = AzureManagementClient::with_config(http_client, azure_config);
 
         // Test both counts API with mock credentials
         let result = client.get_queue_counts("test-queue").await;
@@ -213,7 +218,8 @@ mod resilience_integration {
     async fn test_retry_logic_timeout() {
         let azure_config = create_mock_server_azure_config();
         // from_config will fail with incomplete config, so use with_config instead
-        let client = AzureManagementClient::with_config(azure_config);
+        let http_client = reqwest::Client::new();
+        let client = AzureManagementClient::with_config(http_client, azure_config);
 
         let start_time = std::time::Instant::now();
 

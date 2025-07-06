@@ -324,13 +324,25 @@ where
     }
 
     pub fn remount_namespace_picker(&mut self, namespaces: Option<Vec<String>>) -> AppResult<()> {
-        self.app
-            .remount(
-                ComponentId::NamespacePicker,
-                Box::new(NamespacePicker::new(namespaces)),
-                Vec::default(),
-            )
-            .map_err(|e| AppError::Component(e.to_string()))?;
+        // Check if component is mounted, if not mount it first
+        if self.app.mounted(&ComponentId::NamespacePicker) {
+            self.app
+                .remount(
+                    ComponentId::NamespacePicker,
+                    Box::new(NamespacePicker::new(namespaces)),
+                    Vec::default(),
+                )
+                .map_err(|e| AppError::Component(e.to_string()))?;
+        } else {
+            // Component not mounted yet (e.g., after authentication), mount it
+            self.app
+                .mount(
+                    ComponentId::NamespacePicker,
+                    Box::new(NamespacePicker::new(namespaces)),
+                    Vec::default(),
+                )
+                .map_err(|e| AppError::Component(e.to_string()))?;
+        }
 
         // Activate the namespace picker component to ensure it receives events
         self.app

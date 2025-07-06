@@ -10,19 +10,21 @@ pub fn create_auth_provider(
     primary_method: &str,
     connection_string: Option<&str>,
     azure_ad_config: &AzureAdConfig,
+    http_client: reqwest::Client,
 ) -> Result<Arc<dyn AuthProvider>, ServiceBusError> {
     let auth_type = match primary_method {
         "azure_ad" => AuthType::AzureAd,
         _ => AuthType::ConnectionString,
     };
 
-    create_provider_for_type(&auth_type, connection_string, azure_ad_config)
+    create_provider_for_type(&auth_type, connection_string, azure_ad_config, http_client)
 }
 
 fn create_provider_for_type(
     auth_type: &AuthType,
     connection_string: Option<&str>,
     azure_ad_config: &AzureAdConfig,
+    http_client: reqwest::Client,
 ) -> Result<Arc<dyn AuthProvider>, ServiceBusError> {
     match auth_type {
         AuthType::ConnectionString => {
@@ -51,7 +53,7 @@ fn create_provider_for_type(
                 scope: None,
             };
 
-            let provider = AzureAdProvider::new(azure_auth_config)?;
+            let provider = AzureAdProvider::new(azure_auth_config, http_client)?;
             Ok(Arc::new(provider))
         }
     }

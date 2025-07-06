@@ -34,7 +34,6 @@ pub struct AzureAdAuthConfig {
     pub scope: Option<String>,
 }
 
-
 #[derive(Clone, Debug)]
 pub struct CachedToken {
     pub token: String,

@@ -28,7 +28,10 @@ impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
-    fn init_app(queue_state: &QueueState) -> AppResult<Application<ComponentId, Msg, NoUserEvent>> {
+    fn init_app(
+        queue_state: &QueueState,
+        needs_auth: bool,
+    ) -> AppResult<Application<ComponentId, Msg, NoUserEvent>> {
         let config = config::get_config_or_panic();
         let mut app: Application<ComponentId, Msg, NoUserEvent> = Application::init(
             EventListenerCfg::default()
@@ -48,12 +51,16 @@ where
         )
         .map_err(|e| AppError::Component(e.to_string()))?;
 
-        app.mount(
-            ComponentId::NamespacePicker,
-            Box::new(NamespacePicker::new(None)),
-            Vec::default(),
-        )
-        .map_err(|e| AppError::Component(e.to_string()))?;
+        // Only mount NamespacePicker if authentication is not needed
+        // This prevents it from briefly appearing before the auth popup
+        if !needs_auth {
+            app.mount(
+                ComponentId::NamespacePicker,
+                Box::new(NamespacePicker::new(None)),
+                Vec::default(),
+            )
+            .map_err(|e| AppError::Component(e.to_string()))?;
+        }
 
         app.mount(
             ComponentId::QueuePicker,
@@ -95,8 +102,12 @@ impl Model<CrosstermTerminalAdapter> {
         let config = config::get_config_or_panic();
         let needs_auth = config.azure_ad().auth_method != "connection_string";
 
+        // Create shared HTTP client
+        let http_client = Self::create_http_client();
+
         // Create Service Bus manager
-        let service_bus_manager = Self::create_service_bus_manager(config).await?;
+        let service_bus_manager =
+            Self::create_service_bus_manager(config, http_client.clone()).await?;
 
         // Log authentication configuration
         Self::log_authentication_info(config);
@@ -113,16 +124,18 @@ impl Model<CrosstermTerminalAdapter> {
             );
 
         // Setup authentication if needed
-        let auth_service = Self::setup_authentication(config, tx_to_main.clone())?;
+        let auth_service =
+            Self::setup_authentication(config, tx_to_main.clone(), http_client.clone())?;
 
         let queue_state = QueueState::new();
         let mut app = Self {
-            app: Self::init_app(&queue_state)?,
+            app: Self::init_app(&queue_state, needs_auth)?,
             terminal: TerminalBridge::init_crossterm()
                 .map_err(|e| AppError::Component(e.to_string()))?,
             rx_to_main,
             taskpool,
             service_bus_manager,
+            http_client,
             error_reporter,
             task_manager,
             state_manager,
@@ -146,9 +159,28 @@ impl Model<CrosstermTerminalAdapter> {
         Ok(app)
     }
 
+    /// Create optimized HTTP client with connection pooling
+    fn create_http_client() -> reqwest::Client {
+        use std::time::Duration;
+
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(10))
+            .pool_idle_timeout(Duration::from_secs(60))
+            .pool_max_idle_per_host(8)
+            .build()
+            .unwrap_or_else(|e| {
+                log::warn!(
+                    "Failed to create optimized HTTP client: {e}, falling back to default client"
+                );
+                reqwest::Client::new()
+            })
+    }
+
     /// Create Service Bus manager based on configuration
     async fn create_service_bus_manager(
         config: &crate::config::AppConfig,
+        http_client: reqwest::Client,
     ) -> AppResult<Option<Arc<Mutex<ServiceBusManager>>>> {
         let connection_string_opt = config.servicebus().connection_string();
         let needs_auth = config.azure_ad().auth_method != "connection_string";
@@ -174,6 +206,7 @@ impl Model<CrosstermTerminalAdapter> {
 
             Ok(Some(Arc::new(Mutex::new(ServiceBusManager::new(
                 Arc::new(Mutex::new(azure_service_bus_client)),
+                http_client,
                 azure_ad_config.clone(),
                 statistics_config,
                 batch_config.clone(),
@@ -237,11 +270,16 @@ impl Model<CrosstermTerminalAdapter> {
     fn setup_authentication(
         config: &crate::config::AppConfig,
         tx_to_main: mpsc::Sender<Msg>,
+        http_client: reqwest::Client,
     ) -> AppResult<Option<Arc<crate::services::AuthService>>> {
         if config.azure_ad().auth_method != "connection_string" {
             let auth_service = Arc::new(
-                crate::services::AuthService::new(config.azure_ad(), tx_to_main.clone())
-                    .map_err(|e| AppError::Component(e.to_string()))?,
+                crate::services::AuthService::new(
+                    config.azure_ad(),
+                    tx_to_main.clone(),
+                    http_client,
+                )
+                .map_err(|e| AppError::Component(e.to_string()))?,
             );
 
             // Set the global auth state for server components to use
@@ -286,6 +324,10 @@ impl Model<CrosstermTerminalAdapter> {
                         let _ = tx.send(Msg::Error(e));
                     }
                 });
+
+                // IMPORTANT: Do not load namespaces when authentication is needed
+                // The namespace loading will happen after successful authentication
+                log::info!("Skipping namespace loading - authentication required first");
             } else {
                 // No auth service but needs auth - this shouldn't happen
                 return Err(AppError::Config(

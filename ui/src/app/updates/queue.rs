@@ -148,6 +148,7 @@ where
                         resource_group.clone(),
                         namespace.clone(),
                         auth_service.clone(),
+                        self.http_client.clone(),
                     );
                 } else {
                     log::info!("Using regular queue loading");

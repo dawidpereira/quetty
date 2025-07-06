@@ -98,15 +98,16 @@ mod queue_stats_manager_integration {
 mod queue_statistics_service_integration {
     use super::*;
 
-    #[test]
-    fn test_queue_statistics_service_creation() {
+    #[tokio::test]
+    async fn test_queue_statistics_service_creation() {
         // Test with management API disabled
         let config = create_test_stats_config(true, 60, false);
         let azure_config = create_mock_azure_ad_config();
-        let service = QueueStatisticsService::new(config, azure_config);
+        let http_client = reqwest::Client::new();
+        let service = QueueStatisticsService::new(http_client, config, azure_config);
 
         assert!(
-            !service.is_available(),
+            !service.is_available().await,
             "Service should not be available when API is disabled"
         );
         assert!(service.config().display_enabled);
@@ -114,15 +115,16 @@ mod queue_statistics_service_integration {
         assert!(!service.config().use_management_api);
     }
 
-    #[test]
-    fn test_queue_statistics_service_disabled_display() {
+    #[tokio::test]
+    async fn test_queue_statistics_service_disabled_display() {
         // Test with display disabled
         let config = create_test_stats_config(false, 60, true);
         let azure_config = create_mock_azure_ad_config();
-        let service = QueueStatisticsService::new(config, azure_config);
+        let http_client = reqwest::Client::new();
+        let service = QueueStatisticsService::new(http_client, config, azure_config);
 
         assert!(
-            !service.is_available(),
+            !service.is_available().await,
             "Service should not be available when display is disabled"
         );
     }
@@ -132,7 +134,8 @@ mod queue_statistics_service_integration {
         // Test that disabled statistics return None
         let config = create_test_stats_config(false, 60, true);
         let azure_config = create_mock_azure_ad_config();
-        let service = QueueStatisticsService::new(config, azure_config);
+        let http_client = reqwest::Client::new();
+        let service = QueueStatisticsService::new(http_client, config, azure_config);
 
         let result = service
             .get_queue_statistics("test-queue", &QueueType::Main)
@@ -149,7 +152,8 @@ mod queue_statistics_service_integration {
         // Test that missing client returns None
         let config = create_test_stats_config(true, 60, false); // API disabled
         let azure_config = create_mock_azure_ad_config();
-        let service = QueueStatisticsService::new(config, azure_config);
+        let http_client = reqwest::Client::new();
+        let service = QueueStatisticsService::new(http_client, config, azure_config);
 
         let result = service
             .get_queue_statistics("test-queue", &QueueType::Main)
@@ -238,7 +242,8 @@ mod error_handling_integration {
         // Test that the service gracefully handles various error conditions
         let config = create_test_stats_config(true, 60, true);
         let azure_config = create_mock_azure_ad_config();
-        let service = QueueStatisticsService::new(config, azure_config);
+        let http_client = reqwest::Client::new();
+        let service = QueueStatisticsService::new(http_client, config, azure_config);
 
         // Since we're using mock config, the service should handle authentication failure gracefully
         // The actual Azure AD client will fail, but the service should not panic
@@ -269,7 +274,8 @@ mod end_to_end_integration {
         let mut stats_manager = QueueStatsManager::new();
         let config = create_test_stats_config(true, 60, false); // Disable API for testing
         let azure_config = create_mock_azure_ad_config();
-        let _stats_service = QueueStatisticsService::new(config, azure_config);
+        let http_client = reqwest::Client::new();
+        let _stats_service = QueueStatisticsService::new(http_client, config, azure_config);
 
         // Step 1: Initially no cache
         assert!(!stats_manager.has_valid_cache("test-queue"));
@@ -304,7 +310,8 @@ mod end_to_end_integration {
         // Scenario 1: Fully enabled
         let config1 = create_test_stats_config(true, 60, true);
         let azure_config1 = create_mock_azure_ad_config();
-        let service1 = QueueStatisticsService::new(config1, azure_config1);
+        let http_client = reqwest::Client::new();
+        let service1 = QueueStatisticsService::new(http_client.clone(), config1, azure_config1);
 
         // With mock config, the client creation will fail, so service won't be available
         // but it should handle this gracefully
@@ -314,13 +321,13 @@ mod end_to_end_integration {
         // Scenario 2: Display disabled
         let config2 = create_test_stats_config(false, 60, true);
         let azure_config2 = create_mock_azure_ad_config();
-        let service2 = QueueStatisticsService::new(config2, azure_config2);
-        assert!(!service2.is_available());
+        let service2 = QueueStatisticsService::new(http_client.clone(), config2, azure_config2);
+        assert!(!service2.is_available().await);
 
         // Scenario 3: API disabled
         let config3 = create_test_stats_config(true, 60, false);
         let azure_config3 = create_mock_azure_ad_config();
-        let service3 = QueueStatisticsService::new(config3, azure_config3);
-        assert!(!service3.is_available());
+        let service3 = QueueStatisticsService::new(http_client, config3, azure_config3);
+        assert!(!service3.is_available().await);
     }
 }

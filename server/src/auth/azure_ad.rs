@@ -45,10 +45,13 @@ struct ErrorResponse {
 }
 
 impl AzureAdProvider {
-    pub fn new(config: AzureAdAuthConfig) -> Result<Self, ServiceBusError> {
+    pub fn new(
+        config: AzureAdAuthConfig,
+        http_client: reqwest::Client,
+    ) -> Result<Self, ServiceBusError> {
         Ok(Self {
             config,
-            http_client: reqwest::Client::new(),
+            http_client,
         })
     }
 

@@ -5,30 +5,30 @@ backtrace:
 	cd ui && rm -f quetty.log && RUST_BACKTRACE=1 cargo run
 
 test:
-	cd ui && cargo test
+	cargo test
 
 test-lib:
-	cd ui && cargo test --lib
+	cargo test --lib
 
 test-all:
-	cd ui && cargo test --all-targets --all-features
+	cargo test --all-targets --all-features
 
 clippy:
-	cd ui && cargo clippy
+	cargo clippy
 
 clippy-all:
-	cd ui && cargo clippy --all-targets --all-features
+	cargo clippy --all-targets --all-features
 
 clippy-fix:
-	cd ui && cargo clippy --fix --lib
+	cargo clippy --fix --lib
 
 check:
-	cd ui && cargo check
+	cargo check
 
 clean:
-	cd ui && cargo clean
+	cargo clean
 
 fmt:
-	cd ui && cargo fmt
+	cargo fmt
 
 .PHONY: run backtrace test test-lib test-all clippy clippy-all clippy-fix check clean

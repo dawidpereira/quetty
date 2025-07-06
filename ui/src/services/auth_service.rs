@@ -16,6 +16,7 @@ impl AuthService {
     pub fn new(
         config: &server::service_bus_manager::AzureAdConfig,
         tx: Sender<Msg>,
+        http_client: reqwest::Client,
     ) -> AppResult<Self> {
         // Use shared auth state
         let auth_state = super::init_shared_auth_state();
@@ -34,7 +35,8 @@ impl AuthService {
         };
 
         let azure_ad_provider = Some(Arc::new(
-            AzureAdProvider::new(auth_config).map_err(|e| AppError::Auth(e.to_string()))?,
+            AzureAdProvider::new(auth_config, http_client)
+                .map_err(|e| AppError::Auth(e.to_string()))?,
         ));
 
         Ok(Self {

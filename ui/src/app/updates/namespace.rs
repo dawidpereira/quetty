@@ -164,6 +164,7 @@ where
                     resource_group.clone(),
                     namespace.clone(),
                     auth_service.clone(),
+                    self.http_client.clone(),
                 );
             } else {
                 log::warn!("Discovery mode but missing required information to list queues");

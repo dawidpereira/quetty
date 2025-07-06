@@ -27,6 +27,9 @@ pub struct ServiceBusManager {
     producer_manager: Arc<Mutex<ProducerManager>>,
     service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
 
+    // Shared HTTP client (kept for potential future use)
+    _http_client: reqwest::Client,
+
     // Connection reset capability
     connection_string: String,
 
@@ -38,6 +41,7 @@ impl ServiceBusManager {
     /// Create a new ServiceBusManager
     pub fn new(
         service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
+        http_client: reqwest::Client,
         azure_ad_config: AzureAdConfig,
         statistics_config: StatisticsConfig,
         batch_config: BatchConfig,
@@ -53,6 +57,7 @@ impl ServiceBusManager {
         )));
         let bulk_handler_inner = Arc::new(BulkOperationHandler::new(batch_config.clone()));
         let statistics_service = Arc::new(QueueStatisticsService::new(
+            http_client.clone(),
             statistics_config,
             azure_ad_config,
         ));
@@ -78,6 +83,7 @@ impl ServiceBusManager {
             consumer_manager,
             producer_manager,
             service_bus_client,
+            _http_client: http_client,
             connection_string,
             last_error: Arc::new(Mutex::new(None)),
         }
@@ -257,19 +263,25 @@ impl ServiceBusManager {
     pub async fn get_azure_ad_token(
         config: &AzureAdConfig,
     ) -> Result<String, Box<dyn std::error::Error>> {
-        config.get_azure_ad_token().await
+        // Create a default HTTP client for backward compatibility
+        let http_client = reqwest::Client::new();
+        config.get_azure_ad_token(&http_client).await
     }
 
     pub async fn list_queues_azure_ad(
         config: &AzureAdConfig,
     ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        config.list_queues_azure_ad().await
+        // Create a default HTTP client for backward compatibility
+        let http_client = reqwest::Client::new();
+        config.list_queues_azure_ad(&http_client).await
     }
 
     pub async fn list_namespaces_azure_ad(
         config: &AzureAdConfig,
     ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        config.list_namespaces_azure_ad().await
+        // Create a default HTTP client for backward compatibility
+        let http_client = reqwest::Client::new();
+        config.list_namespaces_azure_ad(&http_client).await
     }
 
     // Helper methods with clean interfaces

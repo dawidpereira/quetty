@@ -209,6 +209,7 @@ where
 
         let tx = self.tx_to_main().clone();
         let auth_service = self.auth_service.clone()?;
+        let http_client = self.http_client.clone();
 
         self.task_manager.execute("Processing...", async move {
             log::info!("Fetching subscriptions from Azure Management API (not cached)");
@@ -219,7 +220,7 @@ where
                 .await
                 .map_err(|e| AppError::Auth(e.to_string()))?;
 
-            let client = AzureManagementClient::new();
+            let client = AzureManagementClient::new(http_client);
             let subscriptions = client
                 .list_subscriptions(&token)
                 .await
@@ -302,6 +303,7 @@ where
 
         let tx = self.tx_to_main().clone();
         let auth_service = self.auth_service.clone()?;
+        let http_client = self.http_client.clone();
 
         self.task_manager.execute("Processing...", async move {
             log::info!("Fetching resource groups from Azure Management API (not cached)");
@@ -311,7 +313,7 @@ where
                 .await
                 .map_err(|e| AppError::Auth(e.to_string()))?;
 
-            let client = AzureManagementClient::new();
+            let client = AzureManagementClient::new(http_client);
             let groups = client
                 .list_resource_groups(&token, &subscription_id)
                 .await
@@ -397,6 +399,7 @@ where
 
         let tx = self.tx_to_main().clone();
         let auth_service = self.auth_service.clone()?;
+        let http_client = self.http_client.clone();
 
         self.task_manager.execute("Processing...", async move {
             log::info!("Fetching namespaces from Azure Management API (not cached)");
@@ -406,7 +409,7 @@ where
                 .await
                 .map_err(|e| AppError::Auth(e.to_string()))?;
 
-            let client = AzureManagementClient::new();
+            let client = AzureManagementClient::new(http_client);
             let namespaces = client
                 .list_service_bus_namespaces(&token, &subscription_id)
                 .await
@@ -497,6 +500,7 @@ where
     ) -> Option<Msg> {
         let tx = self.tx_to_main().clone();
         let auth_service = self.auth_service.clone()?;
+        let http_client = self.http_client.clone();
 
         self.task_manager.execute("Processing...", async move {
             let token = auth_service
@@ -504,7 +508,7 @@ where
                 .await
                 .map_err(|e| AppError::Auth(e.to_string()))?;
 
-            let client = AzureManagementClient::new();
+            let client = AzureManagementClient::new(http_client);
             let connection_string = client
                 .get_namespace_connection_string(
                     &token,
@@ -587,6 +591,7 @@ where
         // Create the Service Bus client - we'll handle this asynchronously
         let tx = self.tx_to_main().clone();
         let task_manager = self.task_manager.clone();
+        let http_client = self.http_client.clone();
 
         task_manager.execute("Initializing Service Bus client...", async move {
             // Create the Service Bus client
@@ -602,6 +607,7 @@ where
             // Create a new service bus manager
             let new_manager = Arc::new(tokio::sync::Mutex::new(ServiceBusManager::new(
                 Arc::new(tokio::sync::Mutex::new(client)),
+                http_client,
                 azure_ad_config,
                 statistics_config,
                 batch_config,
@@ -672,6 +678,7 @@ where
                     resource_group.clone(),
                     namespace.clone(),
                     auth_service.clone(),
+                    self.http_client.clone(),
                 );
             }
         }

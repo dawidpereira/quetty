@@ -39,6 +39,9 @@ where
     /// Service bus manager - direct access to server-side manager
     pub service_bus_manager: Option<Arc<Mutex<ServiceBusManager>>>,
 
+    /// Shared HTTP client for all network operations
+    pub http_client: reqwest::Client,
+
     // Enhanced error reporting system
     pub error_reporter: ErrorReporter,
 

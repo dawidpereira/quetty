@@ -41,9 +41,14 @@ where
                     if let Some((_, previous_state)) = self.state_manager.loading_message.take() {
                         if previous_state != AppState::Loading {
                             self.set_app_state(previous_state);
-                        } else {
-                            // If previous state was also loading, go to NamespacePicker
+                        } else if !self.state_manager.is_authenticating {
+                            // If previous state was also loading AND we're not authenticating,
+                            // then go to NamespacePicker
                             self.set_app_state(AppState::NamespacePicker);
+                        } else {
+                            // If authenticating, stay in Loading state
+                            // The auth flow will handle the state transition
+                            log::debug!("Staying in Loading state - authentication in progress");
                         }
                     }
                 } else {

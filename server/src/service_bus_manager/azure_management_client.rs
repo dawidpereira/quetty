@@ -97,49 +97,39 @@ struct ListResponse<T> {
 
 impl AzureManagementClient {
     /// Create a new client for general operations (without persistent config)
-    pub fn new() -> Self {
+    pub fn new(client: reqwest::Client) -> Self {
         Self {
-            client: Self::create_optimized_client(),
+            client,
             azure_ad_config: None,
         }
     }
 
     /// Create a new client with Azure AD configuration for authenticated operations
-    pub fn with_config(azure_ad_config: AzureAdConfig) -> Self {
+    pub fn with_config(client: reqwest::Client, azure_ad_config: AzureAdConfig) -> Self {
         Self {
-            client: Self::create_optimized_client(),
+            client,
             azure_ad_config: Some(azure_ad_config),
         }
     }
 
-    /// Create an optimized HTTP client with connection pooling and proper timeouts
-    fn create_optimized_client() -> reqwest::Client {
-        reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .connect_timeout(Duration::from_secs(10))
-            .pool_idle_timeout(Duration::from_secs(60))
-            .pool_max_idle_per_host(4)
-            .tcp_keepalive(Duration::from_secs(60))
-            // Remove http2_prior_knowledge as it might cause connection issues
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new())
-    }
-
     /// Create a client from configuration (for backward compatibility)
-    pub fn from_config(azure_ad_config: AzureAdConfig) -> Result<Self, ServiceBusError> {
+    pub fn from_config(
+        client: reqwest::Client,
+        azure_ad_config: AzureAdConfig,
+    ) -> Result<Self, ServiceBusError> {
         // Validate required fields when using from_config
         azure_ad_config.subscription_id()?;
         azure_ad_config.resource_group()?;
         azure_ad_config.namespace()?;
 
-        Ok(Self::with_config(azure_ad_config))
+        Ok(Self::with_config(client, azure_ad_config))
     }
 
     /// Get access token from Azure AD config if available
     async fn get_management_api_token(&self) -> Result<String, ServiceBusError> {
         match &self.azure_ad_config {
             Some(config) => config
-                .get_azure_ad_token()
+                .get_azure_ad_token(&self.client)
                 .await
                 .map_err(|e| ServiceBusError::AuthenticationError(e.to_string())),
             None => Err(ServiceBusError::ConfigurationError(
@@ -491,12 +481,6 @@ impl AzureManagementClient {
     }
 }
 
-impl Default for AzureManagementClient {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Cache for Azure resources to avoid repeated API calls
 #[derive(Debug, Clone, Default)]
 pub struct AzureResourceCache {
@@ -551,13 +535,18 @@ impl AzureResourceCache {
     }
 
     /// Get cached namespaces for a subscription
-    pub fn get_cached_namespaces(&self, subscription_id: &str) -> Option<&Vec<ServiceBusNamespace>> {
+    pub fn get_cached_namespaces(
+        &self,
+        subscription_id: &str,
+    ) -> Option<&Vec<ServiceBusNamespace>> {
         self.namespaces.get(subscription_id)
     }
 
     /// Check if cache is empty (no resources cached)
     pub fn is_empty(&self) -> bool {
-        self.subscriptions.is_empty() && self.resource_groups.is_empty() && self.namespaces.is_empty()
+        self.subscriptions.is_empty()
+            && self.resource_groups.is_empty()
+            && self.namespaces.is_empty()
     }
 
     /// Clear all cached data
@@ -586,4 +575,3 @@ impl StatisticsConfig {
         }
     }
 }
-

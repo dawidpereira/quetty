@@ -5,24 +5,6 @@ pub use self::responses::ServiceBusResponse;
 pub use self::types::*;
 
 // Module declarations
-use std::sync::OnceLock;
-use std::time::Duration;
-
-/// Shared HTTP client for Azure Management API calls to improve performance
-static SHARED_HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-
-fn get_shared_http_client() -> &'static reqwest::Client {
-    SHARED_HTTP_CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .connect_timeout(Duration::from_secs(10))
-            .pool_idle_timeout(Duration::from_secs(60))
-            .pool_max_idle_per_host(8)
-            .tcp_keepalive(Duration::from_secs(60))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new())
-    })
-}
 
 pub mod azure_management_client;
 pub mod command_handlers;
@@ -120,7 +102,10 @@ impl AzureAdConfig {
     }
 
     /// Azure AD operations using the new auth system
-    pub async fn get_azure_ad_token(&self) -> Result<String, Box<dyn std::error::Error>> {
+    pub async fn get_azure_ad_token(
+        &self,
+        http_client: &reqwest::Client,
+    ) -> Result<String, Box<dyn std::error::Error>> {
         use crate::auth::{
             create_auth_provider, create_service_bus_auth_provider, get_azure_ad_token_with_auth,
         };
@@ -135,24 +120,26 @@ impl AzureAdConfig {
         }
 
         // Fallback to regular auth provider
-        let auth_provider = create_service_bus_auth_provider("azure_ad", None, self)?;
+        let auth_provider =
+            create_service_bus_auth_provider("azure_ad", None, self, http_client.clone())?;
 
         let token = get_azure_ad_token_with_auth(&auth_provider).await?;
         Ok(token)
     }
 
-    pub async fn list_queues_azure_ad(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        let token = self.get_azure_ad_token().await?;
+    pub async fn list_queues_azure_ad(
+        &self,
+        http_client: &reqwest::Client,
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let token = self.get_azure_ad_token(http_client).await?;
         let url = format!(
             "https://management.azure.com/subscriptions/{}/resourceGroups/{}/providers/Microsoft.ServiceBus/namespaces/{}/queues?api-version=2017-04-01",
             self.subscription_id()?,
             self.resource_group()?,
             self.namespace()?
         );
-        
-        // Use the shared HTTP client for better connection reuse
-        let client = get_shared_http_client();
-        let resp = client.get(url).bearer_auth(token).send().await?;
+
+        let resp = http_client.get(url).bearer_auth(token).send().await?;
         let json: serde_json::Value = resp.json().await?;
         let mut queues = Vec::new();
         if let Some(arr) = json["value"].as_array() {
@@ -167,17 +154,16 @@ impl AzureAdConfig {
 
     pub async fn list_namespaces_azure_ad(
         &self,
+        http_client: &reqwest::Client,
     ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        let token = self.get_azure_ad_token().await?;
+        let token = self.get_azure_ad_token(http_client).await?;
         let url = format!(
             "https://management.azure.com/subscriptions/{}/resourceGroups/{}/providers/Microsoft.ServiceBus/namespaces?api-version=2017-04-01",
             self.subscription_id()?,
             self.resource_group()?
         );
-        
-        // Use the shared HTTP client for better connection reuse
-        let client = get_shared_http_client();
-        let resp = client.get(url).bearer_auth(token).send().await?;
+
+        let resp = http_client.get(url).bearer_auth(token).send().await?;
         let json: serde_json::Value = resp.json().await?;
         let mut namespaces = Vec::new();
         if let Some(arr) = json["value"].as_array() {

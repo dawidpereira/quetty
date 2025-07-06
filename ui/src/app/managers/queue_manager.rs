@@ -110,6 +110,7 @@ impl QueueManager {
         resource_group: String,
         namespace: String,
         auth_service: Arc<crate::services::AuthService>,
+        http_client: reqwest::Client,
     ) {
         let tx_to_main = self.tx_to_main.clone();
         let service_bus_manager = self.service_bus_manager.clone();
@@ -174,7 +175,9 @@ impl QueueManager {
 
             // Use Azure Management API to list queues
             let client =
-                server::service_bus_manager::azure_management_client::AzureManagementClient::new();
+                server::service_bus_manager::azure_management_client::AzureManagementClient::new(
+                    http_client,
+                );
             let queue_names = client
                 .list_queues(&token, &subscription_id, &resource_group, &namespace)
                 .await
