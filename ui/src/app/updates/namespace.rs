@@ -142,14 +142,9 @@ where
         let has_subscription_id = config.azure_ad().subscription_id().is_ok();
 
         if !has_subscription_id && self.state_manager.discovered_connection_string.is_some() {
-            // We're in discovery mode - unmount the namespace picker before transitioning
-            // to prevent it from intercepting events meant for the queue picker
-            if self.app.mounted(&ComponentId::NamespacePicker) {
-                log::info!("Unmounting namespace picker before transitioning to queue picker");
-                if let Err(e) = self.app.umount(&ComponentId::NamespacePicker) {
-                    log::error!("Failed to unmount namespace picker: {e}");
-                }
-            }
+            // We're in discovery mode
+            // Note: We don't unmount the namespace picker here anymore to avoid view errors
+            // The picker will be unmounted by the queue loading process
 
             // In discovery mode, we can still list queues using the discovered resources
             if let (

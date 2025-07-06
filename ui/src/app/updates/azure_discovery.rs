@@ -6,10 +6,10 @@ use crate::components::namespace_picker::NamespacePicker;
 use crate::components::resource_group_picker::ResourceGroupPicker;
 use crate::components::subscription_picker::SubscriptionPicker;
 use crate::error::AppError;
+use server::service_bus_manager::ServiceBusManager;
 use server::service_bus_manager::azure_management_client::{
     AzureManagementClient, ResourceGroup, ServiceBusNamespace, Subscription,
 };
-use server::service_bus_manager::ServiceBusManager;
 use std::sync::Arc;
 use tuirealm::terminal::TerminalAdapter;
 use tuirealm::{Sub, SubClause, SubEventClause};
@@ -174,12 +174,16 @@ where
             azure_ad_config.resource_group(),
             azure_ad_config.namespace(),
         ) {
-            log::info!("Azure AD config complete, skipping discovery and fetching connection string directly");
-            return Some(Msg::AzureDiscovery(AzureDiscoveryMsg::FetchingConnectionString {
-                subscription_id: subscription_id.to_string(),
-                resource_group: resource_group.to_string(),
-                namespace: namespace.to_string(),
-            }));
+            log::info!(
+                "Azure AD config complete, skipping discovery and fetching connection string directly"
+            );
+            return Some(Msg::AzureDiscovery(
+                AzureDiscoveryMsg::FetchingConnectionString {
+                    subscription_id: subscription_id.to_string(),
+                    resource_group: resource_group.to_string(),
+                    namespace: namespace.to_string(),
+                },
+            ));
         }
 
         // Start with subscription discovery
@@ -190,10 +194,25 @@ where
     }
 
     fn discover_subscriptions(&mut self) -> Option<Msg> {
+        // Check cache first for performance optimization
+        if let Some(cached_subscriptions) =
+            self.state_manager.azure_cache.get_cached_subscriptions()
+        {
+            log::info!(
+                "Using cached subscriptions ({} found)",
+                cached_subscriptions.len()
+            );
+            return Some(Msg::AzureDiscovery(
+                AzureDiscoveryMsg::SubscriptionsDiscovered(cached_subscriptions.clone()),
+            ));
+        }
+
         let tx = self.tx_to_main().clone();
         let auth_service = self.auth_service.clone()?;
 
         self.task_manager.execute("Processing...", async move {
+            log::info!("Fetching subscriptions from Azure Management API (not cached)");
+
             // Get Azure AD token with management scope
             let token = auth_service
                 .get_management_token()
@@ -265,10 +284,28 @@ where
     }
 
     fn discover_resource_groups(&mut self, subscription_id: String) -> Option<Msg> {
+        // Check cache first for performance optimization
+        if let Some(cached_groups) = self
+            .state_manager
+            .azure_cache
+            .get_cached_resource_groups(&subscription_id)
+        {
+            log::info!(
+                "Using cached resource groups for subscription {} ({} found)",
+                subscription_id,
+                cached_groups.len()
+            );
+            return Some(Msg::AzureDiscovery(
+                AzureDiscoveryMsg::ResourceGroupsDiscovered(cached_groups.clone()),
+            ));
+        }
+
         let tx = self.tx_to_main().clone();
         let auth_service = self.auth_service.clone()?;
 
         self.task_manager.execute("Processing...", async move {
+            log::info!("Fetching resource groups from Azure Management API (not cached)");
+
             let token = auth_service
                 .get_management_token()
                 .await
@@ -342,10 +379,28 @@ where
     }
 
     fn discover_namespaces(&mut self, subscription_id: String) -> Option<Msg> {
+        // Check cache first for performance optimization
+        if let Some(cached_namespaces) = self
+            .state_manager
+            .azure_cache
+            .get_cached_namespaces(&subscription_id)
+        {
+            log::info!(
+                "Using cached namespaces for subscription {} ({} found)",
+                subscription_id,
+                cached_namespaces.len()
+            );
+            return Some(Msg::AzureDiscovery(
+                AzureDiscoveryMsg::NamespacesDiscovered(cached_namespaces.clone()),
+            ));
+        }
+
         let tx = self.tx_to_main().clone();
         let auth_service = self.auth_service.clone()?;
 
         self.task_manager.execute("Processing...", async move {
+            log::info!("Fetching namespaces from Azure Management API (not cached)");
+
             let token = auth_service
                 .get_management_token()
                 .await
@@ -394,8 +449,10 @@ where
         let namespace_names: Vec<String> = namespaces.iter().map(|ns| ns.name.clone()).collect();
 
         // Update existing namespace picker with discovered namespaces
-        match self.app.umount(&ComponentId::NamespacePicker) {
-            Ok(_) | Err(_) => {} // It might not be mounted yet
+        if self.app.mounted(&ComponentId::NamespacePicker) {
+            if let Err(e) = self.app.umount(&ComponentId::NamespacePicker) {
+                log::warn!("Failed to unmount existing namespace picker: {e}");
+            }
         }
 
         match self.app.mount(
@@ -406,8 +463,22 @@ where
             Ok(_) => {
                 // Keep in AzureDiscovery state for namespace selection
                 self.state_manager.app_state = AppState::AzureDiscovery;
-                self.app.active(&ComponentId::NamespacePicker).ok();
+
+                // Activate the namespace picker with proper error handling
+                if let Err(e) = self.app.active(&ComponentId::NamespacePicker) {
+                    log::error!("Failed to activate namespace picker: {e}");
+                    return Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryError(
+                        format!("Failed to activate namespace picker: {e}"),
+                    )));
+                }
+
                 self.state_manager.set_redraw(true);
+
+                // Force an immediate redraw to ensure the picker is visible
+                if let Err(e) = self.view() {
+                    log::error!("Failed to force redraw after mounting namespace picker: {e:?}");
+                }
+
                 // Store the full namespace objects for later use
                 self.state_manager.discovered_namespaces = namespaces;
                 None

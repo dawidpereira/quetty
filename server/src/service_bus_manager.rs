@@ -5,6 +5,25 @@ pub use self::responses::ServiceBusResponse;
 pub use self::types::*;
 
 // Module declarations
+use std::sync::OnceLock;
+use std::time::Duration;
+
+/// Shared HTTP client for Azure Management API calls to improve performance
+static SHARED_HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn get_shared_http_client() -> &'static reqwest::Client {
+    SHARED_HTTP_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(10))
+            .pool_idle_timeout(Duration::from_secs(60))
+            .pool_max_idle_per_host(8)
+            .tcp_keepalive(Duration::from_secs(60))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
+
 pub mod azure_management_client;
 pub mod command_handlers;
 pub mod commands;
@@ -130,7 +149,9 @@ impl AzureAdConfig {
             self.resource_group()?,
             self.namespace()?
         );
-        let client = reqwest::Client::new();
+        
+        // Use the shared HTTP client for better connection reuse
+        let client = get_shared_http_client();
         let resp = client.get(url).bearer_auth(token).send().await?;
         let json: serde_json::Value = resp.json().await?;
         let mut queues = Vec::new();
@@ -153,7 +174,9 @@ impl AzureAdConfig {
             self.subscription_id()?,
             self.resource_group()?
         );
-        let client = reqwest::Client::new();
+        
+        // Use the shared HTTP client for better connection reuse
+        let client = get_shared_http_client();
         let resp = client.get(url).bearer_auth(token).send().await?;
         let json: serde_json::Value = resp.json().await?;
         let mut namespaces = Vec::new();

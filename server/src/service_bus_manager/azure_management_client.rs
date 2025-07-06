@@ -99,7 +99,7 @@ impl AzureManagementClient {
     /// Create a new client for general operations (without persistent config)
     pub fn new() -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: Self::create_optimized_client(),
             azure_ad_config: None,
         }
     }
@@ -107,9 +107,22 @@ impl AzureManagementClient {
     /// Create a new client with Azure AD configuration for authenticated operations
     pub fn with_config(azure_ad_config: AzureAdConfig) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: Self::create_optimized_client(),
             azure_ad_config: Some(azure_ad_config),
         }
+    }
+
+    /// Create an optimized HTTP client with connection pooling and proper timeouts
+    fn create_optimized_client() -> reqwest::Client {
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(10))
+            .pool_idle_timeout(Duration::from_secs(60))
+            .pool_max_idle_per_host(4)
+            .tcp_keepalive(Duration::from_secs(60))
+            // Remove http2_prior_knowledge as it might cause connection issues
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
     }
 
     /// Create a client from configuration (for backward compatibility)
@@ -521,6 +534,38 @@ impl AzureResourceCache {
 
     pub fn get_cached_connection_string(&self, namespace_id: &str) -> Option<&String> {
         self.connection_strings.get(namespace_id)
+    }
+
+    /// Get cached subscriptions if available
+    pub fn get_cached_subscriptions(&self) -> Option<&Vec<Subscription>> {
+        if self.subscriptions.is_empty() {
+            None
+        } else {
+            Some(&self.subscriptions)
+        }
+    }
+
+    /// Get cached resource groups for a subscription
+    pub fn get_cached_resource_groups(&self, subscription_id: &str) -> Option<&Vec<ResourceGroup>> {
+        self.resource_groups.get(subscription_id)
+    }
+
+    /// Get cached namespaces for a subscription
+    pub fn get_cached_namespaces(&self, subscription_id: &str) -> Option<&Vec<ServiceBusNamespace>> {
+        self.namespaces.get(subscription_id)
+    }
+
+    /// Check if cache is empty (no resources cached)
+    pub fn is_empty(&self) -> bool {
+        self.subscriptions.is_empty() && self.resource_groups.is_empty() && self.namespaces.is_empty()
+    }
+
+    /// Clear all cached data
+    pub fn clear(&mut self) {
+        self.subscriptions.clear();
+        self.resource_groups.clear();
+        self.namespaces.clear();
+        self.connection_strings.clear();
     }
 }
 

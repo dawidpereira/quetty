@@ -1,6 +1,6 @@
 use super::{
-    LoggingConfig, azure::ServicebusConfig, keys::KeyBindingsConfig, limits::*,
-    ui::UIConfig, validation::ConfigValidationError,
+    LoggingConfig, azure::ServicebusConfig, keys::KeyBindingsConfig, limits::*, ui::UIConfig,
+    validation::ConfigValidationError,
 };
 use crate::theme::types::ThemeConfig;
 use serde::Deserialize;

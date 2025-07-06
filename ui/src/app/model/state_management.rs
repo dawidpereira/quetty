@@ -24,7 +24,19 @@ where
             AppState::Loading => ComponentId::LoadingIndicator,
             AppState::HelpScreen => ComponentId::HelpScreen,
             AppState::ThemePicker => ComponentId::ThemePicker,
-            AppState::AzureDiscovery => ComponentId::SubscriptionPicker, // Default to subscription picker
+            AppState::AzureDiscovery => {
+                // Determine which Azure discovery component is actually mounted
+                if self.app.mounted(&ComponentId::NamespacePicker) {
+                    ComponentId::NamespacePicker
+                } else if self.app.mounted(&ComponentId::ResourceGroupPicker) {
+                    ComponentId::ResourceGroupPicker
+                } else if self.app.mounted(&ComponentId::SubscriptionPicker) {
+                    ComponentId::SubscriptionPicker
+                } else {
+                    // Fallback to subscription picker if none are mounted
+                    ComponentId::SubscriptionPicker
+                }
+            }
         };
 
         log::debug!("View called - AppState: {current_app_state:?}, Active: {active_component:?}");

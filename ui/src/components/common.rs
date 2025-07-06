@@ -140,11 +140,17 @@ pub enum ResourceGroupSelectionMsg {
 pub enum AzureDiscoveryMsg {
     StartDiscovery,
     DiscoveringSubscriptions,
-    SubscriptionsDiscovered(Vec<server::service_bus_manager::azure_management_client::Subscription>),
+    SubscriptionsDiscovered(
+        Vec<server::service_bus_manager::azure_management_client::Subscription>,
+    ),
     DiscoveringResourceGroups(String), // subscription_id
-    ResourceGroupsDiscovered(Vec<server::service_bus_manager::azure_management_client::ResourceGroup>),
+    ResourceGroupsDiscovered(
+        Vec<server::service_bus_manager::azure_management_client::ResourceGroup>,
+    ),
     DiscoveringNamespaces(String), // subscription_id
-    NamespacesDiscovered(Vec<server::service_bus_manager::azure_management_client::ServiceBusNamespace>),
+    NamespacesDiscovered(
+        Vec<server::service_bus_manager::azure_management_client::ServiceBusNamespace>,
+    ),
     FetchingConnectionString {
         subscription_id: String,
         resource_group: String,

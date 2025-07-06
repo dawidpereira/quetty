@@ -1,8 +1,8 @@
 use quetty::app::managers::queue_stats_manager::QueueStatsManager;
 use quetty::app::updates::messages::pagination::QueueStatsCache;
-use server::service_bus_manager::azure_management_client::{ManagementApiError, StatisticsConfig};
+use server::service_bus_manager::azure_management_client::StatisticsConfig;
 use server::service_bus_manager::queue_statistics_service::QueueStatisticsService;
-use server::service_bus_manager::{AzureAdConfig, QueueType};
+use server::service_bus_manager::{AzureAdConfig, QueueType, ServiceBusError};
 
 // Helper functions for queue statistics integration tests
 fn create_mock_azure_ad_config() -> AzureAdConfig {
@@ -221,17 +221,16 @@ mod error_handling_integration {
     use super::*;
 
     #[test]
-    fn test_management_api_error_types() {
+    fn test_service_bus_error_types() {
         // Test that different error types are properly handled
-        let auth_error =
-            ManagementApiError::AuthenticationFailed("Invalid credentials".to_string());
+        let auth_error = ServiceBusError::AuthenticationFailed("Invalid credentials".to_string());
         assert!(auth_error.to_string().contains("Authentication failed"));
 
-        let not_found_error = ManagementApiError::QueueNotFound("test-queue".to_string());
+        let not_found_error = ServiceBusError::QueueNotFound("test-queue".to_string());
         assert!(not_found_error.to_string().contains("Queue not found"));
 
-        let request_error = ManagementApiError::RequestFailed("Network timeout".to_string());
-        assert!(request_error.to_string().contains("HTTP request failed"));
+        let request_error = ServiceBusError::InternalError("Network timeout".to_string());
+        assert!(request_error.to_string().contains("Internal error"));
     }
 
     #[tokio::test]

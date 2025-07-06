@@ -102,6 +102,8 @@ impl QueueManager {
     }
 
     /// Load queues with discovered Azure resources
+    /// This method optimizes performance by using discovered Azure AD values
+    /// which avoid fresh token requests and use cached authentication
     pub fn load_queues_with_discovery(
         &self,
         subscription_id: String,
@@ -110,13 +112,56 @@ impl QueueManager {
         auth_service: Arc<crate::services::AuthService>,
     ) {
         let tx_to_main = self.tx_to_main.clone();
-        let Some(_service_bus_manager) = self.service_bus_manager.clone() else {
+        let service_bus_manager = self.service_bus_manager.clone();
+
+        if service_bus_manager.is_none() {
             log::warn!("Service bus manager not initialized, cannot load queues");
             return;
-        };
+        }
 
         self.task_manager.execute("Loading queues...", async move {
             log::debug!("Requesting queues for discovered namespace: {namespace}");
+
+            // Create an Azure AD config with discovered values for faster queue listing
+            let base_config = crate::config::get_config_or_panic().azure_ad();
+            let mut enhanced_config = base_config.clone();
+            enhanced_config.subscription_id = Some(subscription_id.clone());
+            enhanced_config.resource_group = Some(resource_group.clone());
+            enhanced_config.namespace = Some(namespace.clone());
+
+            // Try to use the faster Azure AD method with enhanced config
+            log::info!(
+                "Using Azure AD method with discovered values for queue listing (optimized)"
+            );
+
+            match server::service_bus_manager::ServiceBusManager::list_queues_azure_ad(
+                &enhanced_config,
+            )
+            .await
+            {
+                Ok(queue_names) => {
+                    log::info!(
+                        "Loaded {} queues using optimized Azure AD method",
+                        queue_names.len()
+                    );
+
+                    if let Err(e) = tx_to_main.send(Msg::QueueActivity(
+                        QueueActivityMsg::QueuesLoaded(queue_names),
+                    )) {
+                        log::error!("Failed to send queues loaded message: {e}");
+                        return Err(AppError::Component(e.to_string()));
+                    }
+                    return Ok(());
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Optimized Azure AD method failed, falling back to Management API: {e}"
+                    );
+                }
+            }
+
+            // Fallback to Azure Management API with fresh token
+            log::info!("Using Azure Management API for queue listing (slower fallback)");
 
             // Get Azure AD token
             let token = match auth_service.get_management_token().await {
@@ -128,7 +173,8 @@ impl QueueManager {
             };
 
             // Use Azure Management API to list queues
-            let client = server::service_bus_manager::azure_management_client::AzureManagementClient::new();
+            let client =
+                server::service_bus_manager::azure_management_client::AzureManagementClient::new();
             let queue_names = client
                 .list_queues(&token, &subscription_id, &resource_group, &namespace)
                 .await
@@ -138,7 +184,7 @@ impl QueueManager {
                 })?;
 
             log::info!(
-                "Loaded {} queues from discovered namespace",
+                "Loaded {} queues from discovered namespace using Management API",
                 queue_names.len()
             );
 

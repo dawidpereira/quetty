@@ -121,6 +121,13 @@ where
         return view_error_popup(app, f);
     }
 
+    // Then, try to render the loading indicator if it exists
+    if app.mounted(&ComponentId::LoadingIndicator) {
+        let popup_area = PopupLayout::small(f.area());
+        app.view(&ComponentId::LoadingIndicator, f, popup_area);
+        return Ok(());
+    }
+
     // Then, try to render Azure discovery pickers if they exist
     if app.mounted(&ComponentId::SubscriptionPicker) {
         let popup_area = PopupLayout::medium(f.area());

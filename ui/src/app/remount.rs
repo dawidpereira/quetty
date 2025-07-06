@@ -295,6 +295,15 @@ where
     }
 
     pub fn remount_queue_picker(&mut self, queues: Option<Vec<String>>) -> AppResult<()> {
+        // If we're in discovery mode and namespace picker is mounted, unmount it
+        // This prevents view errors when transitioning from namespace picker to queue picker
+        if self.app.mounted(&ComponentId::NamespacePicker) {
+            log::debug!("Unmounting namespace picker before mounting queue picker");
+            if let Err(e) = self.app.umount(&ComponentId::NamespacePicker) {
+                log::warn!("Failed to unmount namespace picker: {e}");
+            }
+        }
+
         self.app
             .remount(
                 ComponentId::QueuePicker,

@@ -1,7 +1,7 @@
-use server::service_bus_manager::AzureAdConfig;
 use server::service_bus_manager::azure_management_client::{
-    AzureManagementClient, ManagementApiError, StatisticsConfig,
+    AzureManagementClient, StatisticsConfig,
 };
+use server::service_bus_manager::{AzureAdConfig, ServiceBusError};
 use tokio::time::Duration;
 
 // Helper module for server-side integration tests
@@ -44,14 +44,13 @@ mod azure_management_client_creation {
     fn test_azure_management_client_creation_with_valid_config() {
         let azure_config = create_mock_server_azure_config();
 
-        // Test that client creation doesn't panic with valid config
+        // Test that client creation succeeds with valid config containing all required fields
         let result = AzureManagementClient::from_config(azure_config);
 
-        // With mock data, we expect this to succeed in creation
-        // (actual API calls will fail, but creation should work)
+        // With complete mock data containing all required fields, creation should succeed
         assert!(
             result.is_ok(),
-            "Client creation should succeed with valid config"
+            "Client creation should succeed with complete Azure configuration"
         );
     }
 
@@ -69,10 +68,10 @@ mod azure_management_client_creation {
 
         // Verify the error type
         match result {
-            Err(ManagementApiError::MissingConfiguration(_)) => {
+            Err(ServiceBusError::ConfigurationError(_)) => {
                 // Expected error type
             }
-            Err(other) => panic!("Expected MissingConfiguration error, got: {other:?}"),
+            Err(other) => panic!("Expected ConfigurationError, got: {other:?}"),
             Ok(_) => panic!("Expected error, got success"),
         }
     }
@@ -81,13 +80,8 @@ mod azure_management_client_creation {
     fn test_azure_management_client_direct_creation() {
         let azure_config = create_mock_server_azure_config();
 
-        // Test direct client creation
-        AzureManagementClient::new(
-            "test-subscription".to_string(),
-            "test-rg".to_string(),
-            "test-namespace".to_string(),
-            azure_config,
-        );
+        // Test client creation with config
+        let _client = AzureManagementClient::with_config(azure_config);
 
         // Client creation should always succeed (it's just storing the values)
         // Actual API calls will fail with mock data, but that's expected
@@ -99,14 +93,14 @@ mod error_handling_integration {
     use super::*;
 
     #[test]
-    fn test_management_api_error_display() {
+    fn test_service_bus_error_display() {
         let errors = vec![
-            ManagementApiError::NotConfigured,
-            ManagementApiError::AuthenticationFailed("Invalid token".to_string()),
-            ManagementApiError::RequestFailed("Network error".to_string()),
-            ManagementApiError::QueueNotFound("test-queue".to_string()),
-            ManagementApiError::JsonParsingFailed("Invalid JSON".to_string()),
-            ManagementApiError::MissingConfiguration("Missing field".to_string()),
+            ServiceBusError::ConfigurationError("Not configured".to_string()),
+            ServiceBusError::AuthenticationFailed("Invalid token".to_string()),
+            ServiceBusError::InternalError("Network error".to_string()),
+            ServiceBusError::QueueNotFound("test-queue".to_string()),
+            ServiceBusError::InternalError("Invalid JSON".to_string()),
+            ServiceBusError::ConfigurationError("Missing field".to_string()),
         ];
 
         for error in errors {
@@ -118,24 +112,23 @@ mod error_handling_integration {
 
             // Verify error messages contain expected content
             match error {
-                ManagementApiError::NotConfigured => {
-                    assert!(error_string.contains("not configured"));
+                ServiceBusError::ConfigurationError(msg) => {
+                    assert!(error_string.contains("Configuration error"));
+                    assert!(error_string.contains(&msg));
                 }
-                ManagementApiError::AuthenticationFailed(_) => {
+                ServiceBusError::AuthenticationFailed(msg) => {
                     assert!(error_string.contains("Authentication failed"));
+                    assert!(error_string.contains(&msg));
                 }
-                ManagementApiError::RequestFailed(_) => {
-                    assert!(error_string.contains("HTTP request failed"));
+                ServiceBusError::InternalError(msg) => {
+                    assert!(error_string.contains("Internal error"));
+                    assert!(error_string.contains(&msg));
                 }
-                ManagementApiError::QueueNotFound(_) => {
+                ServiceBusError::QueueNotFound(queue) => {
                     assert!(error_string.contains("Queue not found"));
+                    assert!(error_string.contains(&queue));
                 }
-                ManagementApiError::JsonParsingFailed(_) => {
-                    assert!(error_string.contains("JSON parsing failed"));
-                }
-                ManagementApiError::MissingConfiguration(_) => {
-                    assert!(error_string.contains("Missing required configuration"));
-                }
+                _ => {}
             }
         }
     }
@@ -143,7 +136,8 @@ mod error_handling_integration {
     #[tokio::test]
     async fn test_azure_client_graceful_error_handling() {
         let azure_config = create_mock_server_azure_config();
-        let client = AzureManagementClient::from_config(azure_config).unwrap();
+        // from_config will fail with incomplete config, so use with_config instead
+        let client = AzureManagementClient::with_config(azure_config);
 
         // Test that API calls fail gracefully with mock credentials
         let result = client.get_queue_message_count("test-queue").await;
@@ -151,10 +145,11 @@ mod error_handling_integration {
         // We expect this to fail with mock credentials, but it should be a proper error
         assert!(result.is_err(), "Mock credentials should result in error");
 
-        // The error should be authentication failure or request failure
+        // The error should be authentication failure or internal error
         match result {
-            Err(ManagementApiError::AuthenticationFailed(_))
-            | Err(ManagementApiError::RequestFailed(_)) => {
+            Err(ServiceBusError::AuthenticationFailed(_))
+            | Err(ServiceBusError::AuthenticationError(_))
+            | Err(ServiceBusError::InternalError(_)) => {
                 // Expected error types for mock credentials
             }
             Err(_) => {
@@ -167,7 +162,8 @@ mod error_handling_integration {
     #[tokio::test]
     async fn test_azure_client_both_counts_error_handling() {
         let azure_config = create_mock_server_azure_config();
-        let client = AzureManagementClient::from_config(azure_config).unwrap();
+        // from_config will fail with incomplete config, so use with_config instead
+        let client = AzureManagementClient::with_config(azure_config);
 
         // Test both counts API with mock credentials
         let result = client.get_queue_counts("test-queue").await;
@@ -216,7 +212,8 @@ mod resilience_integration {
     #[tokio::test]
     async fn test_retry_logic_timeout() {
         let azure_config = create_mock_server_azure_config();
-        let client = AzureManagementClient::from_config(azure_config).unwrap();
+        // from_config will fail with incomplete config, so use with_config instead
+        let client = AzureManagementClient::with_config(azure_config);
 
         let start_time = std::time::Instant::now();
 
@@ -244,7 +241,7 @@ mod performance_integration {
 
         // Create many errors rapidly
         for i in 0..1000 {
-            let _error = ManagementApiError::QueueNotFound(format!("queue-{i}"));
+            let _error = ServiceBusError::QueueNotFound(format!("queue-{i}"));
         }
 
         let duration = start.elapsed();
