@@ -409,6 +409,9 @@ mod performance_tests {
     async fn test_provider_creation_performance() {
         let start = std::time::Instant::now();
 
+        // Create a single HTTP client to reuse
+        let http_client = reqwest::Client::new();
+
         // Create many providers
         for i in 0..100 {
             let config = AzureAdAuthConfig {
@@ -423,8 +426,7 @@ mod performance_tests {
                 scope: None,
             };
 
-            let http_client = reqwest::Client::new();
-            let _provider = AzureAdProvider::new(config, http_client);
+            let _provider = AzureAdProvider::new(config, http_client.clone());
         }
 
         let duration = start.elapsed();
