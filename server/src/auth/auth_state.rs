@@ -7,8 +7,9 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum AuthenticationState {
+    #[default]
     NotAuthenticated,
     AwaitingDeviceCode {
         info: DeviceCodeInfo,
@@ -22,38 +23,39 @@ pub enum AuthenticationState {
     Failed(String),
 }
 
+// Consolidated state structure to prevent deadlocks
+#[derive(Default)]
+struct AuthState {
+    authentication_state: AuthenticationState,
+    azure_ad_token: Option<(String, Instant)>,
+    sas_token: Option<(String, Instant)>,
+    service_bus_provider: Option<Arc<dyn AuthProvider>>,
+    management_provider: Option<Arc<dyn AuthProvider>>,
+    refresh_service: Option<Arc<TokenRefreshService>>,
+    refresh_handle: Option<JoinHandle<()>>,
+}
+
+
 pub struct AuthStateManager {
-    state: Arc<RwLock<AuthenticationState>>,
-    azure_ad_token: Arc<RwLock<Option<(String, Instant)>>>,
-    sas_token: Arc<RwLock<Option<(String, Instant)>>>,
+    inner: Arc<RwLock<AuthState>>,
     token_cache: TokenCache,
-    service_bus_provider: Arc<RwLock<Option<Arc<dyn AuthProvider>>>>,
-    management_provider: Arc<RwLock<Option<Arc<dyn AuthProvider>>>>,
-    refresh_service: Arc<RwLock<Option<Arc<TokenRefreshService>>>>,
-    refresh_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
 }
 
 impl AuthStateManager {
     pub fn new() -> Self {
         Self {
-            state: Arc::new(RwLock::new(AuthenticationState::NotAuthenticated)),
-            azure_ad_token: Arc::new(RwLock::new(None)),
-            sas_token: Arc::new(RwLock::new(None)),
+            inner: Arc::new(RwLock::new(AuthState::default())),
             token_cache: TokenCache::new(),
-            service_bus_provider: Arc::new(RwLock::new(None)),
-            management_provider: Arc::new(RwLock::new(None)),
-            refresh_service: Arc::new(RwLock::new(None)),
-            refresh_handle: Arc::new(RwLock::new(None)),
         }
     }
 
     pub async fn get_state(&self) -> AuthenticationState {
-        self.state.read().await.clone()
+        self.inner.read().await.authentication_state.clone()
     }
 
     pub async fn set_device_code_pending(&self, info: DeviceCodeInfo) {
-        let mut state = self.state.write().await;
-        *state = AuthenticationState::AwaitingDeviceCode {
+        let mut state = self.inner.write().await;
+        state.authentication_state = AuthenticationState::AwaitingDeviceCode {
             info,
             started_at: Instant::now(),
         };
@@ -65,42 +67,42 @@ impl AuthStateManager {
         expires_in: Duration,
         connection_string: Option<String>,
     ) {
-        let mut state = self.state.write().await;
-        *state = AuthenticationState::Authenticated {
+        let mut state = self.inner.write().await;
+        let expires_at = Instant::now() + expires_in;
+
+        state.authentication_state = AuthenticationState::Authenticated {
             token: token.clone(),
-            expires_at: Instant::now() + expires_in,
+            expires_at,
             connection_string,
         };
 
         // Store Azure AD token
-        let mut ad_token = self.azure_ad_token.write().await;
-        *ad_token = Some((token, Instant::now() + expires_in));
+        state.azure_ad_token = Some((token, expires_at));
     }
 
     pub async fn set_failed(&self, error: String) {
-        let mut state = self.state.write().await;
-        *state = AuthenticationState::Failed(error);
+        let mut state = self.inner.write().await;
+        state.authentication_state = AuthenticationState::Failed(error);
     }
 
     pub async fn logout(&self) {
-        let mut state = self.state.write().await;
-        *state = AuthenticationState::NotAuthenticated;
-
-        let mut ad_token = self.azure_ad_token.write().await;
-        *ad_token = None;
-
-        let mut sas_token = self.sas_token.write().await;
-        *sas_token = None;
+        let mut state = self.inner.write().await;
+        state.authentication_state = AuthenticationState::NotAuthenticated;
+        state.azure_ad_token = None;
+        state.sas_token = None;
     }
 
     pub async fn is_authenticated(&self) -> bool {
-        let state = self.state.read().await;
-        matches!(*state, AuthenticationState::Authenticated { .. })
+        let state = self.inner.read().await;
+        matches!(
+            state.authentication_state,
+            AuthenticationState::Authenticated { .. }
+        )
     }
 
     pub async fn needs_reauthentication(&self) -> bool {
-        let state = self.state.read().await;
-        match &*state {
+        let state = self.inner.read().await;
+        match &state.authentication_state {
             AuthenticationState::Authenticated { expires_at, .. } => {
                 // Check if token expires in less than 5 minutes
                 Instant::now() + Duration::from_secs(300) >= *expires_at
@@ -110,8 +112,8 @@ impl AuthStateManager {
     }
 
     pub async fn get_azure_ad_token(&self) -> Option<String> {
-        let token = self.azure_ad_token.read().await;
-        if let Some((token_str, expires_at)) = token.as_ref() {
+        let state = self.inner.read().await;
+        if let Some((token_str, expires_at)) = &state.azure_ad_token {
             if Instant::now() < *expires_at {
                 return Some(token_str.clone());
             }
@@ -120,8 +122,8 @@ impl AuthStateManager {
     }
 
     pub async fn get_sas_token(&self) -> Option<String> {
-        let token = self.sas_token.read().await;
-        if let Some((token_str, expires_at)) = token.as_ref() {
+        let state = self.inner.read().await;
+        if let Some((token_str, expires_at)) = &state.sas_token {
             if Instant::now() < *expires_at {
                 return Some(token_str.clone());
             }
@@ -130,13 +132,13 @@ impl AuthStateManager {
     }
 
     pub async fn set_sas_token(&self, token: String, expires_in: Duration) {
-        let mut sas_token = self.sas_token.write().await;
-        *sas_token = Some((token, Instant::now() + expires_in));
+        let mut state = self.inner.write().await;
+        state.sas_token = Some((token, Instant::now() + expires_in));
     }
 
     pub async fn get_connection_string(&self) -> Option<String> {
-        let state = self.state.read().await;
-        match &*state {
+        let state = self.inner.read().await;
+        match &state.authentication_state {
             AuthenticationState::Authenticated {
                 connection_string, ..
             } => connection_string.clone(),
@@ -145,8 +147,8 @@ impl AuthStateManager {
     }
 
     pub async fn get_device_code_info(&self) -> Option<DeviceCodeInfo> {
-        let state = self.state.read().await;
-        match &*state {
+        let state = self.inner.read().await;
+        match &state.authentication_state {
             AuthenticationState::AwaitingDeviceCode { info, .. } => Some(info.clone()),
             _ => None,
         }
@@ -155,21 +157,21 @@ impl AuthStateManager {
     // Provider management methods
 
     pub async fn set_service_bus_provider(&self, provider: Arc<dyn AuthProvider>) {
-        let mut p = self.service_bus_provider.write().await;
-        *p = Some(provider);
+        let mut state = self.inner.write().await;
+        state.service_bus_provider = Some(provider);
     }
 
     pub async fn get_service_bus_provider(&self) -> Option<Arc<dyn AuthProvider>> {
-        self.service_bus_provider.read().await.clone()
+        self.inner.read().await.service_bus_provider.clone()
     }
 
     pub async fn set_management_provider(&self, provider: Arc<dyn AuthProvider>) {
-        let mut p = self.management_provider.write().await;
-        *p = Some(provider);
+        let mut state = self.inner.write().await;
+        state.management_provider = Some(provider);
     }
 
     pub async fn get_management_provider(&self) -> Option<Arc<dyn AuthProvider>> {
-        self.management_provider.read().await.clone()
+        self.inner.read().await.management_provider.clone()
     }
 
     pub fn get_token_cache(&self) -> &TokenCache {
@@ -198,31 +200,38 @@ impl AuthStateManager {
         let refresh_service = Arc::new(refresh_service);
         let handle = refresh_service.clone().start();
 
-        // Store service and handle
-        let mut service = self.refresh_service.write().await;
-        *service = Some(refresh_service);
-
-        let mut h = self.refresh_handle.write().await;
-        *h = Some(handle);
+        // Store service and handle in consolidated state
+        let mut state = self.inner.write().await;
+        state.refresh_service = Some(refresh_service);
+        state.refresh_handle = Some(handle);
 
         log::info!("Token refresh service started");
     }
 
     pub async fn stop_refresh_service(&self) {
-        // Signal shutdown
-        if let Some(service) = self.refresh_service.read().await.as_ref() {
+        // Get service reference and signal shutdown
+        let service_ref = {
+            let state = self.inner.read().await;
+            state.refresh_service.clone()
+        };
+
+        if let Some(service) = service_ref {
             service.shutdown().await;
         }
 
-        // Wait for service to stop
-        let mut handle_guard = self.refresh_handle.write().await;
-        if let Some(handle) = handle_guard.take() {
+        // Wait for service to stop and clear references
+        let mut state = self.inner.write().await;
+        if let Some(handle) = state.refresh_handle.take() {
+            // Drop the write lock before waiting
+            drop(state);
             let _ = handle.await;
-        }
 
-        // Clear service reference
-        let mut service = self.refresh_service.write().await;
-        *service = None;
+            // Re-acquire write lock to clear service reference
+            let mut state = self.inner.write().await;
+            state.refresh_service = None;
+        } else {
+            state.refresh_service = None;
+        }
 
         log::info!("Token refresh service stopped");
     }

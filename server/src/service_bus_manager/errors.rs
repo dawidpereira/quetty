@@ -3,6 +3,15 @@ use std::fmt;
 
 #[derive(Debug, Clone)]
 pub enum ServiceBusError {
+    /// Azure API specific errors with full context
+    AzureApiError {
+        code: String,               // Azure error code (e.g., "SubscriptionNotFound")
+        status_code: u16,           // HTTP status code
+        message: String,            // Human-readable error message
+        request_id: Option<String>, // Azure request ID for tracking
+        operation: String,          // Operation that failed (e.g., "list_subscriptions")
+    },
+
     /// Connection related errors
     ConnectionFailed(String),
     ConnectionLost(String),
@@ -53,6 +62,22 @@ pub enum ServiceBusError {
 impl fmt::Display for ServiceBusError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ServiceBusError::AzureApiError {
+                code,
+                status_code,
+                message,
+                request_id,
+                operation,
+            } => {
+                write!(
+                    f,
+                    "Azure API error during {operation}: {code} (HTTP {status_code}) - {message}"
+                )?;
+                if let Some(req_id) = request_id {
+                    write!(f, " [Request ID: {req_id}]")?;
+                }
+                Ok(())
+            }
             ServiceBusError::ConnectionFailed(msg) => write!(f, "Connection failed: {msg}"),
             ServiceBusError::ConnectionLost(msg) => write!(f, "Connection lost: {msg}"),
             ServiceBusError::AuthenticationFailed(msg) => {
@@ -126,6 +151,124 @@ impl fmt::Display for ServiceBusError {
 }
 
 impl std::error::Error for ServiceBusError {}
+
+impl ServiceBusError {
+    /// Create an Azure API error with full context
+    pub fn azure_api_error(
+        operation: impl Into<String>,
+        code: impl Into<String>,
+        status_code: u16,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::AzureApiError {
+            code: code.into(),
+            status_code,
+            message: message.into(),
+            request_id: None,
+            operation: operation.into(),
+        }
+    }
+
+    /// Create an Azure API error with request ID for tracing
+    pub fn azure_api_error_with_request_id(
+        operation: impl Into<String>,
+        code: impl Into<String>,
+        status_code: u16,
+        message: impl Into<String>,
+        request_id: impl Into<String>,
+    ) -> Self {
+        Self::AzureApiError {
+            code: code.into(),
+            status_code,
+            message: message.into(),
+            request_id: Some(request_id.into()),
+            operation: operation.into(),
+        }
+    }
+
+    /// Extract Azure error details from a reqwest Response
+    pub async fn from_azure_response(
+        response: reqwest::Response,
+        operation: impl Into<String>,
+    ) -> Self {
+        let operation = operation.into();
+        let status_code = response.status().as_u16();
+        let request_id = response
+            .headers()
+            .get("x-ms-request-id")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+
+        // Try to extract Azure error details from response body
+        match response.text().await {
+            Ok(body) => {
+                // Try to parse Azure error response format
+                if let Ok(azure_error) = serde_json::from_str::<AzureErrorResponse>(&body) {
+                    Self::AzureApiError {
+                        code: azure_error.error.code,
+                        status_code,
+                        message: azure_error.error.message,
+                        request_id,
+                        operation,
+                    }
+                } else {
+                    // Fallback for non-JSON responses
+                    Self::AzureApiError {
+                        code: format!("HTTP_{status_code}"),
+                        status_code,
+                        message: if body.is_empty() {
+                            format!("HTTP {status_code} error")
+                        } else {
+                            body
+                        },
+                        request_id,
+                        operation,
+                    }
+                }
+            }
+            Err(_) => Self::AzureApiError {
+                code: format!("HTTP_{status_code}"),
+                status_code,
+                message: format!("HTTP {status_code} error - unable to read response body"),
+                request_id,
+                operation,
+            },
+        }
+    }
+
+    /// Check if this is an Azure API error
+    pub fn is_azure_api_error(&self) -> bool {
+        matches!(self, ServiceBusError::AzureApiError { .. })
+    }
+
+    /// Get the Azure error code if this is an Azure API error
+    pub fn azure_error_code(&self) -> Option<&str> {
+        match self {
+            ServiceBusError::AzureApiError { code, .. } => Some(code),
+            _ => None,
+        }
+    }
+
+    /// Get the Azure request ID if available
+    pub fn azure_request_id(&self) -> Option<&str> {
+        match self {
+            ServiceBusError::AzureApiError { request_id, .. } => request_id.as_deref(),
+            _ => None,
+        }
+    }
+}
+
+/// Azure API error response format
+#[derive(Debug, serde::Deserialize)]
+struct AzureErrorResponse {
+    error: AzureErrorDetails,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct AzureErrorDetails {
+    code: String,
+    message: String,
+}
 
 impl From<azure_core::Error> for ServiceBusError {
     fn from(err: azure_core::Error) -> Self {

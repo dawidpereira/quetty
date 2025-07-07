@@ -1,3 +1,7 @@
+pub use self::azure_management_client::{
+    AccessKeys, AzureManagementClient, NamespaceProperties, ResourceGroup, ServiceBusNamespace,
+    Subscription,
+};
 pub use self::commands::ServiceBusCommand;
 pub use self::errors::{ServiceBusError, ServiceBusResult};
 pub use self::manager::ServiceBusManager;

@@ -1,5 +1,5 @@
 use super::{AzureAdConfig, ServiceBusError};
-use crate::common::{HttpError, RateLimiter, RateLimiterConfig};
+use crate::common::HttpError;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
@@ -16,8 +16,6 @@ pub struct AzureManagementClient {
     client: reqwest::Client,
     /// Optional Azure AD configuration for operations that need persistent config
     azure_ad_config: Option<AzureAdConfig>,
-    /// Rate limiter for API requests
-    rate_limiter: RateLimiter,
 }
 
 // Resource discovery types
@@ -92,10 +90,10 @@ struct CountDetails {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct ListResponse<T> {
-    value: Vec<T>,
+pub struct ListResponse<T> {
+    pub value: Vec<T>,
     #[serde(rename = "nextLink")]
-    next_link: Option<String>,
+    pub next_link: Option<String>,
 }
 
 impl AzureManagementClient {
@@ -104,7 +102,6 @@ impl AzureManagementClient {
         Self {
             client,
             azure_ad_config: None,
-            rate_limiter: RateLimiter::new(10), // 10 requests per second default
         }
     }
 
@@ -113,14 +110,7 @@ impl AzureManagementClient {
         Self {
             client,
             azure_ad_config: Some(azure_ad_config),
-            rate_limiter: RateLimiter::new(10), // 10 requests per second default
         }
-    }
-
-    /// Create a new client with custom rate limiting configuration
-    pub fn with_rate_limit(mut self, config: RateLimiterConfig) -> Self {
-        self.rate_limiter = config.build();
-        self
     }
 
     /// Create a client from configuration (for backward compatibility)
@@ -149,38 +139,6 @@ impl AzureManagementClient {
         }
     }
 
-    /// Execute a request with rate limiting and retry on 429
-    async fn execute_with_rate_limit(
-        &self,
-        request: reqwest::RequestBuilder,
-    ) -> Result<reqwest::Response, ServiceBusError> {
-        // Apply rate limiting before making the request
-        self.rate_limiter.wait_until_ready().await;
-
-        let response = request
-            .send()
-            .await
-            .map_err(|e| ServiceBusError::ConnectionFailed(e.to_string()))?;
-
-        // Check for rate limiting response
-        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            // Extract retry-after header if available
-            let retry_after_seconds = response
-                .headers()
-                .get("retry-after")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|s| s.parse::<u64>().ok())
-                .unwrap_or(60); // Default to 60 seconds if not specified
-
-            return Err(HttpError::RateLimited {
-                retry_after_seconds,
-            }
-            .into());
-        }
-
-        Ok(response)
-    }
-
     // ===== Resource Discovery Operations =====
 
     /// List all subscriptions accessible to the authenticated user
@@ -188,24 +146,37 @@ impl AzureManagementClient {
         &self,
         token: &str,
     ) -> Result<Vec<Subscription>, ServiceBusError> {
-        let url =
-            format!("{AZURE_MANAGEMENT_URL}/subscriptions?api-version={API_VERSION_SUBSCRIPTIONS}");
+        self.list_subscriptions_paginated(token, None)
+            .await
+            .map(|(subs, _)| subs)
+    }
 
-        let request = self
-            .client
+    /// List subscriptions with pagination support for large Azure environments
+    async fn list_subscriptions_paginated(
+        &self,
+        token: &str,
+        continuation_token: Option<String>,
+    ) -> Result<(Vec<Subscription>, Option<String>), ServiceBusError> {
+        let url = match continuation_token {
+            Some(next_link) => next_link,
+            None => format!(
+                "{AZURE_MANAGEMENT_URL}/subscriptions?api-version={API_VERSION_SUBSCRIPTIONS}"
+            ),
+        };
+
+        let client = self.client.clone();
+        let token = token.to_string();
+        let request = client
             .get(&url)
             .header(AUTHORIZATION, format!("Bearer {token}"));
 
-        let response = self.execute_with_rate_limit(request).await?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| ServiceBusError::ConnectionFailed(e.to_string()))?;
 
         if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(HttpError::InvalidResponse {
-                expected: "2xx status".to_string(),
-                actual: format!("Failed to list subscriptions: {status} - {error_text}"),
-            }
-            .into());
+            return Err(ServiceBusError::from_azure_response(response, "list_subscriptions").await);
         }
 
         let list_response: ListResponse<Subscription> = response
@@ -213,7 +184,31 @@ impl AzureManagementClient {
             .await
             .map_err(|e| ServiceBusError::ConfigurationError(e.to_string()))?;
 
-        Ok(list_response.value)
+        Ok((list_response.value, list_response.next_link))
+    }
+
+    /// List all subscriptions using automatic pagination for large environments
+    pub async fn list_all_subscriptions(
+        &self,
+        token: &str,
+    ) -> Result<Vec<Subscription>, ServiceBusError> {
+        let mut all_subscriptions = Vec::new();
+        let mut continuation_token = None;
+
+        loop {
+            let (mut page_subscriptions, next_token) = self
+                .list_subscriptions_paginated(token, continuation_token)
+                .await?;
+
+            all_subscriptions.append(&mut page_subscriptions);
+
+            match next_token {
+                Some(token) => continuation_token = Some(token),
+                None => break,
+            }
+        }
+
+        Ok(all_subscriptions)
     }
 
     /// List all resource groups in a subscription
@@ -222,25 +217,39 @@ impl AzureManagementClient {
         token: &str,
         subscription_id: &str,
     ) -> Result<Vec<ResourceGroup>, ServiceBusError> {
-        let url = format!(
-            "{AZURE_MANAGEMENT_URL}/subscriptions/{subscription_id}/resourcegroups?api-version={API_VERSION_RESOURCE_GROUPS}"
-        );
+        self.list_resource_groups_paginated(token, subscription_id, None)
+            .await
+            .map(|(groups, _)| groups)
+    }
+
+    /// List resource groups with pagination support for large Azure environments
+    pub async fn list_resource_groups_paginated(
+        &self,
+        token: &str,
+        subscription_id: &str,
+        continuation_token: Option<String>,
+    ) -> Result<(Vec<ResourceGroup>, Option<String>), ServiceBusError> {
+        let url = match continuation_token {
+            Some(next_link) => next_link,
+            None => format!(
+                "{AZURE_MANAGEMENT_URL}/subscriptions/{subscription_id}/resourcegroups?api-version={API_VERSION_RESOURCE_GROUPS}"
+            ),
+        };
 
         let request = self
             .client
             .get(&url)
             .header(AUTHORIZATION, format!("Bearer {token}"));
 
-        let response = self.execute_with_rate_limit(request).await?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| ServiceBusError::ConnectionFailed(e.to_string()))?;
 
         if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(HttpError::InvalidResponse {
-                expected: "2xx status".to_string(),
-                actual: format!("Failed to list resource groups: {status} - {error_text}"),
-            }
-            .into());
+            return Err(
+                ServiceBusError::from_azure_response(response, "list_resource_groups").await,
+            );
         }
 
         let list_response: ListResponse<ResourceGroup> = response
@@ -248,7 +257,32 @@ impl AzureManagementClient {
             .await
             .map_err(|e| ServiceBusError::ConfigurationError(e.to_string()))?;
 
-        Ok(list_response.value)
+        Ok((list_response.value, list_response.next_link))
+    }
+
+    /// List all resource groups using automatic pagination for large environments
+    pub async fn list_all_resource_groups(
+        &self,
+        token: &str,
+        subscription_id: &str,
+    ) -> Result<Vec<ResourceGroup>, ServiceBusError> {
+        let mut all_groups = Vec::new();
+        let mut continuation_token = None;
+
+        loop {
+            let (mut page_groups, next_token) = self
+                .list_resource_groups_paginated(token, subscription_id, continuation_token)
+                .await?;
+
+            all_groups.append(&mut page_groups);
+
+            match next_token {
+                Some(token) => continuation_token = Some(token),
+                None => break,
+            }
+        }
+
+        Ok(all_groups)
     }
 
     /// List all Service Bus namespaces in a subscription
@@ -257,25 +291,41 @@ impl AzureManagementClient {
         token: &str,
         subscription_id: &str,
     ) -> Result<Vec<ServiceBusNamespace>, ServiceBusError> {
-        let url = format!(
-            "{AZURE_MANAGEMENT_URL}/subscriptions/{subscription_id}/providers/Microsoft.ServiceBus/namespaces?api-version={API_VERSION_SERVICE_BUS}"
-        );
+        self.list_service_bus_namespaces_paginated(token, subscription_id, None)
+            .await
+            .map(|(namespaces, _)| namespaces)
+    }
+
+    /// List Service Bus namespaces with pagination support for large Azure environments
+    pub async fn list_service_bus_namespaces_paginated(
+        &self,
+        token: &str,
+        subscription_id: &str,
+        continuation_token: Option<String>,
+    ) -> Result<(Vec<ServiceBusNamespace>, Option<String>), ServiceBusError> {
+        let url = match continuation_token {
+            Some(next_link) => next_link,
+            None => format!(
+                "{AZURE_MANAGEMENT_URL}/subscriptions/{subscription_id}/providers/Microsoft.ServiceBus/namespaces?api-version={API_VERSION_SERVICE_BUS}"
+            ),
+        };
 
         let request = self
             .client
             .get(&url)
             .header(AUTHORIZATION, format!("Bearer {token}"));
 
-        let response = self.execute_with_rate_limit(request).await?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| ServiceBusError::ConnectionFailed(e.to_string()))?;
 
         if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(HttpError::InvalidResponse {
-                expected: "2xx status".to_string(),
-                actual: format!("Failed to list Service Bus namespaces: {status} - {error_text}"),
-            }
-            .into());
+            return Err(ServiceBusError::from_azure_response(
+                response,
+                "list_service_bus_namespaces",
+            )
+            .await);
         }
 
         let list_response: ListResponse<ServiceBusNamespace> = response
@@ -283,7 +333,32 @@ impl AzureManagementClient {
             .await
             .map_err(|e| ServiceBusError::ConfigurationError(e.to_string()))?;
 
-        Ok(list_response.value)
+        Ok((list_response.value, list_response.next_link))
+    }
+
+    /// List all Service Bus namespaces using automatic pagination for large environments
+    pub async fn list_all_service_bus_namespaces(
+        &self,
+        token: &str,
+        subscription_id: &str,
+    ) -> Result<Vec<ServiceBusNamespace>, ServiceBusError> {
+        let mut all_namespaces = Vec::new();
+        let mut continuation_token = None;
+
+        loop {
+            let (mut page_namespaces, next_token) = self
+                .list_service_bus_namespaces_paginated(token, subscription_id, continuation_token)
+                .await?;
+
+            all_namespaces.append(&mut page_namespaces);
+
+            match next_token {
+                Some(token) => continuation_token = Some(token),
+                None => break,
+            }
+        }
+
+        Ok(all_namespaces)
     }
 
     /// Get the connection string for a Service Bus namespace
@@ -306,16 +381,17 @@ impl AzureManagementClient {
             .header(CONTENT_TYPE, "application/json")
             .body("{}"); // Empty JSON body required for Azure Management API POST requests
 
-        let response = self.execute_with_rate_limit(request).await?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| ServiceBusError::ConnectionFailed(e.to_string()))?;
 
         if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(HttpError::InvalidResponse {
-                expected: "2xx status".to_string(),
-                actual: format!("Failed to get namespace keys: {status} - {error_text}"),
-            }
-            .into());
+            return Err(ServiceBusError::from_azure_response(
+                response,
+                "get_namespace_connection_string",
+            )
+            .await);
         }
 
         let keys: AccessKeys = response
@@ -326,29 +402,6 @@ impl AzureManagementClient {
         Ok(keys.primary_connection_string)
     }
 
-    /// Get the connection string for a Service Bus namespace using resource ID
-    pub async fn get_namespace_connection_string_by_id(
-        &self,
-        token: &str,
-        resource_id: &str,
-    ) -> Result<String, ServiceBusError> {
-        // Resource ID format: /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ServiceBus/namespaces/{namespaceName}
-        let parts: Vec<&str> = resource_id.split('/').collect();
-
-        if parts.len() < 9 {
-            return Err(ServiceBusError::ConfigurationError(
-                "Invalid resource ID format".to_string(),
-            ));
-        }
-
-        let subscription_id = parts[2];
-        let resource_group = parts[4];
-        let namespace = parts[8];
-
-        self.get_namespace_connection_string(token, subscription_id, resource_group, namespace)
-            .await
-    }
-
     /// List all queues in a Service Bus namespace
     pub async fn list_queues(
         &self,
@@ -357,25 +410,39 @@ impl AzureManagementClient {
         resource_group: &str,
         namespace: &str,
     ) -> Result<Vec<String>, ServiceBusError> {
-        let url = format!(
-            "{AZURE_MANAGEMENT_URL}/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.ServiceBus/namespaces/{namespace}/queues?api-version={API_VERSION_SERVICE_BUS}"
-        );
+        self.list_queues_paginated(token, subscription_id, resource_group, namespace, None)
+            .await
+            .map(|(queues, _)| queues)
+    }
+
+    /// List queues with pagination support for large Azure environments
+    pub async fn list_queues_paginated(
+        &self,
+        token: &str,
+        subscription_id: &str,
+        resource_group: &str,
+        namespace: &str,
+        continuation_token: Option<String>,
+    ) -> Result<(Vec<String>, Option<String>), ServiceBusError> {
+        let url = match continuation_token {
+            Some(next_link) => next_link,
+            None => format!(
+                "{AZURE_MANAGEMENT_URL}/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.ServiceBus/namespaces/{namespace}/queues?api-version={API_VERSION_SERVICE_BUS}"
+            ),
+        };
 
         let request = self
             .client
             .get(&url)
             .header(AUTHORIZATION, format!("Bearer {token}"));
 
-        let response = self.execute_with_rate_limit(request).await?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| ServiceBusError::ConnectionFailed(e.to_string()))?;
 
         if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(HttpError::InvalidResponse {
-                expected: "2xx status".to_string(),
-                actual: format!("Failed to list queues: {status} - {error_text}"),
-            }
-            .into());
+            return Err(ServiceBusError::from_azure_response(response, "list_queues").await);
         }
 
         let list_response: ListResponse<serde_json::Value> = response
@@ -389,7 +456,40 @@ impl AzureManagementClient {
             .filter_map(|queue| queue["name"].as_str().map(|s| s.to_string()))
             .collect();
 
-        Ok(queue_names)
+        Ok((queue_names, list_response.next_link))
+    }
+
+    /// List all queues using automatic pagination for large environments
+    pub async fn list_all_queues(
+        &self,
+        token: &str,
+        subscription_id: &str,
+        resource_group: &str,
+        namespace: &str,
+    ) -> Result<Vec<String>, ServiceBusError> {
+        let mut all_queues = Vec::new();
+        let mut continuation_token = None;
+
+        loop {
+            let (mut page_queues, next_token) = self
+                .list_queues_paginated(
+                    token,
+                    subscription_id,
+                    resource_group,
+                    namespace,
+                    continuation_token,
+                )
+                .await?;
+
+            all_queues.append(&mut page_queues);
+
+            match next_token {
+                Some(token) => continuation_token = Some(token),
+                None => break,
+            }
+        }
+
+        Ok(all_queues)
     }
 
     // ===== Queue Statistics Operations =====
@@ -490,25 +590,24 @@ impl AzureManagementClient {
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .header(CONTENT_TYPE, "application/json");
 
-        let response = self.execute_with_rate_limit(request).await?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| ServiceBusError::ConnectionFailed(e.to_string()))?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
 
             if status == 404 {
-                return Err(HttpError::InvalidResponse {
-                    expected: "2xx status".to_string(),
-                    actual: format!("Queue not found: {queue_name}"),
-                }
-                .into());
+                return Err(ServiceBusError::azure_api_error(
+                    "get_queue_counts",
+                    "QueueNotFound",
+                    404,
+                    format!("Queue not found: {queue_name}"),
+                ));
             }
 
-            return Err(HttpError::InvalidResponse {
-                expected: "2xx status".to_string(),
-                actual: format!("API request failed with status {status}: {error_text}"),
-            }
-            .into());
+            return Err(ServiceBusError::from_azure_response(response, "get_queue_counts").await);
         }
 
         let response_text = response

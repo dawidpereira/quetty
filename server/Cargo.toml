@@ -7,6 +7,10 @@ edition = "2024"
 name = "server"
 path = "src/lib.rs"
 
+[features]
+default = []
+test-utils = []
+
 [dependencies]
 tokio = { version = "1.45.0", features = ["rt-multi-thread", "macros"] }
 serde = { version = "1", features = ["derive"] }
@@ -18,6 +22,9 @@ chrono = "0.4"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 futures-util = "0.3"
+futures = "0.3"
+# Actor pattern support
+flume = "0.11"
 urlencoding = "2.1"
 async-trait = "0.1"
 hmac = "0.12"
@@ -36,3 +43,4 @@ dirs = "5"
 [dev-dependencies]
 claims = "0.8"
 futures = "0.3"
+proptest = "1.4"
