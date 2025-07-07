@@ -248,7 +248,7 @@ impl BulkOperationPostProcessor {
 
                 • 📦 Total requested: {total_count}
 
-                
+
 
                 💡 Some messages may have been processed by another process during the operation."
             )

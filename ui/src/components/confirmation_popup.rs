@@ -26,7 +26,7 @@ use tuirealm::{
 /// # Events
 ///
 /// - Configured yes key (default 'Y') - Confirms the action
-/// - Configured no key (default 'N') - Cancels the action  
+/// - Configured no key (default 'N') - Cancels the action
 /// - `KeyEvent::Esc` - Cancels the action
 ///
 /// # Messages

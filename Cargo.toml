@@ -3,4 +3,4 @@ resolver = "3"
 members = [
     "server",
     "ui"
-] 
+]

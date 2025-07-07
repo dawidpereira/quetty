@@ -5,7 +5,8 @@ mod azure_discovery_handler_tests {
     use std::collections::HashMap;
 
     /// Helper function to create test subscription data
-    fn create_test_subscription_data() -> Vec<server::service_bus_manager::azure_management_client::Subscription> {
+    fn create_test_subscription_data()
+    -> Vec<server::service_bus_manager::azure_management_client::Subscription> {
         vec![
             server::service_bus_manager::azure_management_client::Subscription {
                 id: "/subscriptions/test-sub-1".to_string(),
@@ -23,7 +24,8 @@ mod azure_discovery_handler_tests {
     }
 
     /// Helper function to create test resource group data
-    fn create_test_resource_group_data() -> Vec<server::service_bus_manager::azure_management_client::ResourceGroup> {
+    fn create_test_resource_group_data()
+    -> Vec<server::service_bus_manager::azure_management_client::ResourceGroup> {
         vec![
             server::service_bus_manager::azure_management_client::ResourceGroup {
                 id: "/subscriptions/test-sub/resourceGroups/test-rg-1".to_string(),
@@ -41,8 +43,11 @@ mod azure_discovery_handler_tests {
     }
 
     /// Helper function to create test namespace data
-    fn create_test_namespace_data() -> Vec<server::service_bus_manager::azure_management_client::ServiceBusNamespace> {
-        use server::service_bus_manager::azure_management_client::{NamespaceProperties, ServiceBusNamespace};
+    fn create_test_namespace_data()
+    -> Vec<server::service_bus_manager::azure_management_client::ServiceBusNamespace> {
+        use server::service_bus_manager::azure_management_client::{
+            NamespaceProperties, ServiceBusNamespace,
+        };
 
         vec![
             ServiceBusNamespace {

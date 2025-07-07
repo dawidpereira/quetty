@@ -76,7 +76,7 @@ jobs:
         echo "Repository: $GH_REPOSITORY"
         echo "Branch: $GH_REF_NAME"
         echo "Run ID: $GH_RUN_ID"
-        
+
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://api.notion.com/v1/pages" \
           -H "Authorization: Bearer $NOTION_API_TOKEN" \
           -H "Content-Type: application/json" \
@@ -87,7 +87,7 @@ jobs:
         BODY=$(echo "$RESPONSE" | head -n -1)
 
         echo "HTTP Status Code: $HTTP_CODE"
-        
+
         if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
           echo "Successfully sent notification to Notion"
           PAGE_ID=$(echo "$BODY" | jq -r '.id // "unknown"')
@@ -98,4 +98,3 @@ jobs:
           echo "Response Body: $BODY"
           exit 1
         fi
-

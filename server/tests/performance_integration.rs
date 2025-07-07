@@ -8,7 +8,6 @@ use tokio::time::timeout;
 mod performance_tests {
     use super::*;
 
-
     #[tokio::test]
     async fn test_concurrent_operations_performance() {
         use tokio::task::JoinSet;
@@ -213,9 +212,7 @@ mod scalability_tests {
                 "Client creation too slow: {per_client:?} per client"
             );
 
-            println!(
-                "Created {count} clients in {duration:?} ({per_client:?} per client)"
-            );
+            println!("Created {count} clients in {duration:?} ({per_client:?} per client)");
         }
     }
 
@@ -453,8 +450,6 @@ mod ci_optimization {
             "Cache exceeded size limit: {found_count} > {cache_size}"
         );
 
-        println!(
-            "Memory test - Scale: {scale}, Cache size: {cache_size}, Found: {found_count}"
-        );
+        println!("Memory test - Scale: {scale}, Cache size: {cache_size}, Found: {found_count}");
     }
 }

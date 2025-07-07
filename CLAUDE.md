@@ -17,7 +17,7 @@ This document contains important guidelines for Claude or other AI assistants wh
   - Connection strings
   - Personal identifiable information (PII)
   - URLs containing sensitive parameters
-  
+
 ### User-Facing Output
 - Use the UI layer (popups, messages) for information that needs to be shown to users
 - Do not use `println!` or similar console output for user communication

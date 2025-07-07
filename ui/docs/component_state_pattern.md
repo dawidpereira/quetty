@@ -27,7 +27,7 @@ pub trait ComponentStateMount {
     /// Mount a component that implements ComponentState, calling mount() automatically
     fn mount_with_state<C>(&mut self, id: ComponentId, component: C, subs: Vec<Sub>) -> AppResult<()>;
 
-    /// Remount a component that implements ComponentState, calling mount() automatically  
+    /// Remount a component that implements ComponentState, calling mount() automatically
     fn remount_with_state<C>(&mut self, id: ComponentId, component: C, subs: Vec<Sub>) -> AppResult<()>;
 }
 ```
@@ -68,7 +68,7 @@ impl ComponentState for ComponentName {
 
         // Component-specific initialization logic here
         self.is_focused = /* appropriate default */;
-        
+
         self.is_mounted = true;
         log::debug!("ComponentName component mounted successfully");
         Ok(())
@@ -150,8 +150,8 @@ app.mount(ComponentId::MessageDetails, Box::new(component), Vec::default())?;
 ```rust
 // New streamlined pattern
 app.mount_with_state(
-    ComponentId::MessageDetails, 
-    MessageDetails::new(None), 
+    ComponentId::MessageDetails,
+    MessageDetails::new(None),
     Vec::default()
 )?;
 ```
@@ -169,7 +169,7 @@ other_component.update_focus(false);  // Other component loses focus
 Due to TUI realm's architecture, we cannot directly access mounted components to call their methods. However, the ComponentState pattern still provides significant value:
 
 1. **✅ Consistent Initialization**: All components are properly initialized via `mount()` before being passed to TUI realm
-2. **✅ State Validation**: Components validate their state and resources during mounting  
+2. **✅ State Validation**: Components validate their state and resources during mounting
 3. **✅ Error Handling**: Mount operations can fail gracefully with proper error reporting
 4. **✅ Logging**: Consistent debug logging helps track component lifecycle
 5. **✅ Automatic Cleanup**: Components handle their own cleanup when dropped by TUI realm via `Drop` trait

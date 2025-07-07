@@ -64,7 +64,7 @@ let task_manager = TaskManager::new(self.taskpool.clone(), self.tx_to_main.clone
 
 task_manager.execute_with_loading(
     "Deleting messages...",
-    async move { 
+    async move {
         let count = delete_operation().await?;
         Ok(count)
     },
@@ -351,8 +351,8 @@ For integration tests, TaskManager can be mocked:
 struct MockTaskManager;
 
 impl MockTaskManager {
-    fn execute<F, R>(&self, _message: impl Display, operation: F) 
-    where F: Future<Output = Result<R, AppError>> + Send + 'static 
+    fn execute<F, R>(&self, _message: impl Display, operation: F)
+    where F: Future<Output = Result<R, AppError>> + Send + 'static
     {
         // Execute immediately in tests or capture for verification
         tokio::spawn(operation);
@@ -367,7 +367,7 @@ impl MockTaskManager {
 ```rust
 fn init_component(&mut self) {
     let task_manager = TaskManager::new(self.taskpool.clone(), self.tx_to_main.clone());
-    
+
     task_manager.execute("Loading initial data...", async move {
         let data = fetch_initial_data().await?;
         tx_to_main.send(Msg::DataLoaded(data))?;
@@ -381,7 +381,7 @@ fn init_component(&mut self) {
 ```rust
 fn handle_delete_action(&mut self, item_id: u32) {
     let task_manager = TaskManager::new(self.taskpool.clone(), self.tx_to_main.clone());
-    
+
     TaskBuilder::new(&task_manager)
         .loading_message("Deleting item...")
         .success_message("Item deleted successfully!")
@@ -398,13 +398,13 @@ fn handle_delete_action(&mut self, item_id: u32) {
 ```rust
 fn process_bulk_items(&mut self, items: Vec<Item>) {
     let task_manager = TaskManager::new(self.taskpool.clone(), self.tx_to_main.clone());
-    
+
     task_manager.execute_with_updates("Processing items...", |tx| {
         Box::new(async move {
             let total = items.len();
             for (index, item) in items.iter().enumerate() {
                 process_item(item).await?;
-                
+
                 if index % 5 == 0 {
                     tx.send(Msg::LoadingActivity(LoadingActivityMsg::Update(
                         format!("Processed {}/{} items", index + 1, total)
@@ -443,4 +443,4 @@ task_manager.execute::<_, ()>("message", async { Ok(()) });
 ```rust
 // Verify taskpool is properly initialized
 // Check that tx_to_main channel receiver is being processed
-``` 
+```

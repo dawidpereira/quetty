@@ -26,7 +26,7 @@ selection_bg = "#bb9af7" # Bright purple - selection background
 selection_fg = "#1a1b26" # Dark text - selection foreground
 
 # === Message Table Colors ===
-message_sequence = "#e0af68"       # Golden yellow - sequence numbers  
+message_sequence = "#e0af68"       # Golden yellow - sequence numbers
 message_id = "#f7768e"             # Warm coral - message identifiers
 message_timestamp = "#7dcfff"      # Light cyan - timestamps
 message_delivery_count = "#bb9af7" # Purple - delivery counts

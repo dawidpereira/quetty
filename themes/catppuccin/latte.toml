@@ -27,7 +27,7 @@ selection_bg = "#8839ef" # Mauve - selection background
 selection_fg = "#eff1f5" # Base - selection foreground
 
 # === Message Table Colors ===
-message_sequence = "#df8e1d"       # Yellow - sequence numbers  
+message_sequence = "#df8e1d"       # Yellow - sequence numbers
 message_id = "#d20f39"             # Red - message identifiers
 message_timestamp = "#04a5e5"      # Sky - timestamps
 message_delivery_count = "#8839ef" # Mauve - delivery counts
@@ -54,4 +54,4 @@ help_section_title = "#8839ef"   # Mauve - help section titles
 
 # === Popup System Colors (used by confirmation popup) ===
 popup_background = "#e6e9ef" # Mantle - slightly different from main bg
-popup_text = "#6c6f85"       # Subtext0 - secondary text 
+popup_text = "#6c6f85"       # Subtext0 - secondary text

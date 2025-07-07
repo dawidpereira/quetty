@@ -9,7 +9,7 @@ use crate::validation::Validator;
 
 impl Validator<str> for MyValidator {
     type Error = MyError;
-    
+
     fn validate(&self, input: &str) -> Result<(), Self::Error> {
         // Your validation logic
         Ok(())
@@ -20,7 +20,7 @@ impl Validator<str> for MyValidator {
 ## When to Validate
 
 1. **User Input** - Before processing any user-provided data
-2. **External Data** - When loading files, configs, or API responses  
+2. **External Data** - When loading files, configs, or API responses
 3. **Critical Operations** - Before bulk operations or destructive actions
 4. **State Changes** - When updating application state
 
@@ -66,9 +66,9 @@ pub enum MyValidationError {
 impl MyValidationError {
     pub fn user_message(&self) -> String {
         match self {
-            Self::InvalidInput { field, reason } => 
+            Self::InvalidInput { field, reason } =>
                 format!("Invalid {}: {}", field, reason),
-            Self::MissingRequired { field } => 
+            Self::MissingRequired { field } =>
                 format!("{} is required", field),
         }
     }

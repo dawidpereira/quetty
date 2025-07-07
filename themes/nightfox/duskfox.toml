@@ -28,7 +28,7 @@ selection_bg = "#eb6f92" # Rose - selection background
 selection_fg = "#232136" # Dark text - selection foreground
 
 # === Message Table Colors ===
-message_sequence = "#f6c177"       # Gold - sequence numbers  
+message_sequence = "#f6c177"       # Gold - sequence numbers
 message_id = "#ea9a97"             # Red/Rose - message identifiers
 message_timestamp = "#9ccfd8"      # Foam - timestamps
 message_delivery_count = "#eb6f92" # Rose - delivery counts
@@ -55,4 +55,4 @@ help_section_title = "#eb6f92"   # Rose - help section titles
 
 # === Popup System Colors (used by confirmation popup) ===
 popup_background = "#1f1d2e" # Slightly different from main bg
-popup_text = "#6e6a86"       # Muted text - secondary text 
+popup_text = "#6e6a86"       # Muted text - secondary text

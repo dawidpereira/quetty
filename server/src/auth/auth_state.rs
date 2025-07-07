@@ -35,7 +35,6 @@ struct AuthState {
     refresh_handle: Option<JoinHandle<()>>,
 }
 
-
 pub struct AuthStateManager {
     inner: Arc<RwLock<AuthState>>,
     token_cache: TokenCache,

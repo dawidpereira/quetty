@@ -137,7 +137,7 @@ return None;
 // Enhanced error reporting
 self.error_reporter.report_with_suggestion(
     e,
-    "ComponentName", 
+    "ComponentName",
     "operation_name",
     "User-friendly message",
     "Helpful suggestion"
@@ -150,7 +150,7 @@ self.error_reporter.report_with_suggestion(
 ```rust
 pub fn handle_consumer_created(&mut self, consumer: Consumer) -> Option<Msg> {
     self.queue_state.consumer = Some(Arc::new(Mutex::new(consumer)));
-    
+
     if let Err(e) = self.load_messages() {
         self.error_reporter.report_with_suggestion(
             e,
@@ -215,9 +215,9 @@ fn test_error_reporting() {
     let (tx, rx) = mpsc::channel();
     let reporter = ErrorReporter::new(tx);
     let error = AppError::Config("Test error".to_string());
-    
+
     reporter.report_simple(error, "TestComponent", "test_operation");
-    
+
     let msg = rx.recv().unwrap();
     assert!(matches!(msg, Msg::PopupActivity(PopupActivityMsg::ShowError(_))));
 }
@@ -229,13 +229,13 @@ fn test_error_reporting() {
 fn test_warning_severity() {
     let (tx, rx) = mpsc::channel();
     let reporter = ErrorReporter::new(tx);
-    
+
     reporter.report_warning(
         AppError::Component("Warning message".to_string()),
         "TestComponent",
         "test_operation"
     );
-    
+
     let msg = rx.recv().unwrap();
     assert!(matches!(msg, Msg::PopupActivity(PopupActivityMsg::ShowWarning(_))));
 }
@@ -244,13 +244,13 @@ fn test_warning_severity() {
 fn test_info_no_popup() {
     let (tx, rx) = mpsc::channel();
     let reporter = ErrorReporter::new(tx);
-    
+
     reporter.report_info(
         AppError::Component("Info message".to_string()),
         "TestComponent",
         "test_operation"
     );
-    
+
     // Info level should not send popup messages
     assert!(rx.try_recv().is_err());
 }
@@ -329,14 +329,13 @@ if let Err(e) = operation() {
 
 The enhanced error handling system provides:
 
-✅ **Unified Architecture**: Single ErrorReporter instance across the entire application  
-✅ **Severity Levels**: Info, Warning, Error, Critical with appropriate UI responses  
-✅ **User-Friendly Messages**: Automatic generation of helpful error messages  
-✅ **Rich Context**: Technical details, suggestions, and contextual information  
-✅ **Builder Pattern**: Flexible error context creation  
-✅ **Async Safety**: Clone-based sharing for thread-safe async operations  
-✅ **Comprehensive Testing**: Full test coverage for all error reporting features  
-✅ **Zero Breaking Changes**: Backward compatibility maintained  
+✅ **Unified Architecture**: Single ErrorReporter instance across the entire application
+✅ **Severity Levels**: Info, Warning, Error, Critical with appropriate UI responses
+✅ **User-Friendly Messages**: Automatic generation of helpful error messages
+✅ **Rich Context**: Technical details, suggestions, and contextual information
+✅ **Builder Pattern**: Flexible error context creation
+✅ **Async Safety**: Clone-based sharing for thread-safe async operations
+✅ **Comprehensive Testing**: Full test coverage for all error reporting features
+✅ **Zero Breaking Changes**: Backward compatibility maintained
 
 This system ensures consistent, helpful, and user-friendly error handling throughout the Quetty application while providing developers with rich debugging information.
- 

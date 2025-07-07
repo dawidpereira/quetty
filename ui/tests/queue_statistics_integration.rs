@@ -9,7 +9,7 @@ fn create_mock_azure_ad_config() -> AzureAdConfig {
     serde_json::from_str(
         r#"{
         "tenant_id": "test-tenant-id",
-        "client_id": "test-client-id", 
+        "client_id": "test-client-id",
         "client_secret": "test-client-secret",
         "subscription_id": "test-subscription-id",
         "resource_group": "test-resource-group",

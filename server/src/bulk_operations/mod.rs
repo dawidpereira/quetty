@@ -4,7 +4,7 @@
 //! It has been refactored into several specialized components:
 //!
 //! - `types`: Common types and data structures
-//! - `resource_guard`: RAII resource management utilities  
+//! - `resource_guard`: RAII resource management utilities
 //! - `deleter`: Message deletion operations
 //! - `handler`: Main coordinator that orchestrates operations
 

@@ -45,4 +45,3 @@ impl From<TokenRefreshError> for crate::service_bus_manager::ServiceBusError {
         }
     }
 }
-

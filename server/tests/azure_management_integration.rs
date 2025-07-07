@@ -13,7 +13,7 @@ mod azure_helpers {
         serde_json::from_str(
             r#"{
             "tenant_id": "test-tenant-id-server",
-            "client_id": "test-client-id-server", 
+            "client_id": "test-client-id-server",
             "client_secret": "test-client-secret-server",
             "subscription_id": "test-subscription-id-server",
             "resource_group": "test-resource-group-server",

@@ -52,4 +52,3 @@ method = "azure_ad"
 # Service Bus configuration
 [servicebus]
 # No connection_string - will be discovered dynamically
-

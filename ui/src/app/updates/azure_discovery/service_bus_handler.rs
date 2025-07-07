@@ -111,4 +111,3 @@ impl ServiceBusHandler {
         Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryComplete))
     }
 }
-

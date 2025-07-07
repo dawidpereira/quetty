@@ -25,7 +25,7 @@ NOTES*
 # Generated html files for live previewing markdown
 *.html
 
-.DS_Store 
+.DS_Store
 .idea
 
 ui/quetty.log
