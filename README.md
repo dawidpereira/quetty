@@ -28,6 +28,25 @@ Quetty is a terminal-based queue manager designed to help you manage and interac
    cargo build
    ```
 
+## Development Setup
+For contributors, set up pre-commit hooks to ensure code quality:
+
+1. Install pre-commit:
+   ```bash
+   pip install pre-commit
+   ```
+2. Install the git hooks:
+   ```bash
+   pre-commit install
+   ```
+
+The pre-commit hooks will automatically:
+- Format code with `cargo fmt`
+- Check code with `cargo check`
+- Lint code with `cargo clippy`
+- Fix trailing whitespace and end-of-file issues
+- Validate YAML and TOML files
+
 ## Project Structure
 - `ui/` - Terminal user interface (main application)
 - `server/` - Core library for Azure Service Bus integration
@@ -73,10 +92,10 @@ Quetty implements an efficient client-side pagination system for browsing throug
 - **Memory Efficient**: Only keeps messages you've actually viewed
 
 ### Navigation:
-- **Next Page (`n` or `]`)**: 
+- **Next Page (`n` or `]`)**:
   - If the page is already loaded → instant switch
   - If new page needed → loads from API and advances
-- **Previous Page (`p` or `[`)**: 
+- **Previous Page (`p` or `[`)**:
   - Always instant using cached messages
   - No API calls required
 
