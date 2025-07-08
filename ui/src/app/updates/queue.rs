@@ -19,7 +19,44 @@ where
 
                 None
             }
+            QueueActivityMsg::QueueSelectedFromManualEntry(queue) => {
+                // First exit editing mode, then select the queue
+                self.set_editing_message(false);
+                if let Err(e) = self.update_global_key_watcher_editing_state() {
+                    self.error_reporter.report_key_watcher_error(e);
+                }
+
+                // Save queue name for connection string auth for future use
+                let config = crate::config::get_config_or_panic();
+                if config.azure_ad().auth_method == "connection_string" {
+                    log::info!("Saving queue name '{queue}' for future connection string usage");
+                    unsafe {
+                        std::env::set_var("SERVICEBUS__QUEUE_NAME", &queue);
+                    }
+
+                    // Also persist to .env file
+                    if let Err(e) = self.save_queue_name_to_env(&queue) {
+                        log::warn!("Failed to save queue name to .env file: {e}");
+                    }
+                }
+
+                // Now select the queue
+                self.queue_state_mut().set_selected_queue(queue);
+                self.new_consumer_for_queue();
+
+                // Load stats for the newly selected queue
+                self.load_stats_for_current_queue();
+
+                None
+            }
             QueueActivityMsg::QueuesLoaded(queues) => {
+                // Stop loading indicator when queues are loaded
+                if let Some(_msg) =
+                    self.update_loading(crate::components::common::LoadingActivityMsg::Stop)
+                {
+                    log::debug!("Loading stopped after queues loaded");
+                }
+
                 if let Err(e) = self.remount_queue_picker(Some(queues)) {
                     self.error_reporter
                         .report_simple(e, "QueueHandler", "update_queue");
@@ -263,5 +300,42 @@ where
         if let Err(e) = self.load_queue_statistics_from_api(&base_queue_name) {
             log::error!("Failed to load queue statistics: {e}");
         }
+    }
+
+    /// Save queue name to .env file for future use
+    fn save_queue_name_to_env(&self, queue_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        use std::fs;
+        use std::path::Path;
+
+        let env_path = Path::new(".env");
+        let mut env_content = String::new();
+        let mut found_queue_name = false;
+
+        // Read existing .env file
+        if env_path.exists() {
+            let existing_content = fs::read_to_string(env_path)?;
+
+            for line in existing_content.lines() {
+                if line.trim().starts_with("SERVICEBUS__QUEUE_NAME=") {
+                    // Replace existing queue name
+                    env_content.push_str(&format!("SERVICEBUS__QUEUE_NAME={queue_name}\n"));
+                    found_queue_name = true;
+                } else {
+                    env_content.push_str(line);
+                    env_content.push('\n');
+                }
+            }
+        }
+
+        // Add queue name if not found
+        if !found_queue_name {
+            env_content.push_str(&format!("SERVICEBUS__QUEUE_NAME={queue_name}\n"));
+        }
+
+        // Write back to file
+        fs::write(env_path, env_content)?;
+        log::debug!("Saved queue name '{queue_name}' to .env file");
+
+        Ok(())
     }
 }

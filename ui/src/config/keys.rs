@@ -1,12 +1,13 @@
 use serde::Deserialize;
 
 /// Key bindings configuration
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, Clone)]
 pub struct KeyBindingsConfig {
     // Global keys
     key_quit: Option<char>,
     key_help: Option<char>,
     key_theme: Option<char>,
+    key_config: Option<char>,
 
     // Navigation keys
     key_down: Option<char>,
@@ -61,6 +62,10 @@ impl KeyBindingsConfig {
 
     pub fn theme(&self) -> char {
         self.key_theme.unwrap_or('t')
+    }
+
+    pub fn config(&self) -> char {
+        self.key_config.unwrap_or('C')
     }
 
     // Navigation keys

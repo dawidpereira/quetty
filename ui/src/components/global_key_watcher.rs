@@ -44,20 +44,28 @@ impl Component<Msg, NoUserEvent> for GlobalKeyWatcher {
                     Some(Msg::ToggleHelpScreen)
                 } else if c == keys.theme() {
                     Some(Msg::ToggleThemePicker)
+                } else if c == keys.config() {
+                    Some(Msg::ToggleConfigScreen)
                 } else {
                     None
                 }
             }
             Event::Keyboard(KeyEvent {
-                code: Key::Char(_),
+                code: Key::Char(c),
                 modifiers: KeyModifiers::SHIFT,
             }) => {
                 // When editing, ignore all keys with shift modifiers
                 if self.is_editing {
                     return None;
                 }
-                // Currently no global keys use shift modifier, so return None
-                None
+
+                let keys = config::get_config_or_panic().keys();
+                // Handle Shift+C for config (uppercase C)
+                if c.eq_ignore_ascii_case(&keys.config()) {
+                    Some(Msg::ToggleConfigScreen)
+                } else {
+                    None
+                }
             }
             _ => None,
         }

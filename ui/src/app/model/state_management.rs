@@ -24,6 +24,7 @@ where
             AppState::Loading => ComponentId::LoadingIndicator,
             AppState::HelpScreen => ComponentId::HelpScreen,
             AppState::ThemePicker => ComponentId::ThemePicker,
+            AppState::ConfigScreen => ComponentId::ConfigScreen,
             AppState::AzureDiscovery => {
                 // Determine which Azure discovery component is actually mounted
                 if self.app.mounted(&ComponentId::NamespacePicker) {
@@ -90,6 +91,7 @@ where
                 AppState::Loading => with_popup(&mut self.app, f, &chunks, view_loading),
                 AppState::HelpScreen => with_popup(&mut self.app, f, &chunks, view_help_screen),
                 AppState::ThemePicker => view_theme_picker(&mut self.app, f, &chunks),
+                AppState::ConfigScreen => view_config_screen(&mut self.app, f, &chunks),
                 AppState::AzureDiscovery => {
                     // During Azure discovery, show the current picker (subscription, resource group, or namespace)
                     with_popup(&mut self.app, f, &chunks, view_azure_discovery)

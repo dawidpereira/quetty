@@ -287,6 +287,17 @@ pub fn view_theme_picker(
     Ok(())
 }
 
+pub fn view_config_screen(
+    app: &mut Application<ComponentId, Msg, NoUserEvent>,
+    f: &mut Frame,
+    _chunks: &[Rect],
+) -> Result<(), AppError> {
+    app.view(&ComponentId::ConfigScreen, f, f.area());
+    app.active(&ComponentId::ConfigScreen)
+        .map_err(|e| AppError::Component(e.to_string()))?;
+    Ok(())
+}
+
 // View function for auth popup using standardized sizing
 pub fn view_auth_popup(
     app: &mut Application<ComponentId, Msg, NoUserEvent>,

@@ -187,21 +187,54 @@ where
         // Reset any previous discovery state
         self.state_manager.reset_azure_discovery_state();
 
+        // Reload configuration to pick up any environment variables that may have been written
+        if let Err(e) = crate::config::reload_config() {
+            log::warn!("Failed to reload configuration before discovery: {e}");
+        }
+
         // Check if we already have a connection string configured
         let config = crate::config::get_config_or_panic();
-        if config.servicebus().connection_string().is_some() {
-            log::info!("Connection string already configured, skipping discovery");
+
+        // For device code flow, allow discovery even if connection string exists
+        // This enables users to discover different Azure resources
+        if config.servicebus().connection_string().is_some()
+            && config.azure_ad().auth_method != "device_code"
+        {
+            log::info!(
+                "Connection string already configured and not using device code flow, skipping discovery"
+            );
             return Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryComplete));
         }
 
         let azure_ad_config = config.azure_ad();
 
         // Check if we have all required Azure AD config to skip discovery
-        if let (Ok(subscription_id), Ok(resource_group), Ok(namespace)) = (
-            azure_ad_config.subscription_id(),
-            azure_ad_config.resource_group(),
-            azure_ad_config.namespace(),
-        ) {
+        log::debug!("Checking Azure AD configuration completeness:");
+        log::debug!(
+            "  has_subscription_id: {}",
+            azure_ad_config.has_subscription_id()
+        );
+        log::debug!(
+            "  has_resource_group: {}",
+            azure_ad_config.has_resource_group()
+        );
+        log::debug!("  has_namespace: {}", azure_ad_config.has_namespace());
+
+        if azure_ad_config.has_subscription_id()
+            && azure_ad_config.has_resource_group()
+            && azure_ad_config.has_namespace()
+        {
+            // All required fields are present, get them and fetch connection string directly
+            let subscription_id = azure_ad_config
+                .subscription_id()
+                .expect("subscription_id should be present");
+            let resource_group = azure_ad_config
+                .resource_group()
+                .expect("resource_group should be present");
+            let namespace = azure_ad_config
+                .namespace()
+                .expect("namespace should be present");
+
             log::info!(
                 "Azure AD config complete, skipping discovery and fetching connection string directly"
             );

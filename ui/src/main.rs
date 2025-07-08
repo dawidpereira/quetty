@@ -5,6 +5,7 @@ mod error;
 mod logger;
 mod services;
 mod theme;
+mod utils;
 mod validation;
 
 use app::application_lifecycle::ApplicationLifecycle;

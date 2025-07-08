@@ -9,6 +9,7 @@ pub mod error;
 pub mod logger;
 pub mod services;
 pub mod theme;
+pub mod utils;
 pub mod validation;
 
 // Re-export commonly used types for easier access in tests

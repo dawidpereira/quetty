@@ -3,13 +3,14 @@ use super::{
     validation::ConfigValidationError,
 };
 use crate::theme::types::ThemeConfig;
+use crate::utils::auth::{AUTH_METHOD_DEVICE_CODE, AuthUtils};
 use serde::Deserialize;
 use server::bulk_operations::BatchConfig;
 use server::service_bus_manager::AzureAdConfig;
 use std::time::Duration;
 
 /// Main application configuration
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AppConfig {
     page_size: Option<u32>,
     crossterm_input_listener_interval_ms: Option<u64>,
@@ -218,7 +219,7 @@ impl AppConfig {
                     });
                 }
             }
-            "device_code" | "client_credentials" | "managed_identity" => {
+            AUTH_METHOD_DEVICE_CODE | "managed_identity" => {
                 // Validate Azure AD configuration for these auth methods
                 self.validate_azure_ad_config(errors);
             }
@@ -232,18 +233,23 @@ impl AppConfig {
 
     /// Validate Azure AD specific configuration
     fn validate_azure_ad_config(&self, errors: &mut Vec<ConfigValidationError>) {
-        let flow = &self.azure_ad.auth_method;
+        let auth_method = &self.azure_ad.auth_method;
 
-        // Validate flow type
-        match flow.as_str() {
-            "device_code" => {}
+        // Validate authentication method
+        match auth_method.as_str() {
+            AUTH_METHOD_DEVICE_CODE => self.validate_device_code_config(errors),
+            "managed_identity" => self.validate_managed_identity_config(errors),
             _ => {
-                errors.push(ConfigValidationError::InvalidAzureAdFlow { flow: flow.clone() });
-                return; // No point validating fields if flow is invalid
+                errors.push(ConfigValidationError::InvalidAzureAdFlow {
+                    flow: auth_method.clone(),
+                });
             }
         }
+    }
 
-        // Common required fields for device_code flow
+    /// Validate device code flow configuration
+    fn validate_device_code_config(&self, errors: &mut Vec<ConfigValidationError>) {
+        // Required fields for device code flow
         if !self.azure_ad.has_tenant_id() && std::env::var("AZURE_AD__TENANT_ID").is_err() {
             errors.push(ConfigValidationError::MissingAzureAdField {
                 field: "tenant_id".to_string(),
@@ -255,9 +261,19 @@ impl AppConfig {
             });
         }
 
-        // Fields required for management API operations (optional with device code flow)
-        // With device code flow, these can be discovered interactively after authentication
-        if self.queue_stats_use_management_api() && flow != "device_code" {
+        // Optional fields for management API operations
+        if self.queue_stats_use_management_api() {
+            // These are optional with device code flow as they can be discovered interactively
+            log::debug!(
+                "Device code flow with management API - optional fields can be discovered interactively"
+            );
+        }
+    }
+
+    /// Validate managed identity configuration
+    fn validate_managed_identity_config(&self, errors: &mut Vec<ConfigValidationError>) {
+        // For managed identity, we might need subscription_id for management API operations
+        if self.queue_stats_use_management_api() {
             if !self.azure_ad.has_subscription_id()
                 && std::env::var("AZURE_AD__SUBSCRIPTION_ID").is_err()
             {
@@ -278,19 +294,19 @@ impl AppConfig {
                 });
             }
         }
+    }
 
-        // Device code flow specific validations
-        if flow == "device_code" {
-            // Device code flow doesn't need client_secret
-            // Note: Having both connection string and device_code is valid
-            // Azure AD is used for management API, connection string for SDK operations
-
-            // If using device_code without connection string, warn about limitations
-            if self.servicebus.connection_string().is_none() {
-                log::warn!(
-                    "Using Azure AD device code flow without a connection string. Note that Service Bus SDK operations will be limited due to SDK constraints."
-                );
-            }
+    /// Check if all required fields are present for the configured authentication method
+    pub fn has_required_auth_fields(&self) -> bool {
+        if AuthUtils::is_connection_string_auth(self) {
+            self.servicebus.connection_string().is_some()
+        } else if AuthUtils::is_device_code_auth(self) {
+            (self.azure_ad.has_tenant_id() || std::env::var("AZURE_AD__TENANT_ID").is_ok())
+                && (self.azure_ad.has_client_id() || std::env::var("AZURE_AD__CLIENT_ID").is_ok())
+        } else if self.azure_ad.auth_method == "managed_identity" {
+            true // Managed identity doesn't require explicit config
+        } else {
+            false
         }
     }
 }

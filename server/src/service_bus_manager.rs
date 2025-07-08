@@ -21,6 +21,8 @@ pub mod queue_statistics_service;
 pub mod responses;
 pub mod types;
 
+use crate::utils::env::EnvUtils;
+
 #[derive(Clone, Debug, serde::Deserialize, Default)]
 pub struct AzureAdConfig {
     #[serde(default = "default_auth_method")]
@@ -59,25 +61,37 @@ impl AzureAdConfig {
             ))
     }
 
-    pub fn subscription_id(&self) -> Result<&str, ServiceBusError> {
-        self.subscription_id.as_deref()
-            .ok_or_else(|| ServiceBusError::ConfigurationError(
-                "AZURE_AD__SUBSCRIPTION_ID is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
-            ))
+    pub fn subscription_id(&self) -> Result<String, ServiceBusError> {
+        if let Some(ref id) = self.subscription_id {
+            Ok(id.clone())
+        } else {
+            EnvUtils::get_validated_var("AZURE_AD__SUBSCRIPTION_ID")
+                .map_err(|_| ServiceBusError::ConfigurationError(
+                    "AZURE_AD__SUBSCRIPTION_ID is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
+                ))
+        }
     }
 
-    pub fn resource_group(&self) -> Result<&str, ServiceBusError> {
-        self.resource_group.as_deref()
-            .ok_or_else(|| ServiceBusError::ConfigurationError(
-                "AZURE_AD__RESOURCE_GROUP is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
-            ))
+    pub fn resource_group(&self) -> Result<String, ServiceBusError> {
+        if let Some(ref group) = self.resource_group {
+            Ok(group.clone())
+        } else {
+            EnvUtils::get_validated_var("AZURE_AD__RESOURCE_GROUP")
+                .map_err(|_| ServiceBusError::ConfigurationError(
+                    "AZURE_AD__RESOURCE_GROUP is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
+                ))
+        }
     }
 
-    pub fn namespace(&self) -> Result<&str, ServiceBusError> {
-        self.namespace.as_deref()
-            .ok_or_else(|| ServiceBusError::ConfigurationError(
-                "AZURE_AD__NAMESPACE is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
-            ))
+    pub fn namespace(&self) -> Result<String, ServiceBusError> {
+        if let Some(ref ns) = self.namespace {
+            Ok(ns.clone())
+        } else {
+            EnvUtils::get_validated_var("AZURE_AD__NAMESPACE")
+                .map_err(|_| ServiceBusError::ConfigurationError(
+                    "AZURE_AD__NAMESPACE is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
+                ))
+        }
     }
 
     // Helper methods for validation - check if fields are present in config (not env vars)
@@ -94,15 +108,15 @@ impl AzureAdConfig {
     }
 
     pub fn has_subscription_id(&self) -> bool {
-        self.subscription_id.is_some()
+        self.subscription_id.is_some() || EnvUtils::has_non_empty_var("AZURE_AD__SUBSCRIPTION_ID")
     }
 
     pub fn has_resource_group(&self) -> bool {
-        self.resource_group.is_some()
+        self.resource_group.is_some() || EnvUtils::has_non_empty_var("AZURE_AD__RESOURCE_GROUP")
     }
 
     pub fn has_namespace(&self) -> bool {
-        self.namespace.is_some()
+        self.namespace.is_some() || EnvUtils::has_non_empty_var("AZURE_AD__NAMESPACE")
     }
 
     /// Azure AD operations using the new auth system

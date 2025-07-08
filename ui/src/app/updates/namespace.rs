@@ -11,8 +11,19 @@ where
 {
     pub fn update_namespace(&mut self, msg: NamespaceActivityMsg) -> Option<Msg> {
         match msg {
-            NamespaceActivityMsg::NamespacesLoaded(namespace) => {
-                if let Err(e) = self.remount_namespace_picker(Some(namespace)) {
+            NamespaceActivityMsg::NamespacesLoaded(namespaces) => {
+                // If there's only one namespace (e.g., from connection string), automatically select it
+                if namespaces.len() == 1 {
+                    log::info!(
+                        "Only one namespace available, automatically selecting: {}",
+                        namespaces[0]
+                    );
+                    self.set_selected_namespace(Some(namespaces[0].clone()));
+                    return self.handle_namespace_selection();
+                }
+
+                // Multiple namespaces - show picker
+                if let Err(e) = self.remount_namespace_picker(Some(namespaces)) {
                     self.error_reporter
                         .report_simple(e, "NamespaceHandler", "update_namespace");
                 }
@@ -101,45 +112,53 @@ where
 
     /// Handle namespace selection by storing the selected namespace and loading queues
     fn handle_namespace_selection(&mut self) -> Option<Msg> {
-        // Store the currently selected namespace from the namespace picker component
-        if let Ok(State::One(tuirealm::StateValue::String(namespace))) =
+        // Try to get namespace from component state first, then fall back to stored state
+        let namespace = if let Ok(State::One(tuirealm::StateValue::String(ns))) =
             self.app.state(&ComponentId::NamespacePicker)
         {
-            log::info!("Selected namespace: {namespace}");
+            log::info!("Selected namespace from component: {ns}");
+            ns
+        } else if let Some(stored_namespace) = &self.state_manager.selected_namespace {
+            log::info!("Using stored namespace: {stored_namespace}");
+            stored_namespace.clone()
+        } else {
+            log::error!("No namespace available in component state or stored state");
+            return None;
+        };
 
-            // Store the selected namespace first
-            self.set_selected_namespace(Some(namespace.clone()));
+        log::info!("Processing namespace selection: {namespace}");
 
-            // Check if we're in discovery mode and need to fetch connection string
-            if self.state_manager.discovered_connection_string.is_none()
-                && self.state_manager.selected_subscription.is_some()
-                && self.state_manager.selected_resource_group.is_some()
+        // Store the selected namespace first
+        self.set_selected_namespace(Some(namespace.clone()));
+
+        // Check if we're in discovery mode and need to fetch connection string
+        if self.state_manager.discovered_connection_string.is_none()
+            && self.state_manager.selected_subscription.is_some()
+            && self.state_manager.selected_resource_group.is_some()
+        {
+            // Find the full namespace object
+            if let Some(_ns) = self
+                .state_manager
+                .discovered_namespaces
+                .iter()
+                .find(|n| n.name == namespace)
             {
-                // Find the full namespace object
-                if let Some(_ns) = self
-                    .state_manager
-                    .discovered_namespaces
-                    .iter()
-                    .find(|n| n.name == namespace)
-                {
-                    let subscription_id = self.state_manager.selected_subscription.clone().unwrap();
-                    let resource_group =
-                        self.state_manager.selected_resource_group.clone().unwrap();
+                let subscription_id = self.state_manager.selected_subscription.clone().unwrap();
+                let resource_group = self.state_manager.selected_resource_group.clone().unwrap();
 
-                    return Some(Msg::AzureDiscovery(
-                        AzureDiscoveryMsg::FetchingConnectionString {
-                            subscription_id,
-                            resource_group,
-                            namespace: namespace.clone(),
-                        },
-                    ));
-                }
+                return Some(Msg::AzureDiscovery(
+                    AzureDiscoveryMsg::FetchingConnectionString {
+                        subscription_id,
+                        resource_group,
+                        namespace: namespace.clone(),
+                    },
+                ));
             }
         }
 
         // Check if we're using discovered resources (no subscription ID in config)
         let config = crate::config::get_config_or_panic();
-        let has_subscription_id = config.azure_ad().subscription_id().is_ok();
+        let has_subscription_id = config.azure_ad().has_subscription_id();
 
         if !has_subscription_id && self.state_manager.discovered_connection_string.is_some() {
             // We're in discovery mode
@@ -172,6 +191,8 @@ where
             }
         } else {
             // Normal mode with subscription ID configured
+            // For all authentication methods, proceed to queue discovery
+
             self.load_queues();
         }
 

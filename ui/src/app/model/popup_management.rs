@@ -237,6 +237,60 @@ where
         Ok(())
     }
 
+    pub fn mount_config_screen(&mut self) -> AppResult<()> {
+        use crate::components::config_screen::ConfigScreen;
+
+        // Check if config screen is already mounted and active
+        if self.app.mounted(&ComponentId::ConfigScreen)
+            && self.state_manager.app_state == AppState::ConfigScreen
+        {
+            log::debug!("ConfigScreen already mounted and active, skipping");
+            return Ok(());
+        }
+
+        // Store the current state so we can return to it
+        self.state_manager.previous_state = Some(self.state_manager.app_state.clone());
+
+        // Mount config screen with ComponentState pattern using extension trait
+        self.app.remount_with_state(
+            ComponentId::ConfigScreen,
+            ConfigScreen::new(),
+            vec![Sub::new(SubEventClause::Any, SubClause::Always)],
+        )?;
+
+        self.app
+            .active(&ComponentId::ConfigScreen)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        self.state_manager.app_state = AppState::ConfigScreen;
+        self.set_redraw(true);
+
+        Ok(())
+    }
+
+    pub fn unmount_config_screen(&mut self) -> AppResult<()> {
+        // Check if config screen is actually mounted before trying to unmount
+        if !self.app.mounted(&ComponentId::ConfigScreen) {
+            log::debug!("ConfigScreen not mounted, skipping unmount");
+        } else {
+            self.app
+                .umount(&ComponentId::ConfigScreen)
+                .map_err(|e| AppError::Component(e.to_string()))?;
+        }
+
+        // Return to previous state
+        if let Some(prev_state) = self.state_manager.previous_state.take() {
+            self.state_manager.app_state = prev_state;
+        } else {
+            self.state_manager.app_state = AppState::NamespacePicker;
+        }
+
+        // Return to appropriate component based on state
+        self.activate_component_for_current_state()?;
+        self.set_redraw(true);
+        Ok(())
+    }
+
     /// Update the GlobalKeyWatcher's editing state
     pub fn update_global_key_watcher_editing_state(&mut self) -> AppResult<()> {
         self.app
@@ -296,6 +350,11 @@ where
                 self.state_manager.app_state = AppState::NamespacePicker;
                 self.app
                     .active(&ComponentId::NamespacePicker)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::ConfigScreen => {
+                self.app
+                    .active(&ComponentId::ConfigScreen)
                     .map_err(|e| AppError::Component(e.to_string()))?;
             }
             AppState::AzureDiscovery => {

@@ -5,6 +5,7 @@ use server::model::MessageModel;
 use server::service_bus_manager::QueueInfo;
 use std::fmt;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 // Re-export QueueType from service bus instead of defining locally
 pub use server::service_bus_manager::QueueType;
@@ -24,6 +25,7 @@ pub enum ComponentId {
     PageSizePopup,
     HelpScreen,
     ThemePicker,
+    ConfigScreen,
     TextLabel,
     AuthPopup,
     SubscriptionPicker,
@@ -47,6 +49,7 @@ impl fmt::Display for ComponentId {
             ComponentId::NumberInputPopup => write!(f, "NumberInputPopup"),
             ComponentId::PageSizePopup => write!(f, "PageSizePopup"),
             ComponentId::ThemePicker => write!(f, "ThemePicker"),
+            ComponentId::ConfigScreen => write!(f, "ConfigScreen"),
             ComponentId::AuthPopup => write!(f, "AuthPopup"),
             ComponentId::SubscriptionPicker => write!(f, "SubscriptionPicker"),
             ComponentId::ResourceGroupPicker => write!(f, "ResourceGroupPicker"),
@@ -54,7 +57,6 @@ impl fmt::Display for ComponentId {
     }
 }
 
-#[derive(Debug, PartialEq)]
 pub enum Msg {
     AppClose,
     ForceRedraw,
@@ -72,10 +74,75 @@ pub enum Msg {
     ClipboardError(String),
     ToggleHelpScreen,
     ToggleThemePicker,
+    ToggleConfigScreen,
     AuthActivity(AuthActivityMsg),
+    ConfigActivity(ConfigActivityMsg),
+    SetEditingMode(bool),
     SubscriptionSelection(SubscriptionSelectionMsg),
     ResourceGroupSelection(ResourceGroupSelectionMsg),
     AzureDiscovery(AzureDiscoveryMsg),
+    SetServiceBusManager(Arc<Mutex<server::service_bus_manager::ServiceBusManager>>),
+}
+
+impl std::fmt::Debug for Msg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Msg::AppClose => write!(f, "AppClose"),
+            Msg::ForceRedraw => write!(f, "ForceRedraw"),
+            Msg::Tick => write!(f, "Tick"),
+            Msg::MessageActivity(msg) => write!(f, "MessageActivity({msg:?})"),
+            Msg::QueueActivity(msg) => write!(f, "QueueActivity({msg:?})"),
+            Msg::NamespaceActivity(msg) => write!(f, "NamespaceActivity({msg:?})"),
+            Msg::ThemeActivity(msg) => write!(f, "ThemeActivity({msg:?})"),
+            Msg::LoadingActivity(msg) => write!(f, "LoadingActivity({msg:?})"),
+            Msg::PopupActivity(msg) => write!(f, "PopupActivity({msg:?})"),
+            Msg::Error(err) => write!(f, "Error({err:?})"),
+            Msg::ShowError(msg) => write!(f, "ShowError({msg:?})"),
+            Msg::ShowSuccess(msg) => write!(f, "ShowSuccess({msg:?})"),
+            Msg::ClipboardError(msg) => write!(f, "ClipboardError({msg:?})"),
+            Msg::ToggleHelpScreen => write!(f, "ToggleHelpScreen"),
+            Msg::ToggleThemePicker => write!(f, "ToggleThemePicker"),
+            Msg::ToggleConfigScreen => write!(f, "ToggleConfigScreen"),
+            Msg::AuthActivity(msg) => write!(f, "AuthActivity({msg:?})"),
+            Msg::ConfigActivity(msg) => write!(f, "ConfigActivity({msg:?})"),
+            Msg::SetEditingMode(editing) => write!(f, "SetEditingMode({editing})"),
+            Msg::SubscriptionSelection(msg) => write!(f, "SubscriptionSelection({msg:?})"),
+            Msg::ResourceGroupSelection(msg) => write!(f, "ResourceGroupSelection({msg:?})"),
+            Msg::AzureDiscovery(msg) => write!(f, "AzureDiscovery({msg:?})"),
+            Msg::SetServiceBusManager(_) => write!(f, "SetServiceBusManager(<ServiceBusManager>)"),
+        }
+    }
+}
+
+impl PartialEq for Msg {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Msg::AppClose, Msg::AppClose) => true,
+            (Msg::ForceRedraw, Msg::ForceRedraw) => true,
+            (Msg::Tick, Msg::Tick) => true,
+            (Msg::MessageActivity(a), Msg::MessageActivity(b)) => a == b,
+            (Msg::QueueActivity(a), Msg::QueueActivity(b)) => a == b,
+            (Msg::NamespaceActivity(a), Msg::NamespaceActivity(b)) => a == b,
+            (Msg::ThemeActivity(a), Msg::ThemeActivity(b)) => a == b,
+            (Msg::LoadingActivity(a), Msg::LoadingActivity(b)) => a == b,
+            (Msg::PopupActivity(a), Msg::PopupActivity(b)) => a == b,
+            (Msg::Error(a), Msg::Error(b)) => a == b,
+            (Msg::ShowError(a), Msg::ShowError(b)) => a == b,
+            (Msg::ShowSuccess(a), Msg::ShowSuccess(b)) => a == b,
+            (Msg::ClipboardError(a), Msg::ClipboardError(b)) => a == b,
+            (Msg::ToggleHelpScreen, Msg::ToggleHelpScreen) => true,
+            (Msg::ToggleThemePicker, Msg::ToggleThemePicker) => true,
+            (Msg::ToggleConfigScreen, Msg::ToggleConfigScreen) => true,
+            (Msg::AuthActivity(a), Msg::AuthActivity(b)) => a == b,
+            (Msg::ConfigActivity(a), Msg::ConfigActivity(b)) => a == b,
+            (Msg::SetEditingMode(a), Msg::SetEditingMode(b)) => a == b,
+            (Msg::SubscriptionSelection(a), Msg::SubscriptionSelection(b)) => a == b,
+            (Msg::ResourceGroupSelection(a), Msg::ResourceGroupSelection(b)) => a == b,
+            (Msg::AzureDiscovery(a), Msg::AzureDiscovery(b)) => a == b,
+            (Msg::SetServiceBusManager(_), Msg::SetServiceBusManager(_)) => false, // Never equal since we can't compare ServiceBusManager
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -93,6 +160,7 @@ pub enum AuthActivityMsg {
     CopyDeviceCode,
     OpenVerificationUrl,
     TokenRefreshFailed(String),
+    CreateServiceBusManager,
 }
 
 #[derive(Debug, PartialEq)]
@@ -109,6 +177,33 @@ pub enum ThemeActivityMsg {
     ThemePickerClosed,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct ConfigUpdateData {
+    pub auth_method: String,
+    pub tenant_id: Option<String>,
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+    pub subscription_id: Option<String>,
+    pub resource_group: Option<String>,
+    pub namespace: Option<String>,
+    pub connection_string: Option<String>,
+    pub queue_name: Option<String>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ConfigActivityMsg {
+    Save(ConfigUpdateData),
+    ConfirmAndProceed(ConfigUpdateData),
+    Cancel,
+    #[allow(dead_code)]
+    FieldChanged {
+        field: String,
+        value: String,
+    },
+    #[allow(dead_code)]
+    AuthMethodChanged(String),
+}
+
 #[derive(Debug, PartialEq)]
 pub enum QueueActivityMsg {
     QueueSelected(String),
@@ -122,6 +217,8 @@ pub enum QueueActivityMsg {
     ExitQueueConfirmed,
     /// Resource disposal completed - finalize the exit process
     ExitQueueFinalized,
+    /// Queue selected from manual entry mode - needs to exit editing mode first
+    QueueSelectedFromManualEntry(String),
 }
 
 #[derive(Debug, PartialEq)]

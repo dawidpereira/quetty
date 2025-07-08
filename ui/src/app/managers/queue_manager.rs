@@ -3,6 +3,8 @@ use crate::app::task_manager::TaskManager;
 use crate::components::common::{MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg};
 use crate::config;
 use crate::error::AppError;
+use crate::utils::auth::AuthUtils;
+use crate::utils::connection_string::ConnectionStringParser;
 use server::service_bus_manager::ServiceBusManager;
 use server::service_bus_manager::{QueueType, ServiceBusCommand, ServiceBusResponse};
 use std::sync::Arc;
@@ -39,11 +41,49 @@ impl QueueManager {
 
     /// Load namespaces using TaskManager with timeout
     pub fn load_namespaces(&self) {
-        // Check if authentication is in progress via a message
-        // We can't directly access state_manager here, so we'll handle this differently
+        let config = config::get_config_or_panic();
+
+        if AuthUtils::is_connection_string_auth(config) {
+            self.load_namespaces_from_connection_string();
+        } else {
+            self.load_namespaces_from_azure_ad();
+        }
+    }
+
+    /// Load namespaces from connection string authentication
+    fn load_namespaces_from_connection_string(&self) {
+        let config = config::get_config_or_panic();
+
+        log::info!(
+            "Using connection string authentication - extracting namespace from connection string"
+        );
+
+        match config.servicebus().connection_string() {
+            Some(connection_string) => {
+                match ConnectionStringParser::extract_namespace(connection_string) {
+                    Ok(namespace) => {
+                        log::info!("Extracted namespace from connection string: {namespace}");
+                        self.send_namespaces_loaded(vec![namespace]);
+                    }
+                    Err(e) => {
+                        log::error!("Failed to extract namespace from connection string: {e}");
+                        self.send_namespaces_loaded(vec![]);
+                    }
+                }
+            }
+            None => {
+                log::error!(
+                    "Connection string authentication configured but no connection string available"
+                );
+                self.send_namespaces_loaded(vec![]);
+            }
+        }
+    }
+
+    /// Load namespaces from Azure AD authentication
+    fn load_namespaces_from_azure_ad(&self) {
         let tx_to_main = self.tx_to_main.clone();
 
-        // Use execute with built-in timeout for namespace loading
         self.task_manager
             .execute("Loading namespaces...", async move {
                 log::debug!("Requesting namespaces from Azure AD");
@@ -71,11 +111,61 @@ impl QueueManager {
             });
     }
 
+    /// Helper method to send namespaces loaded message
+    fn send_namespaces_loaded(&self, namespaces: Vec<String>) {
+        if let Err(e) = self.tx_to_main.send(Msg::NamespaceActivity(
+            NamespaceActivityMsg::NamespacesLoaded(namespaces),
+        )) {
+            log::error!("Failed to send namespace loaded message: {e}");
+        }
+    }
+
     /// Load queues using TaskManager with timeout
     pub fn load_queues(&self) {
+        let config = config::get_config_or_panic();
+
+        if AuthUtils::is_connection_string_auth(config) {
+            self.load_queues_from_connection_string();
+        } else {
+            self.load_queues_from_azure_ad();
+        }
+    }
+
+    /// Load queues from connection string authentication
+    fn load_queues_from_connection_string(&self) {
         let tx_to_main = self.tx_to_main.clone();
 
-        // Use execute with built-in timeout for queue loading
+        // Connection string authentication does not support automatic queue discovery
+        // because Azure Management API requires Azure AD authentication, not SAS tokens.
+        // Connection strings only provide namespace-level access for messaging operations.
+
+        log::info!("Using connection string authentication - checking for saved queue");
+
+        // Check if we have a saved queue name from previous session
+        if let Ok(saved_queue_name) = std::env::var("SERVICEBUS__QUEUE_NAME") {
+            if !saved_queue_name.trim().is_empty() {
+                log::info!(
+                    "Found saved queue name '{saved_queue_name}' for connection string auth, auto-connecting"
+                );
+
+                // Auto-connect to the saved queue
+                if let Err(e) = tx_to_main.send(Msg::QueueActivity(
+                    QueueActivityMsg::QueueSelectedFromManualEntry(saved_queue_name),
+                )) {
+                    log::error!("Failed to send queue selected message: {e}");
+                }
+                return;
+            }
+        }
+
+        log::info!("No saved queue name found, showing manual selection");
+        self.send_empty_queue_list_for_manual_selection();
+    }
+
+    /// Load queues from Azure AD authentication
+    fn load_queues_from_azure_ad(&self) {
+        let tx_to_main = self.tx_to_main.clone();
+
         self.task_manager.execute("Loading queues...", async move {
             log::debug!("Requesting queues from Azure AD");
 
@@ -90,6 +180,28 @@ impl QueueManager {
             log::info!("Loaded {} queues", queues.len());
 
             // Send loaded queues
+            if let Err(e) =
+                tx_to_main.send(Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(queues)))
+            {
+                log::error!("Failed to send queues loaded message: {e}");
+                return Err(AppError::Component(e.to_string()));
+            }
+
+            Ok(())
+        });
+    }
+
+    /// Send empty queue list to trigger manual queue selection UI
+    fn send_empty_queue_list_for_manual_selection(&self) {
+        let tx_to_main = self.tx_to_main.clone();
+
+        self.task_manager.execute("Loading queues...", async move {
+            log::debug!("Connection string auth: Returning empty queue list for manual selection");
+
+            // Return empty queue list to show QueuePicker with manual entry option
+            // This is the expected behavior for connection string authentication
+            let queues = vec![];
+
             if let Err(e) =
                 tx_to_main.send(Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(queues)))
             {

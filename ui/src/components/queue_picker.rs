@@ -16,6 +16,8 @@ const CMD_RESULT_NAMESPACE_UNSELECTED: &str = "NamespaceUnselected";
 pub struct QueuePicker {
     queues: Vec<String>,
     selected: usize,
+    manual_entry_mode: bool,
+    manual_queue_name: String,
 }
 
 impl QueuePicker {
@@ -23,6 +25,8 @@ impl QueuePicker {
         Self {
             queues: queues.unwrap_or_default(),
             selected: 0,
+            manual_entry_mode: false,
+            manual_queue_name: String::new(),
         }
     }
 }
@@ -83,21 +87,40 @@ impl MockComponent for QueuePicker {
         let popup_block =
             PopupBuilder::new("Queue Picker").create_block_with_title("  🗂️  Select a Queue  ");
 
-        if self.queues.is_empty() {
-            // Show a helpful message when no queues are available
+        if self.manual_entry_mode {
+            // Show manual queue entry
+            use tuirealm::ratatui::layout::Alignment;
+            use tuirealm::ratatui::widgets::Paragraph;
+
+            let help_text = format!(
+                "Enter queue name:\n\n{}_\n\n• Press Enter to connect\n• Press ESC to cancel",
+                self.manual_queue_name
+            );
+
+            let paragraph = Paragraph::new(help_text)
+                .block(popup_block)
+                .style(Style::default().fg(ThemeManager::status_info()))
+                .alignment(Alignment::Center);
+
+            frame.render_widget(paragraph, area);
+        } else if self.queues.is_empty() {
+            // Show a helpful message when no queues are available with manual entry option
             use tuirealm::ratatui::layout::Alignment;
             use tuirealm::ratatui::widgets::Paragraph;
 
             let help_text = [
                 "",
-                "No queues available",
+                "🔍 No queues available for automatic discovery",
                 "",
-                "• Press ESC to go back and select a different namespace",
+                "📝 Press 'm' to MANUALLY ENTER a queue name",
+                "⬅️  Press ESC to go back",
+                "",
+                "Note: Connection string authentication requires manual queue entry",
             ];
 
             let paragraph = Paragraph::new(help_text.join("\n"))
                 .block(popup_block)
-                .style(Style::default().fg(ThemeManager::status_warning()))
+                .style(Style::default().fg(ThemeManager::status_info()))
                 .alignment(Alignment::Center);
 
             frame.render_widget(paragraph, area);
@@ -136,25 +159,42 @@ impl Component<Msg, NoUserEvent> for QueuePicker {
             Event::Keyboard(KeyEvent {
                 code: Key::Down, ..
             }) => {
-                if self.selected + 1 < self.queues.len() {
+                if !self.manual_entry_mode && self.selected + 1 < self.queues.len() {
                     self.selected += 1;
+                    CmdResult::Changed(tuirealm::State::One(tuirealm::StateValue::Usize(
+                        self.selected,
+                    )))
+                } else {
+                    CmdResult::None
                 }
-                CmdResult::Changed(tuirealm::State::One(tuirealm::StateValue::Usize(
-                    self.selected,
-                )))
             }
             Event::Keyboard(KeyEvent { code: Key::Up, .. }) => {
-                if self.selected > 0 {
+                if !self.manual_entry_mode && self.selected > 0 {
                     self.selected -= 1;
+                    CmdResult::Changed(tuirealm::State::One(tuirealm::StateValue::Usize(
+                        self.selected,
+                    )))
+                } else {
+                    CmdResult::None
                 }
-                CmdResult::Changed(tuirealm::State::One(tuirealm::StateValue::Usize(
-                    self.selected,
-                )))
             }
             Event::Keyboard(KeyEvent {
                 code: Key::Enter, ..
             }) => {
-                if let Some(queue) = self.queues.get(self.selected).cloned() {
+                if self.manual_entry_mode {
+                    if !self.manual_queue_name.trim().is_empty() {
+                        // Exit manual entry mode before selecting queue
+                        self.manual_entry_mode = false;
+                        CmdResult::Custom(
+                            "QueueSelectedAndExitManualMode",
+                            tuirealm::State::One(tuirealm::StateValue::String(
+                                self.manual_queue_name.clone(),
+                            )),
+                        )
+                    } else {
+                        CmdResult::None
+                    }
+                } else if let Some(queue) = self.queues.get(self.selected).cloned() {
                     CmdResult::Custom(
                         CMD_RESULT_QUEUE_SELECTED,
                         tuirealm::State::One(tuirealm::StateValue::String(queue)),
@@ -163,39 +203,80 @@ impl Component<Msg, NoUserEvent> for QueuePicker {
                     CmdResult::None
                 }
             }
-            Event::Keyboard(KeyEvent { code: Key::Esc, .. }) => CmdResult::Custom(
-                CMD_RESULT_NAMESPACE_UNSELECTED,
-                tuirealm::State::One(tuirealm::StateValue::String("".to_string())),
-            ),
+            Event::Keyboard(KeyEvent { code: Key::Esc, .. }) => {
+                if self.manual_entry_mode {
+                    self.manual_entry_mode = false;
+                    self.manual_queue_name.clear();
+                    CmdResult::Custom(
+                        "SetEditingMode",
+                        tuirealm::State::One(tuirealm::StateValue::Bool(false)),
+                    )
+                } else {
+                    CmdResult::Custom(
+                        CMD_RESULT_NAMESPACE_UNSELECTED,
+                        tuirealm::State::One(tuirealm::StateValue::String("".to_string())),
+                    )
+                }
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Backspace,
+                ..
+            }) => {
+                if self.manual_entry_mode {
+                    self.manual_queue_name.pop();
+                    CmdResult::Changed(tuirealm::State::None)
+                } else {
+                    CmdResult::None
+                }
+            }
             Event::Keyboard(KeyEvent {
                 code: Key::Char(c), ..
             }) => {
-                let keys = config::get_config_or_panic().keys();
-                if c == keys.down() {
-                    if self.selected + 1 < self.queues.len() {
-                        self.selected += 1;
-                    }
-                    CmdResult::Changed(tuirealm::State::One(tuirealm::StateValue::Usize(
-                        self.selected,
-                    )))
-                } else if c == keys.up() {
-                    if self.selected > 0 {
-                        self.selected -= 1;
-                    }
-                    CmdResult::Changed(tuirealm::State::One(tuirealm::StateValue::Usize(
-                        self.selected,
-                    )))
-                } else if c == keys.queue_select() {
-                    if let Some(queue) = self.queues.get(self.selected).cloned() {
-                        CmdResult::Custom(
-                            CMD_RESULT_QUEUE_SELECTED,
-                            tuirealm::State::One(tuirealm::StateValue::String(queue)),
-                        )
+                if self.manual_entry_mode {
+                    // In manual entry mode, add character to queue name
+                    if self.manual_queue_name.len() < 64 {
+                        // Reasonable limit
+                        self.manual_queue_name.push(c);
+                        CmdResult::Changed(tuirealm::State::None)
                     } else {
                         CmdResult::None
                     }
                 } else {
-                    CmdResult::None
+                    let keys = config::get_config_or_panic().keys();
+                    if c == 'm' {
+                        // Enter manual entry mode
+                        self.manual_entry_mode = true;
+                        self.manual_queue_name.clear();
+                        CmdResult::Custom(
+                            "SetEditingMode",
+                            tuirealm::State::One(tuirealm::StateValue::Bool(true)),
+                        )
+                    } else if c == keys.down() {
+                        if self.selected + 1 < self.queues.len() {
+                            self.selected += 1;
+                        }
+                        CmdResult::Changed(tuirealm::State::One(tuirealm::StateValue::Usize(
+                            self.selected,
+                        )))
+                    } else if c == keys.up() {
+                        if self.selected > 0 {
+                            self.selected -= 1;
+                        }
+                        CmdResult::Changed(tuirealm::State::One(tuirealm::StateValue::Usize(
+                            self.selected,
+                        )))
+                    } else if c == keys.queue_select() {
+                        if let Some(queue) = self.queues.get(self.selected).cloned() {
+                            CmdResult::Custom(
+                                CMD_RESULT_QUEUE_SELECTED,
+                                tuirealm::State::One(tuirealm::StateValue::String(queue)),
+                            )
+                        } else {
+                            CmdResult::None
+                        }
+                    } else {
+                        CmdResult::None
+                    }
                 }
             }
             _ => CmdResult::None,
@@ -209,9 +290,25 @@ impl Component<Msg, NoUserEvent> for QueuePicker {
                     None
                 }
             }
+            CmdResult::Custom("QueueSelectedAndExitManualMode", state) => {
+                if let tuirealm::State::One(tuirealm::StateValue::String(queue)) = state {
+                    Some(Msg::QueueActivity(
+                        QueueActivityMsg::QueueSelectedFromManualEntry(queue),
+                    ))
+                } else {
+                    None
+                }
+            }
             CmdResult::Custom(CMD_RESULT_NAMESPACE_UNSELECTED, _) => Some(Msg::NamespaceActivity(
                 NamespaceActivityMsg::NamespaceUnselected,
             )),
+            CmdResult::Custom("SetEditingMode", state) => {
+                if let tuirealm::State::One(tuirealm::StateValue::Bool(editing)) = state {
+                    Some(Msg::SetEditingMode(editing))
+                } else {
+                    None
+                }
+            }
             CmdResult::Changed(_) => Some(Msg::ForceRedraw),
             _ => None,
         }

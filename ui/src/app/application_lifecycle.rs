@@ -9,7 +9,7 @@ use crate::config::{self, AppConfig, ConfigValidationError};
 use crate::error::{AppError, ErrorReporter};
 use crate::theme::{ThemeConfig, ThemeManager};
 
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use std::error::Error as StdError;
 use tuirealm::application::PollStrategy;
 use tuirealm::terminal::CrosstermTerminalAdapter;
@@ -227,6 +227,23 @@ impl ApplicationLifecycle {
                 "Configuration validation failed with {} errors",
                 validation_errors.len()
             );
+
+            // Check if the validation errors are only related to missing authentication fields
+            // If so, allow the application to start and show the config screen instead of exiting
+            let only_auth_errors =
+                validation_errors.iter().all(|error| {
+                    matches!(error,
+                    crate::config::validation::ConfigValidationError::MissingAzureAdField { .. } |
+                    crate::config::validation::ConfigValidationError::ConflictingAuthConfig { .. }
+                )
+                });
+
+            if only_auth_errors {
+                warn!("Configuration has missing authentication fields - will show config screen");
+                return Ok(()); // Allow startup to continue
+            }
+
+            // For other validation errors, still show error and exit
             Self::show_config_error_and_exit(validation_errors).await?;
             return Err("Configuration validation failed".into());
         }
@@ -291,6 +308,7 @@ impl ApplicationLifecycle {
             Self::process_single_iteration(model)?;
         }
 
+        info!("Application loop exited");
         Ok(())
     }
 

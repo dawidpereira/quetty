@@ -14,6 +14,7 @@ pub enum AppState {
     Loading,
     HelpScreen,
     ThemePicker,
+    ConfigScreen,
     AzureDiscovery,
 }
 
@@ -120,6 +121,10 @@ impl StateManager {
             // Theme picker transitions
             (AppState::ThemePicker, _) => true,
             (_, AppState::ThemePicker) => true,
+
+            // Config screen transitions
+            (AppState::ConfigScreen, _) => true,
+            (_, AppState::ConfigScreen) => true,
 
             // Azure discovery transitions
             (AppState::AzureDiscovery, AppState::NamespacePicker) => {

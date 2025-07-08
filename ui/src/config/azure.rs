@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 /// Service Bus configuration
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, Clone)]
 pub struct ServicebusConfig {
     connection_string: Option<String>,
 }
@@ -9,6 +9,8 @@ pub struct ServicebusConfig {
 impl ServicebusConfig {
     /// Get the Service Bus connection string if available
     pub fn connection_string(&self) -> Option<&str> {
-        self.connection_string.as_deref()
+        self.connection_string
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
     }
 }

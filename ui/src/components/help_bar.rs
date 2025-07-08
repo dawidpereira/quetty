@@ -27,6 +27,8 @@ impl HelpBar {
         vec![
             (format!("[{}]", keys.help()), true),
             (" Help ".to_string(), false),
+            (format!("[{}]", keys.config()), true),
+            (" Config ".to_string(), false),
             (format!("[{}]", keys.quit()), true),
             (" Quit".to_string(), false),
         ]

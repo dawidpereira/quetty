@@ -14,6 +14,7 @@ use crate::components::state::ComponentStateMount;
 use crate::components::text_label::TextLabel;
 use crate::config;
 use crate::error::{AppError, AppResult, ErrorReporter};
+use crate::utils::auth::AuthUtils;
 use azservicebus::{ServiceBusClient as AzureServiceBusClient, ServiceBusClientOptions};
 use server::service_bus_manager::ServiceBusManager;
 use server::taskpool::TaskPool;
@@ -218,10 +219,12 @@ impl Model<CrosstermTerminalAdapter> {
             log::info!("No connection string configured, will discover from Azure");
             Ok(None)
         } else {
-            Err(AppError::Config(
-                "Either connection string or Azure AD authentication must be configured"
-                    .to_string(),
-            ))
+            // No connection string and using connection_string auth method
+            // This can happen when configuration is incomplete - allow startup to continue
+            log::warn!(
+                "No connection string configured and using connection_string auth method - config incomplete"
+            );
+            Ok(None)
         }
     }
 
@@ -272,7 +275,8 @@ impl Model<CrosstermTerminalAdapter> {
         tx_to_main: mpsc::Sender<Msg>,
         http_client: reqwest::Client,
     ) -> AppResult<Option<Arc<crate::services::AuthService>>> {
-        if config.azure_ad().auth_method != "connection_string" {
+        // Only create auth service if we have required auth fields and not using connection_string
+        if !AuthUtils::is_connection_string_auth(config) && config.has_required_auth_fields() {
             let auth_service = Arc::new(
                 crate::services::AuthService::new(
                     config.azure_ad(),
@@ -307,6 +311,9 @@ impl Model<CrosstermTerminalAdapter> {
 
             Ok(Some(auth_service))
         } else {
+            if !AuthUtils::is_connection_string_auth(config) {
+                log::info!("Skipping auth service creation - missing required auth fields");
+            }
             Ok(None)
         }
     }
@@ -316,11 +323,32 @@ impl Model<CrosstermTerminalAdapter> {
         needs_auth: bool,
         app: &mut Model<CrosstermTerminalAdapter>,
     ) -> AppResult<()> {
+        let config = config::get_config_or_panic();
+
         log::info!(
             "Authentication check: needs_auth = {}, has_auth_service = {}",
             needs_auth,
             app.auth_service.is_some()
         );
+
+        // First check if we have the required configuration for the selected auth method
+        if !config.has_required_auth_fields() {
+            log::info!("Required configuration fields are missing, opening config screen directly");
+
+            // Set authentication flag to prevent namespace loading
+            app.state_manager.is_authenticating = true;
+
+            // Auto-open config screen for missing authentication fields
+            let tx = app.state_manager.tx_to_main.clone();
+            tokio::spawn(async move {
+                // Small delay to ensure UI is ready
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+                let _ = tx.send(Msg::ToggleConfigScreen);
+            });
+
+            return Ok(());
+        }
 
         if needs_auth {
             if let Some(ref auth_service) = app.auth_service {
@@ -340,7 +368,20 @@ impl Model<CrosstermTerminalAdapter> {
                     // Initiate authentication - this will show device code popup
                     if let Err(e) = auth_service.initiate_authentication().await {
                         log::error!("Failed to initiate authentication: {e}");
-                        let _ = tx.send(Msg::Error(e));
+
+                        // Check if error is due to missing fields, redirect to config
+                        let error_str = e.to_string();
+                        if error_str.contains("client ID")
+                            || error_str.contains("tenant ID")
+                            || error_str.contains("Invalid authentication request")
+                        {
+                            log::info!(
+                                "Authentication failed due to invalid credentials, opening config screen"
+                            );
+                            let _ = tx.send(Msg::ToggleConfigScreen);
+                        } else {
+                            let _ = tx.send(Msg::Error(e));
+                        }
                     }
                 });
 
@@ -348,13 +389,15 @@ impl Model<CrosstermTerminalAdapter> {
                 // The namespace loading will happen after successful authentication
                 log::info!("Skipping namespace loading - authentication required first");
             } else {
-                // No auth service but needs auth - this shouldn't happen
+                // Auth service should have been created but wasn't - config issue
+                log::error!("Authentication required but auth service not initialized");
                 return Err(AppError::Config(
                     "Authentication required but auth service not initialized".to_string(),
                 ));
             }
         } else {
-            // No authentication needed, load namespaces directly
+            // Using connection string authentication - load namespaces directly
+            log::info!("Using connection string authentication - loading namespaces");
             app.queue_manager.load_namespaces();
         }
 

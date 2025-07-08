@@ -14,6 +14,9 @@ pub mod resource_group_picker;
 pub mod subscription_picker;
 pub mod theme_picker;
 
+// Configuration components
+pub mod config_screen;
+
 // Popup components
 pub mod auth_popup;
 pub mod confirmation_popup;

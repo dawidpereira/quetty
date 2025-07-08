@@ -69,6 +69,32 @@ where
                         None
                     }
                 }
+                Msg::ToggleConfigScreen => {
+                    if let Err(e) = self.mount_config_screen() {
+                        self.error_reporter
+                            .report_mount_error("ConfigScreen", "mount", e);
+                        None
+                    } else {
+                        None
+                    }
+                }
+                Msg::ConfigActivity(msg) => {
+                    match self.update_config(msg) {
+                        Ok(result) => result,
+                        Err(e) => {
+                            self.error_reporter
+                                .report_mount_error("ConfigScreen", "update", e);
+                            None
+                        }
+                    }
+                }
+                Msg::SetEditingMode(editing) => {
+                    self.set_editing_message(editing);
+                    if let Err(e) = self.update_global_key_watcher_editing_state() {
+                        self.error_reporter.report_key_watcher_error(e);
+                    }
+                    None
+                }
                 Msg::AuthActivity(msg) => {
                     match self.update_auth(msg) {
                         Ok(next_msg) => next_msg,
@@ -81,6 +107,11 @@ where
                 Msg::SubscriptionSelection(msg) => self.handle_subscription_selection(msg),
                 Msg::ResourceGroupSelection(msg) => self.handle_resource_group_selection(msg),
                 Msg::AzureDiscovery(msg) => self.handle_azure_discovery(msg),
+                Msg::SetServiceBusManager(manager) => {
+                    log::info!("Setting Service Bus manager in queue manager");
+                    self.queue_manager.set_service_bus_manager(manager);
+                    None
+                }
                 Msg::ShowError(error_msg) => {
                     self.update_popup(PopupActivityMsg::ShowError(crate::error::AppError::Component(error_msg)))
                 }

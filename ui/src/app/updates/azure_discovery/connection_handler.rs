@@ -68,7 +68,35 @@ impl ConnectionHandler {
         let namespaces = model.state_manager.discovered_namespaces.clone();
         model
             .state_manager
-            .update_discovered_resources(namespaces, Some(connection_string));
+            .update_discovered_resources(namespaces, Some(connection_string.clone()));
+
+        // Persist discovered configuration to disk for future use
+        if let (Some(subscription_id), Some(resource_group), Some(namespace)) = (
+            &model.state_manager.selected_subscription,
+            &model.state_manager.selected_resource_group,
+            &model.state_manager.selected_namespace,
+        ) {
+            log::info!("Persisting discovered Azure configuration to disk");
+
+            let config_data = crate::components::common::ConfigUpdateData {
+                auth_method: "device_code".to_string(),
+                tenant_id: None,
+                client_id: None,
+                client_secret: None,
+                subscription_id: Some(subscription_id.clone()),
+                resource_group: Some(resource_group.clone()),
+                namespace: Some(namespace.clone()),
+                connection_string: Some(connection_string.clone()),
+                queue_name: None,
+            };
+
+            // Save to .env file
+            if let Err(e) = model.write_env_file(&config_data) {
+                log::error!("Failed to persist discovered configuration: {e}");
+            } else {
+                log::info!("Successfully persisted discovered configuration");
+            }
+        }
 
         // Since we have the connection string, we can now create the Service Bus manager
         Some(Msg::AzureDiscovery(
