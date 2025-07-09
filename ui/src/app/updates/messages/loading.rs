@@ -30,7 +30,17 @@ where
         self.queue_state_mut().message_pagination.set_loading(true);
 
         let tx_to_main = self.state_manager.tx_to_main.clone();
-        let service_bus_manager = self.get_service_bus_manager();
+        let service_bus_manager = match self.get_service_bus_manager() {
+            Some(manager) => manager,
+            None => {
+                log::error!("Service Bus manager not initialized - cannot load messages");
+                self.queue_state_mut().message_pagination.set_loading(false);
+                return Err(AppError::Config(
+                    "Service Bus manager not initialized. Please configure authentication first."
+                        .to_string(),
+                ));
+            }
+        };
         let from_sequence = self
             .queue_state()
             .message_pagination
@@ -61,10 +71,9 @@ where
 
     pub(crate) fn get_service_bus_manager(
         &self,
-    ) -> std::sync::Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>> {
-        self.service_bus_manager
-            .clone()
-            .expect("Service bus manager should be initialized")
+    ) -> Option<std::sync::Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>>>
+    {
+        self.service_bus_manager.clone()
     }
 
     async fn execute_loading_task(

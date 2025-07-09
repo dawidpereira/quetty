@@ -12,17 +12,36 @@ where
     pub fn update_namespace(&mut self, msg: NamespaceActivityMsg) -> Option<Msg> {
         match msg {
             NamespaceActivityMsg::NamespacesLoaded(namespaces) => {
+                log::info!(
+                    "Received namespaces loaded event with {} namespaces",
+                    namespaces.len()
+                );
+
+                if namespaces.is_empty() {
+                    log::warn!("No namespaces found - showing empty namespace picker");
+                    if let Err(e) = self.remount_namespace_picker(Some(namespaces)) {
+                        self.error_reporter.report_simple(
+                            e,
+                            "NamespaceHandler",
+                            "update_namespace",
+                        );
+                    }
+                    return None;
+                }
+
                 // If there's only one namespace (e.g., from connection string), automatically select it
                 if namespaces.len() == 1 {
                     log::info!(
-                        "Only one namespace available, automatically selecting: {}",
+                        "Only one namespace available, automatically selecting: '{}'",
                         namespaces[0]
                     );
                     self.set_selected_namespace(Some(namespaces[0].clone()));
+                    log::info!("Proceeding to handle namespace selection automatically");
                     return self.handle_namespace_selection();
                 }
 
                 // Multiple namespaces - show picker
+                log::info!("Multiple namespaces found, showing namespace picker");
                 if let Err(e) = self.remount_namespace_picker(Some(namespaces)) {
                     self.error_reporter
                         .report_simple(e, "NamespaceHandler", "update_namespace");
@@ -126,7 +145,11 @@ where
             return None;
         };
 
-        log::info!("Processing namespace selection: {namespace}");
+        log::info!("Processing namespace selection: '{namespace}'");
+        log::info!(
+            "Auth method: {}",
+            crate::config::get_config_or_panic().azure_ad().auth_method
+        );
 
         // Store the selected namespace first
         self.set_selected_namespace(Some(namespace.clone()));
@@ -160,6 +183,12 @@ where
         let config = crate::config::get_config_or_panic();
         let has_subscription_id = config.azure_ad().has_subscription_id();
 
+        log::info!(
+            "Discovery mode check: has_subscription_id={}, discovered_connection_string={:?}",
+            has_subscription_id,
+            self.state_manager.discovered_connection_string.is_some()
+        );
+
         if !has_subscription_id && self.state_manager.discovered_connection_string.is_some() {
             // We're in discovery mode
             // Note: We don't unmount the namespace picker here anymore to avoid view errors
@@ -192,7 +221,7 @@ where
         } else {
             // Normal mode with subscription ID configured
             // For all authentication methods, proceed to queue discovery
-
+            log::info!("Not in discovery mode - proceeding to load queues");
             self.load_queues();
         }
 

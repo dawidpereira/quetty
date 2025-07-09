@@ -208,7 +208,7 @@ where
                 "Page size increased from {current_page_size} to {new_page_size}, using smart backfill to extend current messages"
             );
 
-            let messages_needed = new_page_size as usize - current_loaded_count;
+            let messages_needed = (new_page_size as usize).saturating_sub(current_loaded_count);
             if messages_needed > 0 {
                 log::info!("Need to load {messages_needed} more messages for larger page size");
 

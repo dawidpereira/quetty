@@ -197,7 +197,7 @@ where
 
         // For device code flow, allow discovery even if connection string exists
         // This enables users to discover different Azure resources
-        if config.servicebus().connection_string().is_some()
+        if config.servicebus().has_connection_string()
             && config.azure_ad().auth_method != "device_code"
         {
             log::info!(

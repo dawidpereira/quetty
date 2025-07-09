@@ -52,6 +52,11 @@ where
 
     /// Handle queue switch completion
     pub fn handle_queue_switched(&mut self, queue_info: QueueInfo) -> Option<Msg> {
+        // Check if Service Bus manager is initialized before attempting to load messages
+        if self.get_service_bus_manager().is_none() {
+            log::warn!("Service Bus manager not initialized - deferring queue switch until ready");
+            return None;
+        }
         // Update the queue state with the new queue information
         self.queue_state_mut().current_queue_name = Some(queue_info.name.clone());
         self.queue_state_mut().current_queue_type = queue_info.queue_type.clone();

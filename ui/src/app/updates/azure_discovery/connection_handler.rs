@@ -87,6 +87,7 @@ impl ConnectionHandler {
                 resource_group: Some(resource_group.clone()),
                 namespace: Some(namespace.clone()),
                 connection_string: Some(connection_string.clone()),
+                master_password: None, // Not needed for device code auth
                 queue_name: None,
             };
 

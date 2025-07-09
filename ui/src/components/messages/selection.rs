@@ -68,10 +68,8 @@ pub fn format_pagination_status(info: &PaginationInfo) -> String {
         let queue_info = if crate::config::get_config_or_panic().queue_stats_display_enabled() {
             if let Some(total) = info.queue_total_messages {
                 if let Some(age) = info.queue_stats_age_seconds {
-                    let age_threshold = crate::config::get_config_or_panic()
-                        .ui()
-                        .queue_stats_age_threshold_seconds()
-                        as i64;
+                    let config = crate::config::get_config_or_panic();
+                    let age_threshold = config.ui().queue_stats_age_threshold_seconds() as i64;
                     if age < age_threshold {
                         format!(" • {total} in queue")
                     } else {

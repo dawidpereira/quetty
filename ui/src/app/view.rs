@@ -96,6 +96,11 @@ where
         return view_auth_popup(app, f);
     }
 
+    // Then, try to render the password popup if it exists (high priority for password entry)
+    if app.mounted(&ComponentId::PasswordPopup) {
+        return view_password_popup(app, f);
+    }
+
     // Then, try to render the page size popup if it exists
     if app.mounted(&ComponentId::PageSizePopup) {
         return view_page_size_popup(app, f);
@@ -294,6 +299,18 @@ pub fn view_config_screen(
 ) -> Result<(), AppError> {
     app.view(&ComponentId::ConfigScreen, f, f.area());
     app.active(&ComponentId::ConfigScreen)
+        .map_err(|e| AppError::Component(e.to_string()))?;
+    Ok(())
+}
+
+// Render the password popup centered on the screen using standardized sizing
+pub fn view_password_popup(
+    app: &mut Application<ComponentId, Msg, NoUserEvent>,
+    f: &mut Frame,
+) -> Result<(), AppError> {
+    let popup_area = PopupLayout::medium(f.area());
+    app.view(&ComponentId::PasswordPopup, f, popup_area);
+    app.active(&ComponentId::PasswordPopup)
         .map_err(|e| AppError::Component(e.to_string()))?;
     Ok(())
 }

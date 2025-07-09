@@ -29,6 +29,7 @@ pub struct ConfigFormData {
     pub resource_group: String,
     pub namespace: String,
     pub connection_string: String,
+    pub master_password: String,
     pub queue_name: String,
 }
 
@@ -43,6 +44,7 @@ impl Default for ConfigFormData {
             resource_group: String::new(),
             namespace: String::new(),
             connection_string: String::new(),
+            master_password: String::new(),
             queue_name: String::new(),
         }
     }
@@ -77,6 +79,15 @@ impl ConfigScreen {
     }
 
     fn load_current_config(config: &AppConfig) -> ConfigFormData {
+        // Check if we have existing encrypted connection string
+        let connection_string = if config.servicebus().has_connection_string() {
+            // Show placeholder indicating encrypted data exists - user only needs to enter password
+            "<<encrypted-connection-string-present>>".to_string()
+        } else {
+            // No encrypted connection string - user needs to enter new one
+            String::new()
+        };
+
         ConfigFormData {
             auth_method: config.azure_ad().auth_method.clone(),
             tenant_id: std::env::var("AZURE_AD__TENANT_ID").unwrap_or_default(),
@@ -85,9 +96,20 @@ impl ConfigScreen {
             subscription_id: std::env::var("AZURE_AD__SUBSCRIPTION_ID").unwrap_or_default(),
             resource_group: std::env::var("AZURE_AD__RESOURCE_GROUP").unwrap_or_default(),
             namespace: std::env::var("AZURE_AD__NAMESPACE").unwrap_or_default(),
-            connection_string: std::env::var("SERVICEBUS__CONNECTION_STRING").unwrap_or_default(),
+            connection_string,
+            master_password: String::new(), // Never pre-populate password for security
             queue_name: std::env::var("SERVICEBUS__QUEUE_NAME").unwrap_or_default(),
         }
+    }
+
+    /// Check if we're in "unlock" mode (encrypted data exists, just need password)
+    /// vs "setup" mode (need to configure everything from scratch)
+    fn is_unlock_mode(&self) -> bool {
+        self.form_data.auth_method == "connection_string"
+            && self
+                .form_data
+                .connection_string
+                .contains("<<encrypted-connection-string-present>>")
     }
 
     fn get_auth_methods() -> Vec<(&'static str, &'static str)> {
@@ -102,10 +124,18 @@ impl ConfigScreen {
 
     fn get_fields_for_auth_method(&self) -> Vec<(&'static str, &'static str, bool)> {
         match self.form_data.auth_method.as_str() {
-            AUTH_METHOD_CONNECTION_STRING => vec![
-                ("connection_string", "Connection String", true),
-                ("queue_name", "Queue Name", false),
-            ],
+            AUTH_METHOD_CONNECTION_STRING => {
+                let connection_string_required = !self.is_unlock_mode();
+                vec![
+                    (
+                        "connection_string",
+                        "Connection String",
+                        connection_string_required,
+                    ),
+                    ("master_password", "Master Password", true),
+                    ("queue_name", "Queue Name", false),
+                ]
+            }
             AUTH_METHOD_DEVICE_CODE => vec![
                 ("tenant_id", "Tenant ID", true),
                 ("client_id", "Client ID", true),
@@ -132,6 +162,7 @@ impl ConfigScreen {
             "resource_group" => &self.form_data.resource_group,
             "namespace" => &self.form_data.namespace,
             "connection_string" => &self.form_data.connection_string,
+            "master_password" => &self.form_data.master_password,
             "queue_name" => &self.form_data.queue_name,
             _ => "",
         }
@@ -147,6 +178,7 @@ impl ConfigScreen {
             "resource_group" => self.form_data.resource_group = value,
             "namespace" => self.form_data.namespace = value,
             "connection_string" => self.form_data.connection_string = value,
+            "master_password" => self.form_data.master_password = value,
             "queue_name" => self.form_data.queue_name = value,
             _ => {}
         }
@@ -157,19 +189,48 @@ impl ConfigScreen {
 
         match self.form_data.auth_method.as_str() {
             AUTH_METHOD_CONNECTION_STRING => {
-                if self.form_data.connection_string.trim().is_empty() {
+                let config = crate::config::get_config_or_panic();
+                let has_encrypted_connection = config.servicebus().has_connection_string();
+                let connection_string = self.form_data.connection_string.trim();
+
+                log::debug!(
+                    "Config validation: has_encrypted_connection={}, connection_string='{}', master_password_len={}",
+                    has_encrypted_connection,
+                    connection_string,
+                    self.form_data.master_password.len()
+                );
+
+                if has_encrypted_connection
+                    && (connection_string.is_empty()
+                        || connection_string.contains("<<encrypted-connection-string-present>>"))
+                {
+                    // We have an existing encrypted connection string and user didn't provide a new one
+                    // Just require the master password to decrypt existing one
+                    if self.form_data.master_password.trim().is_empty() {
+                        errors.push(
+                            "Master password is required to access existing connection string"
+                                .to_string(),
+                        );
+                    }
+                } else if connection_string.is_empty() {
+                    // No connection string provided and no existing one
                     errors.push(
                         "Connection string is required for connection_string auth method"
                             .to_string(),
                     );
                 } else {
-                    // Validate connection string format
+                    // New connection string provided - validate it
                     if let Err(validation_error) =
-                        ConnectionStringParser::validate_connection_string(
-                            &self.form_data.connection_string,
-                        )
+                        ConnectionStringParser::validate_connection_string(connection_string)
                     {
                         errors.push(format!("Invalid connection string: {validation_error}"));
+                    }
+
+                    if self.form_data.master_password.trim().is_empty() {
+                        errors.push(
+                            "Master password is required for connection string encryption"
+                                .to_string(),
+                        );
                     }
                 }
             }
@@ -232,13 +293,24 @@ impl ConfigScreen {
 
                     // Show editing state if this field is being edited
                     if self.editing_mode && is_selected {
-                        if *field == "client_secret" || *field == "connection_string" {
+                        if *field == "client_secret"
+                            || *field == "connection_string"
+                            || *field == "master_password"
+                        {
                             format!("{}_", "*".repeat(self.current_input.len()))
                         } else {
                             format!("{}_", self.current_input)
                         }
-                    } else if *field == "client_secret" || *field == "connection_string" {
+                    } else if *field == "client_secret" || *field == "master_password" {
                         if value.is_empty() {
+                            "<empty>".to_string()
+                        } else {
+                            "*".repeat(value.len().min(20))
+                        }
+                    } else if *field == "connection_string" {
+                        if value.contains("<<encrypted-connection-string-present>>") {
+                            "****** (encrypted data present - enter new to replace)".to_string()
+                        } else if value.is_empty() {
                             "<empty>".to_string()
                         } else {
                             "*".repeat(value.len().min(20))
@@ -400,6 +472,11 @@ impl ConfigScreen {
             } else {
                 Some(self.form_data.connection_string.clone())
             },
+            master_password: if self.form_data.master_password.trim().is_empty() {
+                None
+            } else {
+                Some(self.form_data.master_password.clone())
+            },
             queue_name: if self.form_data.queue_name.trim().is_empty() {
                 None
             } else {
@@ -558,12 +635,16 @@ impl Component<Msg, NoUserEvent> for ConfigScreen {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             }) => {
+                log::debug!("Ctrl+S pressed - validating config");
                 self.validation_errors = self.validate_config();
+                log::debug!("Validation errors: {:?}", self.validation_errors);
                 if self.validation_errors.is_empty() {
+                    log::debug!("Validation passed - proceeding with ConfirmAndProceed");
                     Some(Msg::ConfigActivity(ConfigActivityMsg::ConfirmAndProceed(
                         self.to_config_update_data(),
                     )))
                 } else {
+                    log::debug!("Validation failed - not proceeding");
                     None
                 }
             }
@@ -667,7 +748,14 @@ impl Component<Msg, NoUserEvent> for ConfigScreen {
                         } else {
                             // Start editing the field
                             self.editing_mode = true;
-                            self.current_input = self.get_field_value(field_name).to_string();
+                            // For sensitive fields, always start with empty input for security
+                            self.current_input = if *field_name == "master_password"
+                                || *field_name == "client_secret"
+                            {
+                                String::new()
+                            } else {
+                                self.get_field_value(field_name).to_string()
+                            };
                             // Update global editing state to disable global key handling
                             Some(Msg::SetEditingMode(true))
                         }

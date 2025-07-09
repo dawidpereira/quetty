@@ -208,13 +208,13 @@ impl AppConfig {
         // Validate authentication method
         match auth_method.as_str() {
             "connection_string" => {
-                // When using connection_string, ensure we have a connection string
-                if self.servicebus.connection_string().is_none() {
+                // When using connection_string, ensure we have an encrypted connection string
+                if !self.servicebus.has_connection_string() {
                     errors.push(ConfigValidationError::ConflictingAuthConfig {
-                        message: "Authentication method is set to 'connection_string' but no Service Bus connection string is provided.\n\n\
+                        message: "Authentication method is set to 'connection_string' but no encrypted Service Bus connection string is provided.\n\n\
                                   Please either:\n\
-                                  1. Add servicebus.connection_string to your config.toml\n\
-                                  2. Set SERVICEBUS__CONNECTION_STRING environment variable\n\
+                                  1. Add servicebus.encrypted_connection_string and servicebus.encryption_salt to your config.toml\n\
+                                  2. Set SERVICEBUS__ENCRYPTED_CONNECTION_STRING and SERVICEBUS__ENCRYPTION_SALT environment variables\n\
                                   3. Change azure_ad.auth_method to 'device_code' for Azure AD authentication".to_string()
                     });
                 }
@@ -299,7 +299,7 @@ impl AppConfig {
     /// Check if all required fields are present for the configured authentication method
     pub fn has_required_auth_fields(&self) -> bool {
         if AuthUtils::is_connection_string_auth(self) {
-            self.servicebus.connection_string().is_some()
+            self.servicebus.has_connection_string()
         } else if AuthUtils::is_device_code_auth(self) {
             (self.azure_ad.has_tenant_id() || std::env::var("AZURE_AD__TENANT_ID").is_ok())
                 && (self.azure_ad.has_client_id() || std::env::var("AZURE_AD__CLIENT_ID").is_ok())

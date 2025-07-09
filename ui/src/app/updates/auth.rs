@@ -101,7 +101,7 @@ where
                 // Check if we need to start Azure discovery
                 let config = crate::config::get_config_or_panic();
                 let auth_method = &config.azure_ad().auth_method;
-                let has_connection_string = config.servicebus().connection_string().is_some();
+                let has_connection_string = config.servicebus().has_connection_string();
 
                 log::info!("Authentication successful! Checking next steps...");
                 log::info!(
@@ -161,7 +161,7 @@ where
                     );
                     self.queue_manager.load_namespaces();
                     Ok(None)
-                } else if has_connection_string {
+                } else if config.servicebus().has_connection_string() {
                     // Other auth methods with connection string available
                     log::info!("Connection string available, loading namespaces directly");
                     self.queue_manager.load_namespaces();
@@ -362,13 +362,14 @@ where
                 // and proceed directly to namespace/queue selection
                 let config = crate::config::get_config_or_panic();
 
-                if let Some(connection_string) = config.servicebus().connection_string() {
-                    // Spawn task to create Service Bus manager
-                    let tx = self.state_manager.tx_to_main.clone();
-                    let http_client = self.http_client.clone();
-                    let connection_string = connection_string.to_string();
+                match config.servicebus().connection_string() {
+                    Ok(Some(connection_string)) => {
+                        // Spawn task to create Service Bus manager
+                        let tx = self.state_manager.tx_to_main.clone();
+                        let http_client = self.http_client.clone();
+                        let connection_string = connection_string.to_string();
 
-                    self.task_manager.execute_background(async move {
+                        self.task_manager.execute_background(async move {
                         use azservicebus::{ServiceBusClient as AzureServiceBusClient, ServiceBusClientOptions};
                         use server::service_bus_manager::ServiceBusManager;
                         use std::sync::Arc;
@@ -417,13 +418,25 @@ where
                             }
                         }
                     });
-                } else {
-                    log::error!("No connection string available for Service Bus manager creation");
-                    return Ok(Some(Msg::AuthActivity(
-                        AuthActivityMsg::AuthenticationFailed(
-                            "No connection string configured".to_string(),
-                        ),
-                    )));
+                    }
+                    Ok(None) => {
+                        log::error!(
+                            "No connection string available for Service Bus manager creation"
+                        );
+                        return Ok(Some(Msg::AuthActivity(
+                            AuthActivityMsg::AuthenticationFailed(
+                                "No connection string configured".to_string(),
+                            ),
+                        )));
+                    }
+                    Err(e) => {
+                        log::error!("Failed to decrypt connection string: {e}");
+                        return Ok(Some(Msg::AuthActivity(
+                            AuthActivityMsg::AuthenticationFailed(format!(
+                                "Connection string decryption failed: {e}"
+                            )),
+                        )));
+                    }
                 }
 
                 Ok(None)

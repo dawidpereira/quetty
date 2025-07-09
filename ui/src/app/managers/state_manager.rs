@@ -15,6 +15,7 @@ pub enum AppState {
     HelpScreen,
     ThemePicker,
     ConfigScreen,
+    PasswordPopup,
     AzureDiscovery,
 }
 
@@ -125,6 +126,10 @@ impl StateManager {
             // Config screen transitions
             (AppState::ConfigScreen, _) => true,
             (_, AppState::ConfigScreen) => true,
+
+            // Password popup transitions
+            (AppState::PasswordPopup, _) => true,
+            (_, AppState::PasswordPopup) => true,
 
             // Azure discovery transitions
             (AppState::AzureDiscovery, AppState::NamespacePicker) => {

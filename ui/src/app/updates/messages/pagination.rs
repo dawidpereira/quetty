@@ -487,7 +487,19 @@ where
         self.queue_state_mut().message_pagination.set_loading(true);
 
         let tx_to_main = self.state_manager.tx_to_main.clone();
-        let service_bus_manager = self.get_service_bus_manager();
+        let service_bus_manager = match self.get_service_bus_manager() {
+            Some(manager) => manager,
+            None => {
+                log::error!(
+                    "Service Bus manager not initialized - cannot load messages for backfill"
+                );
+                self.queue_state_mut().message_pagination.set_loading(false);
+                return Err(crate::error::AppError::Config(
+                    "Service Bus manager not initialized. Please configure authentication first."
+                        .to_string(),
+                ));
+            }
+        };
         let from_sequence = self
             .queue_state()
             .message_pagination

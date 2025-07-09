@@ -1,6 +1,9 @@
+use crate::app::managers::state_manager::AppState;
 use crate::app::model::Model;
-use crate::components::common::{ConfigActivityMsg, ConfigUpdateData, Msg};
+use crate::components::common::{ComponentId, ConfigActivityMsg, ConfigUpdateData, Msg};
+use crate::config::azure::{clear_master_password, set_master_password};
 use crate::error::AppResult;
+use crate::utils::encryption::ConnectionStringEncryption;
 use std::env;
 use std::fs;
 use tuirealm::terminal::TerminalAdapter;
@@ -69,11 +72,43 @@ where
             if let Some(namespace) = &config_data.namespace {
                 env::set_var("AZURE_AD__NAMESPACE", namespace);
             }
-            if let Some(connection_string) = &config_data.connection_string {
-                env::set_var("SERVICEBUS__CONNECTION_STRING", connection_string);
-            }
             if let Some(queue_name) = &config_data.queue_name {
                 env::set_var("SERVICEBUS__QUEUE_NAME", queue_name);
+            }
+        }
+
+        // Handle connection string encryption
+        if let Some(master_password) = &config_data.master_password {
+            // Set master password for runtime decryption
+            set_master_password(master_password.clone());
+
+            // Check if we need to encrypt a new connection string
+            if let Some(connection_string) = &config_data.connection_string {
+                if !connection_string.trim().is_empty()
+                    && !connection_string.contains("<<encrypted-connection-string-present>>")
+                {
+                    // New connection string provided - encrypt it
+                    log::info!("New connection string provided, encrypting with master password");
+                    let encryption = ConnectionStringEncryption::new();
+                    match encryption.encrypt_connection_string(connection_string, master_password) {
+                        Ok(encrypted) => unsafe {
+                            env::set_var("SERVICEBUS__ENCRYPTED_CONNECTION_STRING", &encrypted);
+                            env::set_var("SERVICEBUS__ENCRYPTION_SALT", encryption.salt_base64());
+                        },
+                        Err(e) => {
+                            log::error!("Failed to encrypt connection string: {e}");
+                            return Err(crate::error::AppError::Config(format!(
+                                "Connection string encryption failed: {e}"
+                            )));
+                        }
+                    }
+                } else {
+                    log::info!(
+                        "Using existing encrypted connection string with provided master password"
+                    );
+                }
+            } else {
+                log::info!("Master password set for existing encrypted connection string");
             }
         }
 
@@ -96,11 +131,24 @@ where
     }
 
     fn handle_config_cancel(&mut self) -> AppResult<Option<Msg>> {
-        log::debug!("Config screen cancelled");
+        log::debug!("Config/password popup cancelled");
 
-        if let Err(e) = self.unmount_config_screen() {
-            self.error_reporter
-                .report_mount_error("ConfigScreen", "unmount", e);
+        // Check which component is mounted and unmount appropriately
+        if self.app.mounted(&ComponentId::ConfigScreen) {
+            if let Err(e) = self.unmount_config_screen() {
+                self.error_reporter
+                    .report_mount_error("ConfigScreen", "unmount", e);
+            }
+        }
+
+        if self.app.mounted(&ComponentId::PasswordPopup) {
+            if let Err(e) = self.unmount_password_popup() {
+                self.error_reporter
+                    .report_mount_error("PasswordPopup", "unmount", e);
+            }
+
+            // When password popup is cancelled, offer to open config screen instead
+            return Ok(Some(Msg::ToggleConfigScreen));
         }
 
         Ok(None)
@@ -115,6 +163,23 @@ where
             config_data.auth_method
         );
 
+        self.log_config_data(&config_data);
+
+        // Handle password validation and encryption
+        if let Some(master_password) = &config_data.master_password {
+            if let Some(msg) = self.handle_password_and_encryption(&config_data, master_password)? {
+                return Ok(Some(msg));
+            }
+        }
+
+        // Persist configuration
+        self.persist_configuration(&config_data)?;
+
+        // Handle UI cleanup and determine next action
+        self.cleanup_and_determine_next_action(&config_data)
+    }
+
+    fn log_config_data(&self, config_data: &ConfigUpdateData) {
         log::debug!(
             "ConfigUpdateData: tenant_id={:?}, client_id={:?}, connection_string={:?}",
             config_data
@@ -130,22 +195,172 @@ where
                 .as_ref()
                 .map(|s| if s.is_empty() { "<empty>" } else { "<set>" })
         );
+    }
 
-        // Debug: Log actual values (first few chars only for security)
-        if let Some(tenant_id) = &config_data.tenant_id {
-            log::debug!(
-                "Tenant ID value: {}...",
-                &tenant_id.chars().take(8).collect::<String>()
-            );
+    fn handle_password_and_encryption(
+        &mut self,
+        config_data: &ConfigUpdateData,
+        master_password: &str,
+    ) -> AppResult<Option<Msg>> {
+        if config_data.connection_string.is_none() {
+            // Password popup mode - validate password
+            self.validate_master_password(master_password)
+        } else {
+            // Config screen mode - handle encryption
+            self.handle_connection_string_encryption(config_data, master_password)
         }
-        if let Some(client_id) = &config_data.client_id {
-            log::debug!(
-                "Client ID value: {}...",
-                &client_id.chars().take(8).collect::<String>()
-            );
+    }
+
+    fn validate_master_password(&mut self, master_password: &str) -> AppResult<Option<Msg>> {
+        log::info!("Password popup mode - validating master password");
+
+        let config = crate::config::get_config_or_panic();
+        set_master_password(master_password.to_string());
+
+        match config.servicebus().connection_string() {
+            Ok(Some(_)) => {
+                log::info!("Password validation successful - connection string decrypted");
+                // Reset authenticating flag since password is now valid
+                self.state_manager.is_authenticating = false;
+                Ok(None)
+            }
+            Ok(None) => {
+                log::error!("Password validation failed - no connection string found");
+                // Clear the password since there's no connection string to decrypt
+                clear_master_password();
+
+                self.state_manager.is_authenticating = true;
+
+                if let Err(e) = self.unmount_password_popup() {
+                    self.error_reporter
+                        .report_mount_error("PasswordPopup", "unmount", e);
+                }
+                // Show config screen since there's no encrypted connection string configured
+                Ok(Some(Msg::ToggleConfigScreen))
+            }
+            Err(e) => {
+                log::error!("Password validation failed - decryption error: {e}");
+                // Clear the incorrect password to prevent further issues
+                clear_master_password();
+
+                // Set authenticating flag to prevent namespace loading from starting
+                self.state_manager.is_authenticating = true;
+                if let Err(e) = self.mount_password_popup(Some(
+                    "Invalid master password. Please try again or update configuration."
+                        .to_string(),
+                )) {
+                    self.error_reporter
+                        .report_mount_error("PasswordPopup", "mount", e);
+                    // If we can't mount password popup, show config screen instead
+                    return Ok(Some(Msg::ToggleConfigScreen));
+                }
+
+                self.set_redraw(true);
+
+                // Return a message to stop the flow and prevent persist_configuration from running
+                Ok(Some(Msg::ForceRedraw))
+            }
+        }
+    }
+
+    fn handle_connection_string_encryption(
+        &mut self,
+        config_data: &ConfigUpdateData,
+        master_password: &str,
+    ) -> AppResult<Option<Msg>> {
+        set_master_password(master_password.to_string());
+
+        if let Some(connection_string) = &config_data.connection_string {
+            if !connection_string.trim().is_empty()
+                && !connection_string.contains("<<encrypted-connection-string-present>>")
+            {
+                // New connection string - encrypt it
+                log::info!("New connection string provided, encrypting with master password");
+                let encryption = ConnectionStringEncryption::new();
+                match encryption.encrypt_connection_string(connection_string, master_password) {
+                    Ok(encrypted) => unsafe {
+                        env::set_var("SERVICEBUS__ENCRYPTED_CONNECTION_STRING", &encrypted);
+                        env::set_var("SERVICEBUS__ENCRYPTION_SALT", encryption.salt_base64());
+                    },
+                    Err(e) => {
+                        log::error!("Failed to encrypt connection string: {e}");
+                        return Err(crate::error::AppError::Config(format!(
+                            "Connection string encryption failed: {e}"
+                        )));
+                    }
+                }
+            } else if connection_string.contains("<<encrypted-connection-string-present>>") {
+                // Password change with placeholder
+                log::info!(
+                    "Master password changed - clearing existing encrypted connection string"
+                );
+                unsafe {
+                    env::remove_var("SERVICEBUS__ENCRYPTED_CONNECTION_STRING");
+                    env::remove_var("SERVICEBUS__ENCRYPTION_SALT");
+                }
+                return Err(crate::error::AppError::Config(
+                    "Master password changed. Please enter your connection string again for security.".to_string()
+                ));
+            } else {
+                log::info!(
+                    "Using existing encrypted connection string with provided master password"
+                );
+            }
+        } else {
+            // Password change scenario
+            let config = crate::config::get_config_or_panic();
+            if config.servicebus().has_connection_string() {
+                log::info!(
+                    "Master password provided without connection string - assuming password change"
+                );
+                unsafe {
+                    env::remove_var("SERVICEBUS__ENCRYPTED_CONNECTION_STRING");
+                    env::remove_var("SERVICEBUS__ENCRYPTION_SALT");
+                }
+                return Err(crate::error::AppError::Config(
+                    "Master password changed. Please enter your connection string again for security.".to_string()
+                ));
+            } else {
+                log::info!("Master password set but no connection string available");
+            }
         }
 
-        // Save configuration to files and environment variables
+        Ok(None)
+    }
+
+    fn persist_configuration(&mut self, config_data: &ConfigUpdateData) -> AppResult<()> {
+        // Set environment variables
+        self.set_environment_variables(config_data);
+
+        // Write to files
+        if let Err(e) = self.write_env_file(config_data) {
+            log::error!("Failed to write .env file: {e}");
+            return Err(e);
+        }
+
+        if let Err(e) = self.update_config_toml(config_data) {
+            log::error!("Failed to update config.toml: {e}");
+            return Err(e);
+        }
+
+        // Reload configuration
+        if let Err(e) = crate::config::reload_config() {
+            log::error!("Failed to reload configuration: {e}");
+            return Err(crate::error::AppError::Config(format!(
+                "Configuration reload failed: {e}"
+            )));
+        }
+
+        // Recreate auth service
+        if let Err(e) = self.create_auth_service() {
+            log::error!("Failed to create auth service: {e}");
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    fn set_environment_variables(&self, config_data: &ConfigUpdateData) {
         unsafe {
             if let Some(tenant_id) = &config_data.tenant_id {
                 env::set_var("AZURE_AD__TENANT_ID", tenant_id);
@@ -165,58 +380,50 @@ where
             if let Some(namespace) = &config_data.namespace {
                 env::set_var("AZURE_AD__NAMESPACE", namespace);
             }
-            if let Some(connection_string) = &config_data.connection_string {
-                env::set_var("SERVICEBUS__CONNECTION_STRING", connection_string);
-            }
             if let Some(queue_name) = &config_data.queue_name {
                 env::set_var("SERVICEBUS__QUEUE_NAME", queue_name);
             }
         }
+    }
 
-        // Write environment variables to .env file
-        if let Err(e) = self.write_env_file(&config_data) {
-            log::error!("Failed to write .env file: {e}");
-            return Err(e);
+    fn cleanup_and_determine_next_action(
+        &mut self,
+        config_data: &ConfigUpdateData,
+    ) -> AppResult<Option<Msg>> {
+        self.state_manager.is_authenticating = false;
+
+        // Cleanup UI components
+        if self.app.mounted(&ComponentId::ConfigScreen) {
+            if let Err(e) = self.unmount_config_screen() {
+                self.error_reporter
+                    .report_mount_error("ConfigScreen", "unmount", e);
+            }
+        }
+        if self.app.mounted(&ComponentId::PasswordPopup) {
+            if let Err(e) = self.app.umount(&ComponentId::PasswordPopup) {
+                self.error_reporter.report_mount_error(
+                    "PasswordPopup",
+                    "unmount",
+                    crate::error::AppError::Component(e.to_string()),
+                );
+            } else {
+                // Update app state to prevent view errors
+                if self.state_manager.app_state == AppState::PasswordPopup {
+                    self.state_manager.app_state = AppState::Loading;
+                }
+            }
         }
 
-        // Update config.toml with auth_method and other non-sensitive settings
-        if let Err(e) = self.update_config_toml(&config_data) {
-            log::error!("Failed to update config.toml: {e}");
-            return Err(e);
-        }
-
-        // Reload configuration to pick up the new environment variables
-        if let Err(e) = crate::config::reload_config() {
-            log::error!("Failed to reload configuration: {e}");
-            return Err(crate::error::AppError::Config(format!(
-                "Configuration reload failed: {e}"
-            )));
-        }
-
-        // Recreate the auth service with the updated configuration
-        if let Err(e) = self.create_auth_service() {
-            log::error!("Failed to create auth service: {e}");
-            return Err(e);
-        }
-
-        // Close the config screen
-        if let Err(e) = self.unmount_config_screen() {
-            self.error_reporter
-                .report_mount_error("ConfigScreen", "unmount", e);
-        }
-
-        // Check auth method to determine next action
+        // Determine next action based on auth method
         if config_data.auth_method == "connection_string" {
             log::info!(
                 "Configuration saved successfully. Creating Service Bus manager with connection string."
             );
-            // For connection string auth, create Service Bus manager and proceed to namespace selection
             Ok(Some(Msg::AuthActivity(
                 crate::components::common::AuthActivityMsg::CreateServiceBusManager,
             )))
         } else {
             log::info!("Configuration saved successfully. Proceeding to authentication.");
-            // For other auth methods, start authentication process
             Ok(Some(Msg::AuthActivity(
                 crate::components::common::AuthActivityMsg::Login,
             )))
@@ -249,7 +456,8 @@ where
                         "AZURE_AD__SUBSCRIPTION_ID",
                         "AZURE_AD__RESOURCE_GROUP",
                         "AZURE_AD__NAMESPACE",
-                        "SERVICEBUS__CONNECTION_STRING",
+                        "SERVICEBUS__ENCRYPTED_CONNECTION_STRING",
+                        "SERVICEBUS__ENCRYPTION_SALT",
                         "SERVICEBUS__QUEUE_NAME",
                     ]
                     .contains(&key)
@@ -268,8 +476,8 @@ where
         let mut write_value = |key: &str, new_value: &Option<String>| {
             if let Some(value) = new_value {
                 if !value.trim().is_empty() {
-                    // Quote connection string to prevent formatting issues
-                    if key == "SERVICEBUS__CONNECTION_STRING" {
+                    // Quote encrypted connection string to prevent formatting issues
+                    if key == "SERVICEBUS__ENCRYPTED_CONNECTION_STRING" {
                         env_content.push_str(&format!("{key}=\"{value}\"\n"));
                     } else {
                         env_content.push_str(&format!("{key}={value}\n"));
@@ -280,8 +488,8 @@ where
             // If no new value provided, preserve existing if any
             if let Some(existing_value) = existing_values.get(key) {
                 if !existing_value.trim().is_empty() {
-                    // Quote connection string to prevent formatting issues
-                    if key == "SERVICEBUS__CONNECTION_STRING" {
+                    // Quote encrypted connection string to prevent formatting issues
+                    if key == "SERVICEBUS__ENCRYPTED_CONNECTION_STRING" {
                         env_content.push_str(&format!("{key}=\"{existing_value}\"\n"));
                     } else {
                         env_content.push_str(&format!("{key}={existing_value}\n"));
@@ -297,10 +505,17 @@ where
         write_value("AZURE_AD__SUBSCRIPTION_ID", &config_data.subscription_id);
         write_value("AZURE_AD__RESOURCE_GROUP", &config_data.resource_group);
         write_value("AZURE_AD__NAMESPACE", &config_data.namespace);
+
+        // Write encrypted connection string if available
+        let encrypted_connection_string =
+            std::env::var("SERVICEBUS__ENCRYPTED_CONNECTION_STRING").ok();
+        let encryption_salt = std::env::var("SERVICEBUS__ENCRYPTION_SALT").ok();
+
         write_value(
-            "SERVICEBUS__CONNECTION_STRING",
-            &config_data.connection_string,
+            "SERVICEBUS__ENCRYPTED_CONNECTION_STRING",
+            &encrypted_connection_string,
         );
+        write_value("SERVICEBUS__ENCRYPTION_SALT", &encryption_salt);
         write_value("SERVICEBUS__QUEUE_NAME", &config_data.queue_name);
 
         // Write the updated content to .env file

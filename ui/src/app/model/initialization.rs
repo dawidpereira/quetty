@@ -15,7 +15,7 @@ use crate::components::text_label::TextLabel;
 use crate::config;
 use crate::error::{AppError, AppResult, ErrorReporter};
 use crate::utils::auth::AuthUtils;
-use azservicebus::{ServiceBusClient as AzureServiceBusClient, ServiceBusClientOptions};
+// Removed unused azservicebus imports since we no longer create Service Bus client during initialization
 use server::service_bus_manager::ServiceBusManager;
 use server::taskpool::TaskPool;
 use std::sync::Arc;
@@ -181,50 +181,33 @@ impl Model<CrosstermTerminalAdapter> {
     /// Create Service Bus manager based on configuration
     async fn create_service_bus_manager(
         config: &crate::config::AppConfig,
-        http_client: reqwest::Client,
+        _http_client: reqwest::Client,
     ) -> AppResult<Option<Arc<Mutex<ServiceBusManager>>>> {
-        let connection_string_opt = config.servicebus().connection_string();
-        let needs_auth = config.azure_ad().auth_method != "connection_string";
+        let auth_method = &config.azure_ad().auth_method;
+        let needs_auth = auth_method != "connection_string";
 
-        if let Some(connection_string) = connection_string_opt {
-            // Connection string available - create the client and manager
-            let azure_service_bus_client = AzureServiceBusClient::new_from_connection_string(
-                connection_string,
-                ServiceBusClientOptions::default(),
-            )
-            .await
-            .map_err(|e| AppError::ServiceBus(e.to_string()))?;
-
-            // Extract config components
-            let azure_ad_config = config.azure_ad();
-            let statistics_config =
-                server::service_bus_manager::azure_management_client::StatisticsConfig::new(
-                    config.queue_stats_display_enabled(),
-                    config.queue_stats_cache_ttl_seconds(),
-                    config.queue_stats_use_management_api(),
-                );
-            let batch_config = config.batch();
-
-            Ok(Some(Arc::new(Mutex::new(ServiceBusManager::new(
-                Arc::new(Mutex::new(azure_service_bus_client)),
-                http_client,
-                azure_ad_config.clone(),
-                statistics_config,
-                batch_config.clone(),
-                connection_string.to_string(),
-            )))))
-        } else if needs_auth {
-            // No connection string but Azure AD auth is configured
-            // We'll create the manager later after discovery
-            log::info!("No connection string configured, will discover from Azure");
-            Ok(None)
-        } else {
-            // No connection string and using connection_string auth method
-            // This can happen when configuration is incomplete - allow startup to continue
-            log::warn!(
-                "No connection string configured and using connection_string auth method - config incomplete"
+        if needs_auth {
+            // Azure AD auth is configured - we'll create the manager later after authentication/discovery
+            log::info!(
+                "Azure AD authentication configured, will create Service Bus manager after auth"
             );
             Ok(None)
+        } else {
+            // Connection string auth - check if we have encrypted connection string but no password yet
+            if config.servicebus().has_connection_string() {
+                // We have an encrypted connection string but may not have password yet
+                // Don't try to decrypt during startup - defer until user provides password
+                log::info!(
+                    "Encrypted connection string available, will create Service Bus manager after password input"
+                );
+                Ok(None)
+            } else {
+                // No encrypted connection string configured
+                log::warn!(
+                    "Connection string authentication configured but no encrypted connection string available"
+                );
+                Ok(None)
+            }
         }
     }
 
@@ -396,9 +379,59 @@ impl Model<CrosstermTerminalAdapter> {
                 ));
             }
         } else {
-            // Using connection string authentication - load namespaces directly
-            log::info!("Using connection string authentication - loading namespaces");
-            app.queue_manager.load_namespaces();
+            // Using connection string authentication - check if we can decrypt connection string
+            log::info!("Using connection string authentication");
+
+            let config = config::get_config_or_panic();
+
+            // Check if we have encrypted connection string data first
+            if !config.servicebus().has_connection_string() {
+                // No encrypted connection string configured at all
+                log::info!("No connection string configured - opening config screen");
+                app.state_manager.is_authenticating = true;
+
+                let tx = app.state_manager.tx_to_main.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    let _ = tx.send(Msg::ToggleConfigScreen);
+                });
+            } else {
+                // We have encrypted connection string, try to decrypt it
+                match config.servicebus().connection_string() {
+                    Ok(Some(_)) => {
+                        // Successfully decrypted connection string - load namespaces directly
+                        log::info!("Connection string decrypted successfully - loading namespaces");
+                        app.queue_manager.load_namespaces();
+                    }
+                    Ok(None) => {
+                        // This shouldn't happen if has_connection_string() returned true
+                        log::error!(
+                            "has_connection_string() returned true but connection_string() returned None"
+                        );
+                        app.state_manager.is_authenticating = true;
+
+                        let tx = app.state_manager.tx_to_main.clone();
+                        tokio::spawn(async move {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                            let _ = tx.send(Msg::ToggleConfigScreen);
+                        });
+                    }
+                    Err(e) => {
+                        // Failed to decrypt - likely missing master password
+                        log::info!(
+                            "Failed to decrypt connection string (master password needed): {e}"
+                        );
+                        log::info!("Opening password popup for master password input");
+                        app.state_manager.is_authenticating = true;
+
+                        let tx = app.state_manager.tx_to_main.clone();
+                        tokio::spawn(async move {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                            let _ = tx.send(Msg::TogglePasswordPopup);
+                        });
+                    }
+                }
+            }
         }
 
         Ok(())

@@ -6,6 +6,7 @@ use crate::components::global_key_watcher::GlobalKeyWatcher;
 use crate::components::loading_indicator::LoadingIndicator;
 use crate::components::number_input_popup::NumberInputPopup;
 use crate::components::page_size_popup::PageSizePopup;
+use crate::components::password_popup::PasswordPopup;
 use crate::components::state::ComponentStateMount;
 use crate::components::success_popup::SuccessPopup;
 use crate::components::theme_picker::ThemePicker;
@@ -291,6 +292,56 @@ where
         Ok(())
     }
 
+    pub fn mount_password_popup(&mut self, error_message: Option<String>) -> AppResult<()> {
+        // Store the current state so we can return to it
+        self.state_manager.previous_state = Some(self.state_manager.app_state.clone());
+
+        let popup = if let Some(error) = error_message {
+            PasswordPopup::with_error(error)
+        } else {
+            PasswordPopup::new()
+        };
+
+        // Mount password popup with ComponentState pattern using extension trait
+        self.app.remount_with_state(
+            ComponentId::PasswordPopup,
+            popup,
+            vec![Sub::new(SubEventClause::Any, SubClause::Always)],
+        )?;
+
+        self.app
+            .active(&ComponentId::PasswordPopup)
+            .map_err(|e| AppError::Component(e.to_string()))?;
+
+        self.state_manager.app_state = AppState::PasswordPopup;
+        self.set_redraw(true);
+
+        Ok(())
+    }
+
+    pub fn unmount_password_popup(&mut self) -> AppResult<()> {
+        // Check if password popup is actually mounted before trying to unmount
+        if !self.app.mounted(&ComponentId::PasswordPopup) {
+            log::debug!("PasswordPopup not mounted, skipping unmount");
+        } else {
+            self.app
+                .umount(&ComponentId::PasswordPopup)
+                .map_err(|e| AppError::Component(e.to_string()))?;
+        }
+
+        // Return to previous state
+        if let Some(prev_state) = self.state_manager.previous_state.take() {
+            self.state_manager.app_state = prev_state;
+        } else {
+            self.state_manager.app_state = AppState::NamespacePicker;
+        }
+
+        // Return to appropriate component based on state
+        self.activate_component_for_current_state()?;
+        self.set_redraw(true);
+        Ok(())
+    }
+
     /// Update the GlobalKeyWatcher's editing state
     pub fn update_global_key_watcher_editing_state(&mut self) -> AppResult<()> {
         self.app
@@ -355,6 +406,11 @@ where
             AppState::ConfigScreen => {
                 self.app
                     .active(&ComponentId::ConfigScreen)
+                    .map_err(|e| AppError::Component(e.to_string()))?;
+            }
+            AppState::PasswordPopup => {
+                self.app
+                    .active(&ComponentId::PasswordPopup)
                     .map_err(|e| AppError::Component(e.to_string()))?;
             }
             AppState::AzureDiscovery => {

@@ -58,22 +58,56 @@ impl QueueManager {
             "Using connection string authentication - extracting namespace from connection string"
         );
 
+        // Check if we have encrypted connection string configured
+        if !config.servicebus().has_connection_string() {
+            log::error!("No encrypted connection string configured");
+            self.send_namespaces_loaded(vec![]);
+            return;
+        }
+
+        // Check if master password is set
+        if !crate::config::azure::is_master_password_set() {
+            log::error!("Master password not set - cannot decrypt connection string");
+            self.send_namespaces_loaded(vec![]);
+            return;
+        }
+
+        log::info!("Master password is available, attempting to decrypt connection string");
+
         match config.servicebus().connection_string() {
-            Some(connection_string) => {
-                match ConnectionStringParser::extract_namespace(connection_string) {
+            Ok(Some(connection_string)) => {
+                log::info!(
+                    "Successfully decrypted connection string (length: {} chars)",
+                    connection_string.len()
+                );
+
+                match ConnectionStringParser::extract_namespace(&connection_string) {
                     Ok(namespace) => {
-                        log::info!("Extracted namespace from connection string: {namespace}");
+                        log::info!(
+                            "Successfully extracted namespace from connection string: '{namespace}'"
+                        );
+                        log::info!("Sending namespace list with 1 item to trigger auto-selection");
                         self.send_namespaces_loaded(vec![namespace]);
                     }
                     Err(e) => {
                         log::error!("Failed to extract namespace from connection string: {e}");
+                        log::error!(
+                            "This means the connection string format is invalid or corrupted"
+                        );
                         self.send_namespaces_loaded(vec![]);
                     }
                 }
             }
-            None => {
+            Ok(None) => {
                 log::error!(
-                    "Connection string authentication configured but no connection string available"
+                    "Connection string decryption returned None - this shouldn't happen if has_connection_string() returned true"
+                );
+                self.send_namespaces_loaded(vec![]);
+            }
+            Err(e) => {
+                log::error!("Failed to decrypt connection string: {e}");
+                log::error!(
+                    "This likely means the master password is incorrect or encryption data is corrupted"
                 );
                 self.send_namespaces_loaded(vec![]);
             }

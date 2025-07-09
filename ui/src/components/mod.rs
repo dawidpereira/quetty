@@ -16,6 +16,7 @@ pub mod theme_picker;
 
 // Configuration components
 pub mod config_screen;
+pub mod password_popup;
 
 // Popup components
 pub mod auth_popup;
