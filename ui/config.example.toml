@@ -1,112 +1,209 @@
-# Example configuration for Quetty
-# This file provides default values and serves as a template for user configuration.
+# Quetty Configuration File
+# Copy this file to config.toml and modify as needed
+# For detailed configuration reference, see: docs/CONFIGURATION.md
 
-# App configuration
-page_size = 100  # Number of messages displayed per page
+# =============================================================================
+# APPLICATION CONFIGURATION
+# =============================================================================
+
+# Number of messages displayed per page (1-1000)
+page_size = 100
+
+# Interval for peeking at new messages (seconds)
 peek_interval = 1
+
+# Timeout for individual polling operations (milliseconds)
 poll_timeout_ms = 10
+
+# UI refresh interval for animations and loading indicators (milliseconds)
 tick_interval_millis = 250
 
-# DLQ operation configuration
-dlq_receive_timeout_secs = 10      # Timeout for receiving messages from DLQ (seconds)
-dlq_send_timeout_secs = 10         # Timeout for sending messages to main queue (seconds)
-dlq_max_attempts = 10              # Maximum attempts to find a message in DLQ operations
-dlq_overall_timeout_cap_secs = 60  # Maximum total time for entire resend operation (seconds)
-dlq_receive_timeout_cap_secs = 10  # Hard cap for receive timeouts (seconds)
-dlq_send_timeout_cap_secs = 15     # Hard cap for send timeouts (seconds)
-dlq_retry_delay_ms = 500           # Delay between retry attempts when no messages found (milliseconds)
+# =============================================================================
+# DEAD LETTER QUEUE (DLQ) CONFIGURATION
+# =============================================================================
 
-# Crossterm input listener configuration
+# Timeout for receiving messages from DLQ (seconds, 1-60)
+dlq_receive_timeout_secs = 10
+
+# Timeout for sending messages to main queue (seconds, 1-60)
+dlq_send_timeout_secs = 10
+
+# Maximum retry attempts for DLQ operations (1-100)
+dlq_max_attempts = 10
+
+# Maximum total time for entire DLQ operation including all retries (seconds)
+dlq_overall_timeout_cap_secs = 60
+
+# Hard cap for DLQ receive timeouts (seconds)
+dlq_receive_timeout_cap_secs = 10
+
+# Hard cap for DLQ send timeouts (seconds)
+dlq_send_timeout_cap_secs = 15
+
+# Delay between DLQ operation retry attempts (milliseconds)
+dlq_retry_delay_ms = 500
+
+# =============================================================================
+# INPUT/UI CONFIGURATION
+# =============================================================================
+
+# Polling interval for keyboard input detection (milliseconds)
 crossterm_input_listener_interval_ms = 20
+
+# Number of retries for input listener operations
 crossterm_input_listener_retries = 5
 
-# Bulk operation configuration
-max_batch_size = 200       # Maximum batch size for all operations (DLQ, send, delete, etc.)
-max_messages_to_process = 10000 # Maximum messages allowed in any bulk operation
-operation_timeout_secs = 300 # Timeout for bulk operations (seconds)
+# Duration between animation frames for loading indicators (milliseconds)
+ui_loading_frame_duration_ms = 100
 
-# UI configuration
-ui_loading_frame_duration_ms = 100 # Duration between animation frames for loading indicators (milliseconds)
+# =============================================================================
+# BULK OPERATIONS CONFIGURATION
+# =============================================================================
 
-# Queue statistics display configuration
-queue_stats_display_enabled = true # Set to false to disable statistics completely
-queue_stats_cache_ttl_seconds = 60 # Cache duration in seconds (0 = no caching)
+# Maximum number of messages processed in a single batch operation (1-1000)
+max_batch_size = 200
 
-# Theme configuration
+# Maximum total messages allowed in any bulk operation (safety limit)
+max_messages_to_process = 10000
+
+# Global timeout for bulk operations (seconds)
+operation_timeout_secs = 300
+
+# =============================================================================
+# QUEUE STATISTICS CONFIGURATION
+# =============================================================================
+
+# Enable/disable queue statistics display
+queue_stats_display_enabled = true
+
+# Cache duration for queue statistics in seconds (0 = no caching)
+queue_stats_cache_ttl_seconds = 60
+
+# =============================================================================
+# THEME CONFIGURATION
+# =============================================================================
 [theme]
+# Theme family: "nightfox", "catppuccin", "quetty"
 theme_name = "nightfox"
+
+# Theme variant within the family
+# Nightfox: "nightfox", "duskfox", "dawnfox", "nordfox", "terafox", "carbonfox"
+# Catppuccin: "mocha", "macchiato", "frappe", "latte"
+# Quetty: "dark", "light"
 flavor_name = "duskfox"
 
-# Authentication configuration
+# =============================================================================
+# AUTHENTICATION CONFIGURATION
+# =============================================================================
 [auth]
-# Authentication method: "connection_string" or "azure_ad"
-method = "connection_string"
+# Primary authentication method: "connection_string" or "azure_ad"
+method = "azure_ad"
 
-# Service Bus configuration
+# =============================================================================
+# SERVICE BUS CONFIGURATION
+# =============================================================================
 [servicebus]
-# connection_string = ""  # Optional - set via environment variable (e.g., AZURE_SERVICEBUS_CONNECTION_STRING)
-                        # If not provided, will use Azure AD discovery to find and connect to Service Bus
-                        # Note: Either connection_string or Azure AD authentication is required
+# Azure Service Bus connection string
+# Format: "Endpoint=sb://namespace.servicebus.windows.net/;SharedAccessKeyName=...;SharedAccessKey=..."
+# SECURITY: Use environment variable SERVICEBUS__CONNECTION_STRING instead of storing here
+# connection_string = ""
 
-# Azure AD configuration (for Azure Service Bus with Azure AD authentication)
+# =============================================================================
+# AZURE AD CONFIGURATION
+# =============================================================================
 [azure_ad]
-# Authentication flow type:
-# - "device_code": Interactive device code flow
-flow = "device_code"
-# tenant_id = ""       # Optional - Azure AD tenant ID (set via environment variable)
-# client_id = ""       # Optional - Azure AD application client ID (set via environment variable)
-# client_secret = ""   # Optional - Azure AD application client secret (set via environment variable)
-# subscription_id = "" # Optional - Azure subscription ID (set via environment variable)
-# resource_group = ""  # Optional - Azure resource group name (set via environment variable)
-# namespace = ""       # Optional - Service Bus namespace (set via environment variable)
-# Note: If these are not provided, you can interactively select Azure resources after authentication
+# Authentication method:
+# - "device_code": Interactive device code flow (recommended for CLI)
+# - "client_credentials": Service principal with client secret (for automation)
+auth_method = "device_code"
 
-# Key bindings configuration
+# Azure AD Configuration (use environment variables for security)
+# tenant_id = ""       # Set via AZURE_AD__TENANT_ID environment variable
+# client_id = ""       # Set via AZURE_AD__CLIENT_ID environment variable
+# client_secret = ""   # Set via AZURE_AD__CLIENT_SECRET (client_credentials only)
+
+# Azure Resource Information (optional - auto-discovered if not specified)
+# subscription_id = "" # Set via AZURE_AD__SUBSCRIPTION_ID environment variable
+# resource_group = ""  # Set via AZURE_AD__RESOURCE_GROUP environment variable
+# namespace = ""       # Set via AZURE_AD__NAMESPACE environment variable
+
+# Azure Authority Configuration (optional - for sovereign clouds)
+# authority_host = "https://login.microsoftonline.com"  # Default
+# scope = "https://servicebus.azure.net/.default"       # Default
+
+# =============================================================================
+# KEY BINDINGS CONFIGURATION
+# =============================================================================
 [keys]
 # Global keys
-key_quit = "q"  # Key to quit the application (default: q)
-key_help = "h"  # Key to show help screen (default: h)
-key_theme = "t" # Key to toggle theme (default: t)
+key_quit = "q"  # Key to quit the application
+key_help = "h"  # Key to show help screen
+key_theme = "t" # Key to toggle theme
 
 # Navigation keys
-key_down = "j"          # Key to move down (default: j)
-key_up = "k"            # Key to move up (default: k)
-key_next_page = "n"     # Key to go to next page (default: n)
-key_prev_page = "p"     # Key to go to previous page (default: p)
-key_alt_next_page = "]" # Alternative key for next page (default: ])
-key_alt_prev_page = "[" # Alternative key for previous page (default: [)
+key_down = "j"          # Key to move down (vim-style)
+key_up = "k"            # Key to move up (vim-style)
+key_next_page = "n"     # Key to go to next page
+key_prev_page = "p"     # Key to go to previous page
+key_alt_next_page = "]" # Alternative key for next page
+key_alt_prev_page = "[" # Alternative key for previous page
 
 # Message actions
-key_send_to_dlq = "s"                # Key to send message to DLQ (default: s)
-key_resend_from_dlq = "s"            # Key to resend message from DLQ (default: s)
-key_resend_and_delete_from_dlq = "S" # Key to resend and delete from DLQ (default: S)
-key_delete_message = "x"             # Key to delete message (default: x)
-key_alt_delete_message = "x"         # Alternative key to delete message (default: x)
+key_send_to_dlq = "s"                # Key to send message to DLQ
+key_resend_from_dlq = "s"            # Key to resend message from DLQ
+key_resend_and_delete_from_dlq = "S" # Key to resend and delete from DLQ
+key_delete_message = "x"             # Key to delete message
+key_alt_delete_message = "x"         # Alternative key to delete message
 
 # Message details actions (when viewing message content)
-key_copy_message = "c"           # Key for Ctrl+key copy operation (default: c)
-key_yank_message = "y"           # Key for yank/copy operation (default: y)
-key_send_edited_message = "s"    # Key for Ctrl+key send edited message (default: s)
-key_replace_edited_message = "s" # Key for Ctrl+key replace message (default: s) - NOTE: same as send, uses different modifier
+key_copy_message = "c"           # Key for Ctrl+key copy operation
+key_yank_message = "y"           # Key for yank/copy operation
+key_send_edited_message = "s"    # Key for Ctrl+key send edited message
+key_replace_edited_message = "s" # Key for Ctrl+key replace message
 
 # Bulk selection keys
-key_toggle_selection = " " # Key to toggle message selection (default: space)
-key_select_all_page = "a"  # Key to select all messages on current page (default: a)
+key_toggle_selection = " " # Key to toggle message selection (space)
+key_select_all_page = "a"  # Key to select all messages on current page
 
 # Queue/Namespace selection
-key_queue_select = "o"     # Key to open queue selection (default: o)
-key_namespace_select = "o" # Key to open namespace selection (default: o)
+key_queue_select = "o"     # Key to open queue selection
+key_namespace_select = "o" # Key to open namespace selection
 
 # Message composition keys (in messages view)
-key_toggle_dlq = "d"       # Key to toggle between main queue and dead letter queue (default: d)
-key_compose_multiple = "m" # Key to compose multiple messages with repeat count (default: m)
-key_compose_single = "n"   # Key for Ctrl+key to compose single message (default: n)
+key_toggle_dlq = "d"       # Key to toggle between main queue and dead letter queue
+key_compose_multiple = "m" # Key to compose multiple messages with repeat count
+key_compose_single = "n"   # Key for Ctrl+key to compose single message
 
 # Confirmation keys
-key_confirm_yes = "y" # Key to confirm yes in prompts (default: y)
-key_confirm_no = "n"  # Key to confirm no in prompts (default: n)
+key_confirm_yes = "y" # Key to confirm yes in prompts
+key_confirm_no = "n"  # Key to confirm no in prompts
 
-# Logging configuration
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
 [logging]
-level = "debug" # Available levels: "trace", "debug", "info", "warn", "error"
-# file = "quetty.log" # Uncomment to log to a file (e.g., "quetty.log")
+# Log level: "trace", "debug", "info", "warn", "error"
+level = "info"
+
+# Log file path (optional - if not specified, logs go to stdout)
+# file = "quetty.log"
+
+# =============================================================================
+# ENVIRONMENT VARIABLE REFERENCE
+# =============================================================================
+# You can override any configuration value using environment variables:
+# Format: SECTION__KEY (double underscore)
+#
+# Examples:
+# export QUETTY_PAGE_SIZE=50
+# export THEME__THEME_NAME="catppuccin"
+# export THEME__FLAVOR_NAME="mocha"
+# export AZURE_AD__AUTH_METHOD="device_code"
+# export AZURE_AD__TENANT_ID="your-tenant-id"
+# export AZURE_AD__CLIENT_ID="your-client-id"
+# export AZURE_AD__CLIENT_SECRET="your-client-secret"
+# export SERVICEBUS__CONNECTION_STRING="Endpoint=sb://..."
+# export LOGGING__LEVEL="debug"
+# export LOGGING__FILE="debug.log"
+#
+# For detailed configuration documentation, see: docs/CONFIGURATION.md
