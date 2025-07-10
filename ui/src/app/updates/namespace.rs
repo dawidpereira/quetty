@@ -36,6 +36,13 @@ where
                         namespaces[0]
                     );
                     self.set_selected_namespace(Some(namespaces[0].clone()));
+
+                    // Mount the namespace picker temporarily to avoid component not found errors
+                    // This ensures the UI state is consistent before proceeding to queue loading
+                    if let Err(e) = self.remount_namespace_picker(Some(namespaces.clone())) {
+                        log::warn!("Failed to mount namespace picker for automatic selection: {e}");
+                    }
+
                     log::info!("Proceeding to handle namespace selection automatically");
                     return self.handle_namespace_selection();
                 }

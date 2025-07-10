@@ -118,6 +118,10 @@ where
                 Msg::AzureDiscovery(msg) => self.handle_azure_discovery(msg),
                 Msg::SetServiceBusManager(manager) => {
                     log::info!("Setting Service Bus manager in queue manager and model");
+
+                    // Clear statistics cache when authentication method changes
+                    self.queue_manager.queue_state.stats_manager.clear_all_cache();
+
                     self.queue_manager.set_service_bus_manager(manager.clone());
                     self.service_bus_manager = Some(manager);
                     None

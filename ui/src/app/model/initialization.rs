@@ -1,6 +1,5 @@
 use super::Model;
 use crate::app::managers::{QueueManager, StateManager};
-
 use crate::app::queue_state::QueueState;
 use crate::app::task_manager::TaskManager;
 use crate::components::common::{ComponentId, Msg};
@@ -15,7 +14,6 @@ use crate::components::text_label::TextLabel;
 use crate::config;
 use crate::error::{AppError, AppResult, ErrorReporter};
 use crate::utils::auth::AuthUtils;
-// Removed unused azservicebus imports since we no longer create Service Bus client during initialization
 use server::service_bus_manager::ServiceBusManager;
 use server::taskpool::TaskPool;
 use std::sync::Arc;
@@ -107,8 +105,7 @@ impl Model<CrosstermTerminalAdapter> {
         let http_client = Self::create_http_client();
 
         // Create Service Bus manager
-        let service_bus_manager =
-            Self::create_service_bus_manager(config, http_client.clone()).await?;
+        let service_bus_manager = Self::create_service_bus_manager(config).await?;
 
         // Log authentication configuration
         Self::log_authentication_info(config);
@@ -181,7 +178,6 @@ impl Model<CrosstermTerminalAdapter> {
     /// Create Service Bus manager based on configuration
     async fn create_service_bus_manager(
         config: &crate::config::AppConfig,
-        _http_client: reqwest::Client,
     ) -> AppResult<Option<Arc<Mutex<ServiceBusManager>>>> {
         let auth_method = &config.azure_ad().auth_method;
         let needs_auth = auth_method != "connection_string";

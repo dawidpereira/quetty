@@ -36,7 +36,8 @@ impl QueueStatisticsService {
             return;
         }
 
-        if self.config.use_management_api {
+        if self.config.use_management_api && self.azure_ad_config.auth_method != "connection_string"
+        {
             match AzureManagementClient::from_config(
                 self.http_client.clone(),
                 self.azure_ad_config.clone(),
@@ -52,8 +53,6 @@ impl QueueStatisticsService {
                     );
                 }
             }
-        } else {
-            log::info!("Azure Management API disabled in configuration");
         }
 
         *initialized = true;

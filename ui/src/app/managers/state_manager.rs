@@ -35,6 +35,7 @@ pub struct StateManager {
     pub current_page_size: Option<u32>, // Dynamic page size that can be changed during runtime
     pub is_authenticating: bool,        // Track if authentication is in progress
     pub last_device_code_copy: Option<std::time::Instant>, // Track last copy time to prevent spam
+    pub pending_config_data: Option<crate::components::common::ConfigUpdateData>, // Store config data when password popup is shown
 
     // Azure discovery state
     pub azure_cache: AzureResourceCache,
@@ -67,6 +68,7 @@ impl StateManager {
             current_page_size: None,
             is_authenticating: false,
             last_device_code_copy: None,
+            pending_config_data: None,
             azure_cache: AzureResourceCache::with_config(cache_ttl, max_entries),
             selected_subscription: None,
             selected_resource_group: None,

@@ -122,6 +122,23 @@ impl QueueManager {
             .execute("Loading namespaces...", async move {
                 log::debug!("Requesting namespaces from Azure AD");
 
+                // Check for saved namespace first (config-first approach)
+                if let Ok(saved_namespace) = std::env::var("AZURE_AD__NAMESPACE") {
+                    if !saved_namespace.trim().is_empty() {
+                        log::info!(
+                            "Found saved namespace '{saved_namespace}', using it directly without discovery"
+                        );
+
+                        // Send the saved namespace as a single-item list
+                        if let Err(e) = tx_to_main.send(Msg::NamespaceActivity(
+                            NamespaceActivityMsg::NamespacesLoaded(vec![saved_namespace]),
+                        )) {
+                            log::error!("Failed to send saved namespace message: {e}");
+                        }
+                        return Ok(());
+                    }
+                }
+
                 let namespaces = ServiceBusManager::list_namespaces_azure_ad(
                     config::get_config_or_panic().azure_ad(),
                 )
@@ -167,32 +184,14 @@ impl QueueManager {
 
     /// Load queues from connection string authentication
     fn load_queues_from_connection_string(&self) {
-        let tx_to_main = self.tx_to_main.clone();
-
         // Connection string authentication does not support automatic queue discovery
         // because Azure Management API requires Azure AD authentication, not SAS tokens.
         // Connection strings only provide namespace-level access for messaging operations.
 
-        log::info!("Using connection string authentication - checking for saved queue");
+        // Note: Queue auto-loading from saved names is now handled in AuthenticationSuccess
+        // to ensure proper flow and statistics loading
 
-        // Check if we have a saved queue name from previous session
-        if let Ok(saved_queue_name) = std::env::var("SERVICEBUS__QUEUE_NAME") {
-            if !saved_queue_name.trim().is_empty() {
-                log::info!(
-                    "Found saved queue name '{saved_queue_name}' for connection string auth, auto-connecting"
-                );
-
-                // Auto-connect to the saved queue
-                if let Err(e) = tx_to_main.send(Msg::QueueActivity(
-                    QueueActivityMsg::QueueSelectedFromManualEntry(saved_queue_name),
-                )) {
-                    log::error!("Failed to send queue selected message: {e}");
-                }
-                return;
-            }
-        }
-
-        log::info!("No saved queue name found, showing manual selection");
+        log::info!("Using connection string authentication - showing manual queue selection");
         self.send_empty_queue_list_for_manual_selection();
     }
 
@@ -262,7 +261,13 @@ impl QueueManager {
         let service_bus_manager = self.service_bus_manager.clone();
 
         if service_bus_manager.is_none() {
-            log::warn!("Service bus manager not initialized, cannot load queues");
+            log::warn!("Service bus manager not initialized, cannot load queues with discovery");
+            // Send empty queue list to show QueuePicker for manual entry
+            if let Err(e) =
+                tx_to_main.send(Msg::QueueActivity(QueueActivityMsg::QueuesLoaded(vec![])))
+            {
+                log::error!("Failed to send empty queues loaded message: {e}");
+            }
             return;
         }
 
@@ -357,7 +362,16 @@ impl QueueManager {
         log::info!("Switching to queue: {queue_name}");
 
         let Some(service_bus_manager) = self.service_bus_manager.clone() else {
-            log::warn!("Service bus manager not initialized, cannot switch queue");
+            log::error!("Service bus manager not initialized, cannot switch queue");
+            // Clear the pending queue since we can't proceed
+            self.queue_state.pending_queue = None;
+            // Send error to show that queue switch failed
+            if let Err(e) = self.tx_to_main.send(Msg::ShowError(
+                "Service Bus Manager not initialized. Please check your authentication."
+                    .to_string(),
+            )) {
+                log::error!("Failed to send Service Bus Manager error: {e}");
+            }
             return;
         };
         let tx_to_main = self.tx_to_main.clone();

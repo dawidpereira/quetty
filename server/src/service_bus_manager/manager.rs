@@ -27,9 +27,6 @@ pub struct ServiceBusManager {
     producer_manager: Arc<Mutex<ProducerManager>>,
     service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
 
-    // Shared HTTP client (kept for potential future use)
-    _http_client: reqwest::Client,
-
     // Connection reset capability
     connection_string: String,
 
@@ -83,7 +80,6 @@ impl ServiceBusManager {
             consumer_manager,
             producer_manager,
             service_bus_client,
-            _http_client: http_client,
             connection_string,
             last_error: Arc::new(Mutex::new(None)),
         }

@@ -29,13 +29,9 @@ struct TargetMessageParams<'a> {
 /// Parameters for bulk send result finalization
 #[derive(Debug)]
 struct BulkSendResultParams {
-    _is_dlq_operation: bool,
     message_ids: Vec<MessageIdentifier>,
     successful_count: usize,
     failed_count: usize,
-    _message_bytes: Vec<Vec<u8>>,
-    _target_queue: String,
-    _repeat_count: usize,
 }
 
 /// Result type for service bus operations
@@ -399,13 +395,9 @@ impl BulkCommandHandler {
                 .await;
         }
         let params = BulkSendResultParams {
-            _is_dlq_operation: is_dlq_operation,
             message_ids,
             successful_count,
             failed_count,
-            _message_bytes: message_bytes,
-            _target_queue: target_queue,
-            _repeat_count: repeat_count,
         };
         self.finalize_bulk_send_result(params)
     }

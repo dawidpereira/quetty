@@ -257,8 +257,9 @@ impl Component<Msg, NoUserEvent> for PasswordPopup {
                     None // Don't submit empty password
                 } else {
                     // Create config update data with just the master password
+                    // If there's pending config data from the config screen, preserve those values
                     let config_data = crate::components::common::ConfigUpdateData {
-                        auth_method: "connection_string".to_string(),
+                        auth_method: crate::utils::auth::AUTH_METHOD_CONNECTION_STRING.to_string(),
                         tenant_id: None,
                         client_id: None,
                         client_secret: None,
@@ -267,7 +268,7 @@ impl Component<Msg, NoUserEvent> for PasswordPopup {
                         namespace: None,
                         connection_string: None, // Don't update connection string
                         master_password: Some(self.password.clone()),
-                        queue_name: None,
+                        queue_name: None, // Will be updated in the message handler to preserve from config screen
                     };
                     Some(Msg::ConfigActivity(ConfigActivityMsg::ConfirmAndProceed(
                         config_data,

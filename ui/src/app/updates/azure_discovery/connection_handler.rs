@@ -78,8 +78,12 @@ impl ConnectionHandler {
         ) {
             log::info!("Persisting discovered Azure configuration to disk");
 
+            // Get current auth method instead of hardcoding device_code
+            let config = crate::config::get_config_or_panic();
+            let current_auth_method = config.azure_ad().auth_method.clone();
+
             let config_data = crate::components::common::ConfigUpdateData {
-                auth_method: "device_code".to_string(),
+                auth_method: current_auth_method,
                 tenant_id: None,
                 client_id: None,
                 client_secret: None,
@@ -87,8 +91,8 @@ impl ConnectionHandler {
                 resource_group: Some(resource_group.clone()),
                 namespace: Some(namespace.clone()),
                 connection_string: Some(connection_string.clone()),
-                master_password: None, // Not needed for device code auth
-                queue_name: None,
+                master_password: None, // Not needed for Azure AD auth methods
+                queue_name: None,      // Not needed for Azure AD auth methods
             };
 
             // Save to .env file

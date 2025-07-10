@@ -11,6 +11,7 @@ where
     pub fn update_queue(&mut self, msg: QueueActivityMsg) -> Option<Msg> {
         match msg {
             QueueActivityMsg::QueueSelected(queue) => {
+                log::info!("Queue selected: '{queue}' - initializing queue and loading statistics");
                 self.queue_state_mut().set_selected_queue(queue);
                 self.new_consumer_for_queue();
 
@@ -26,17 +27,34 @@ where
                     self.error_reporter.report_key_watcher_error(e);
                 }
 
-                // Save queue name for connection string auth for future use
+                // Save queue name for connection string auth only
                 let config = crate::config::get_config_or_panic();
-                if config.azure_ad().auth_method == "connection_string" {
-                    log::info!("Saving queue name '{queue}' for future connection string usage");
+                if config.azure_ad().auth_method
+                    == crate::utils::auth::AUTH_METHOD_CONNECTION_STRING
+                {
+                    log::info!("Saving queue name '{queue}' for connection string auth");
                     unsafe {
                         std::env::set_var("SERVICEBUS__QUEUE_NAME", &queue);
                     }
 
-                    // Also persist to .env file
-                    if let Err(e) = self.save_queue_name_to_env(&queue) {
-                        log::warn!("Failed to save queue name to .env file: {e}");
+                    // Also persist to .env file immediately
+                    let config_data = crate::components::common::ConfigUpdateData {
+                        auth_method: crate::utils::auth::AUTH_METHOD_CONNECTION_STRING.to_string(),
+                        tenant_id: None,
+                        client_id: None,
+                        client_secret: None,
+                        subscription_id: None,
+                        resource_group: None,
+                        namespace: None,
+                        connection_string: None,
+                        master_password: None,
+                        queue_name: Some(queue.clone()),
+                    };
+
+                    if let Err(e) = self.write_env_file(&config_data) {
+                        log::error!("Failed to persist queue name to .env file: {e}");
+                    } else {
+                        log::info!("Queue name persisted to .env file");
                     }
                 }
 
@@ -300,42 +318,5 @@ where
         if let Err(e) = self.load_queue_statistics_from_api(&base_queue_name) {
             log::error!("Failed to load queue statistics: {e}");
         }
-    }
-
-    /// Save queue name to .env file for future use
-    fn save_queue_name_to_env(&self, queue_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        use std::fs;
-        use std::path::Path;
-
-        let env_path = Path::new(".env");
-        let mut env_content = String::new();
-        let mut found_queue_name = false;
-
-        // Read existing .env file
-        if env_path.exists() {
-            let existing_content = fs::read_to_string(env_path)?;
-
-            for line in existing_content.lines() {
-                if line.trim().starts_with("SERVICEBUS__QUEUE_NAME=") {
-                    // Replace existing queue name
-                    env_content.push_str(&format!("SERVICEBUS__QUEUE_NAME={queue_name}\n"));
-                    found_queue_name = true;
-                } else {
-                    env_content.push_str(line);
-                    env_content.push('\n');
-                }
-            }
-        }
-
-        // Add queue name if not found
-        if !found_queue_name {
-            env_content.push_str(&format!("SERVICEBUS__QUEUE_NAME={queue_name}\n"));
-        }
-
-        // Write back to file
-        fs::write(env_path, env_content)?;
-        log::debug!("Saved queue name '{queue_name}' to .env file");
-
-        Ok(())
     }
 }

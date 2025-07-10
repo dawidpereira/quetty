@@ -11,6 +11,7 @@ use tuirealm::terminal::TerminalAdapter;
 #[derive(Debug, Clone, PartialEq)]
 pub struct QueueStatsCache {
     pub queue_name: String,
+    pub auth_method: String,
     pub active_count: u64,
     pub dlq_count: u64,
     pub fetched_at: chrono::DateTime<chrono::Utc>,
@@ -22,11 +23,22 @@ impl QueueStatsCache {
         let config = crate::config::get_config_or_panic();
         Self {
             queue_name,
+            auth_method: config.azure_ad().auth_method.clone(),
             active_count,
             dlq_count,
             fetched_at: chrono::Utc::now(),
             ttl_seconds: config.queue_stats_cache_ttl_seconds(),
         }
+    }
+
+    /// Get the compound cache key that includes both queue name and auth method
+    pub fn cache_key(&self) -> String {
+        format!("{}_{}", self.queue_name, self.auth_method)
+    }
+
+    /// Create a cache key for a given queue name and auth method
+    pub fn make_cache_key(queue_name: &str, auth_method: &str) -> String {
+        format!("{queue_name}_{auth_method}")
     }
 
     pub fn is_expired(&self) -> bool {

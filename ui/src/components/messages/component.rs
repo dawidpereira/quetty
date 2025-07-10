@@ -305,7 +305,6 @@ impl MockComponent for Messages {
                     Cell::from(format_delivery_count_responsive(
                         msg.delivery_count,
                         delivery_width as usize,
-                        narrow_layout,
                     ))
                     .style(RatatuiStyle::default().fg(ThemeManager::message_delivery_count())),
                 );

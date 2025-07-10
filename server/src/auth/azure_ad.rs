@@ -97,6 +97,89 @@ impl AzureAdProvider {
         self.poll_device_code_token(&device_info).await
     }
 
+    async fn client_credentials_flow(&self) -> Result<AuthToken, ServiceBusError> {
+        let client_secret = self.config.client_secret.as_deref().ok_or_else(|| {
+            ServiceBusError::ConfigurationError(
+                "Client secret is required for client credentials flow".to_string(),
+            )
+        })?;
+
+        let token_url = format!(
+            "{}/{}/oauth2/v2.0/token",
+            self.authority_host(),
+            self.tenant_id()?
+        );
+
+        let params = [
+            ("grant_type", "client_credentials"),
+            ("client_id", self.client_id()?),
+            ("client_secret", client_secret),
+            ("scope", self.scope()),
+        ];
+
+        log::info!("Client credentials authentication initiated");
+
+        let response = self
+            .http_client
+            .post(&token_url)
+            .form(&params)
+            .send()
+            .await
+            .map_err(|e| {
+                ServiceBusError::AuthenticationError(format!(
+                    "Failed to authenticate with client credentials: {e}"
+                ))
+            })?;
+
+        if !response.status().is_success() {
+            let error_info = response
+                .json::<ErrorResponse>()
+                .await
+                .unwrap_or(ErrorResponse {
+                    error: "unknown_error".to_string(),
+                    error_description: Some("Failed to parse error response".to_string()),
+                });
+
+            let user_friendly_message = match error_info.error.as_str() {
+                "invalid_client" => {
+                    "Invalid client credentials. Please check your client ID and client secret."
+                }
+                "invalid_request" => {
+                    "Invalid authentication request. Please verify your configuration."
+                }
+                "unauthorized_client" => {
+                    "This application is not authorized for client credentials flow. Please check Azure AD configuration."
+                }
+                "access_denied" => {
+                    "Access denied. Please ensure the application has sufficient permissions."
+                }
+                "invalid_scope" => {
+                    "Invalid scope specified. Please check the requested permissions."
+                }
+                _ => error_info
+                    .error_description
+                    .as_deref()
+                    .unwrap_or(&error_info.error),
+            };
+
+            return Err(ServiceBusError::AuthenticationError(format!(
+                "Client credentials authentication failed: {user_friendly_message}"
+            )));
+        }
+
+        let token_response: TokenResponse = response.json().await.map_err(|e| {
+            ServiceBusError::AuthenticationError(format!("Failed to parse token response: {e}"))
+        })?;
+
+        log::info!("Client credentials authentication successful");
+
+        Ok(AuthToken {
+            token: token_response.access_token,
+            token_type: token_response.token_type,
+            expires_in_secs: Some(token_response.expires_in),
+        })
+    }
+
     pub async fn start_device_code_flow(&self) -> Result<DeviceCodeFlowInfo, ServiceBusError> {
         let device_code_url = format!(
             "{}/{}/oauth2/v2.0/devicecode",
@@ -272,6 +355,7 @@ impl AuthProvider for AzureAdProvider {
     async fn authenticate(&self) -> Result<AuthToken, ServiceBusError> {
         match self.config.auth_method.as_str() {
             "device_code" => self.device_code_flow().await,
+            "client_secret" => self.client_credentials_flow().await,
             _ => Err(ServiceBusError::ConfigurationError(format!(
                 "Unsupported auth method: {}",
                 self.config.auth_method

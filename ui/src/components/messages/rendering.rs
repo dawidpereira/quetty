@@ -83,11 +83,7 @@ pub fn calculate_responsive_layout(
 }
 
 /// Format delivery count with right alignment (always)
-pub fn format_delivery_count_responsive(
-    count: usize,
-    width: usize,
-    _narrow_layout: bool,
-) -> String {
+pub fn format_delivery_count_responsive(count: usize, width: usize) -> String {
     let count_str = count.to_string();
     // Always use right alignment for better visual hierarchy
     let padding = width.saturating_sub(count_str.len());
@@ -122,7 +118,7 @@ pub fn build_table_from_messages(
     pagination_info: Option<&PaginationInfo>,
     selected_messages: &[MessageIdentifier],
     widths: &[u16],
-    narrow_layout: bool,
+    _narrow_layout: bool,
 ) -> Vec<Vec<TextSpan>> {
     if let Some(messages) = messages {
         let mut builder = TableBuilder::default();
@@ -150,7 +146,6 @@ pub fn build_table_from_messages(
                 .add_col(TextSpan::from(format_delivery_count_responsive(
                     msg.delivery_count,
                     delivery_width as usize,
-                    narrow_layout,
                 )))
                 .add_row();
         }

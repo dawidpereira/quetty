@@ -3,7 +3,9 @@ use crate::components::state::ComponentState;
 use crate::config::{self, AppConfig};
 use crate::error::AppResult;
 use crate::theme::ThemeManager;
-use crate::utils::auth::{AUTH_METHOD_CONNECTION_STRING, AUTH_METHOD_DEVICE_CODE};
+use crate::utils::auth::{
+    AUTH_METHOD_CLIENT_SECRET, AUTH_METHOD_CONNECTION_STRING, AUTH_METHOD_DEVICE_CODE,
+};
 use crate::utils::connection_string::ConnectionStringParser;
 use tuirealm::command::{Cmd, CmdResult};
 use tuirealm::event::{Key, KeyEvent, KeyModifiers};
@@ -119,6 +121,7 @@ impl ConfigScreen {
                 "Service Bus Connection String",
             ),
             (AUTH_METHOD_DEVICE_CODE, "Azure AD Device Code Flow"),
+            (AUTH_METHOD_CLIENT_SECRET, "Azure AD Client Secret Flow"),
         ]
     }
 
@@ -143,7 +146,10 @@ impl ConfigScreen {
                 ("resource_group", "Resource Group", false),
                 ("namespace", "Namespace", false),
             ],
-            "managed_identity" => vec![
+            AUTH_METHOD_CLIENT_SECRET => vec![
+                ("tenant_id", "Tenant ID", true),
+                ("client_id", "Client ID", true),
+                ("client_secret", "Client Secret", true),
                 ("subscription_id", "Subscription ID", false),
                 ("resource_group", "Resource Group", false),
                 ("namespace", "Namespace", false),
@@ -185,6 +191,14 @@ impl ConfigScreen {
     }
 
     fn validate_config(&self) -> Vec<String> {
+        self.validate_config_internal(false)
+    }
+
+    fn validate_config_for_save_only(&self) -> Vec<String> {
+        self.validate_config_internal(true)
+    }
+
+    fn validate_config_internal(&self, require_password_for_encrypted: bool) -> Vec<String> {
         let mut errors = Vec::new();
 
         match self.form_data.auth_method.as_str() {
@@ -194,10 +208,11 @@ impl ConfigScreen {
                 let connection_string = self.form_data.connection_string.trim();
 
                 log::debug!(
-                    "Config validation: has_encrypted_connection={}, connection_string='{}', master_password_len={}",
+                    "Config validation: has_encrypted_connection={}, connection_string='{}', master_password_len={}, require_password_for_encrypted={}",
                     has_encrypted_connection,
                     connection_string,
-                    self.form_data.master_password.len()
+                    self.form_data.master_password.len(),
+                    require_password_for_encrypted
                 );
 
                 if has_encrypted_connection
@@ -205,8 +220,10 @@ impl ConfigScreen {
                         || connection_string.contains("<<encrypted-connection-string-present>>"))
                 {
                     // We have an existing encrypted connection string and user didn't provide a new one
-                    // Just require the master password to decrypt existing one
-                    if self.form_data.master_password.trim().is_empty() {
+                    // For save-only mode, require password. For save-and-proceed mode, allow password popup
+                    if require_password_for_encrypted
+                        && self.form_data.master_password.trim().is_empty()
+                    {
                         errors.push(
                             "Master password is required to access existing connection string"
                                 .to_string(),
@@ -242,8 +259,16 @@ impl ConfigScreen {
                     errors.push("Client ID is required for device code flow".to_string());
                 }
             }
-            "managed_identity" => {
-                // No required fields for managed identity
+            AUTH_METHOD_CLIENT_SECRET => {
+                if self.form_data.tenant_id.trim().is_empty() {
+                    errors.push("Tenant ID is required for client secret flow".to_string());
+                }
+                if self.form_data.client_id.trim().is_empty() {
+                    errors.push("Client ID is required for client secret flow".to_string());
+                }
+                if self.form_data.client_secret.trim().is_empty() {
+                    errors.push("Client Secret is required for client secret flow".to_string());
+                }
             }
             _ => {
                 errors.push("Invalid authentication method selected".to_string());
@@ -323,11 +348,23 @@ impl ConfigScreen {
                 };
 
                 let (label_style, value_style) = if is_selected {
+                    let value_color = if *field == "auth_method" {
+                        // Color-code auth method values when selected
+                        match self.form_data.auth_method.as_str() {
+                            "connection_string" => ThemeManager::status_success(), // Green for connection string
+                            "device_code" => ThemeManager::status_warning(), // Yellow for device code
+                            "client_secret" => ThemeManager::message_delivery_count(), // Magenta for client secret
+                            _ => ThemeManager::text_primary(), // White for others
+                        }
+                    } else {
+                        ThemeManager::text_primary() // White for other fields
+                    };
+
                     (
                         Style::default()
                             .fg(ThemeManager::primary_accent()) // Bright cyan for selected field name
                             .add_modifier(Modifier::BOLD),
-                        Style::default().fg(ThemeManager::text_primary()), // Value stays white
+                        Style::default().fg(value_color),
                     )
                 } else if *required && self.get_field_value(field).trim().is_empty() {
                     (
@@ -335,9 +372,21 @@ impl ConfigScreen {
                         Style::default().fg(ThemeManager::text_primary()), // Value stays white even on error
                     )
                 } else {
+                    let value_color = if *field == "auth_method" {
+                        // Color-code auth method values when not selected
+                        match self.form_data.auth_method.as_str() {
+                            "connection_string" => ThemeManager::status_success(), // Green for connection string
+                            "device_code" => ThemeManager::status_warning(), // Yellow for device code
+                            "client_secret" => ThemeManager::message_delivery_count(), // Magenta for client secret
+                            _ => ThemeManager::text_primary(), // White for others
+                        }
+                    } else {
+                        ThemeManager::text_primary() // White for other fields
+                    };
+
                     (
                         Style::default().fg(ThemeManager::message_id()), // Light blue for normal field names
-                        Style::default().fg(ThemeManager::text_primary()), // Value always white
+                        Style::default().fg(value_color),
                     )
                 };
 
@@ -382,9 +431,9 @@ impl ConfigScreen {
                 ("[Esc]".to_string(), true),
                 (" cancel ".to_string(), false),
                 ("[s]".to_string(), true),
-                (" save ".to_string(), false),
+                (" save for next startup ".to_string(), false),
                 ("[Ctrl+S]".to_string(), true),
-                (" save & proceed".to_string(), false),
+                (" save & login".to_string(), false),
             ]
         };
 
@@ -612,12 +661,15 @@ impl Component<Msg, NoUserEvent> for ConfigScreen {
                 ..
             }) => {
                 if !self.editing_mode {
-                    self.validation_errors = self.validate_config();
+                    log::debug!("S pressed - validating config for save without login");
+                    self.validation_errors = self.validate_config_for_save_only();
                     if self.validation_errors.is_empty() {
+                        log::debug!("Validation passed - saving config for next startup");
                         Some(Msg::ConfigActivity(ConfigActivityMsg::Save(
                             self.to_config_update_data(),
                         )))
                     } else {
+                        log::debug!("Validation failed - not saving");
                         None
                     }
                 } else {
@@ -635,11 +687,11 @@ impl Component<Msg, NoUserEvent> for ConfigScreen {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             }) => {
-                log::debug!("Ctrl+S pressed - validating config");
+                log::debug!("Ctrl+S pressed - validating config for save and proceed");
                 self.validation_errors = self.validate_config();
                 log::debug!("Validation errors: {:?}", self.validation_errors);
                 if self.validation_errors.is_empty() {
-                    log::debug!("Validation passed - proceeding with ConfirmAndProceed");
+                    log::debug!("Validation passed - saving config and triggering login");
                     Some(Msg::ConfigActivity(ConfigActivityMsg::ConfirmAndProceed(
                         self.to_config_update_data(),
                     )))
@@ -733,17 +785,24 @@ impl Component<Msg, NoUserEvent> for ConfigScreen {
                         log::debug!("Enter pressed on field: {field_name}");
 
                         if *field_name == "auth_method" {
-                            // Cycle through auth methods
+                            // Cycle through auth methods for display only (no immediate application)
                             let auth_methods = Self::get_auth_methods();
                             let current_idx = auth_methods
                                 .iter()
                                 .position(|(method, _)| *method == self.form_data.auth_method)
                                 .unwrap_or(0);
                             let next_idx = (current_idx + 1) % auth_methods.len();
-                            self.form_data.auth_method = auth_methods[next_idx].0.to_string();
+                            let new_auth_method = auth_methods[next_idx].0.to_string();
 
-                            // Reset field selection when auth method changes
-                            self.selected_field = 0;
+                            log::debug!(
+                                "Auth method toggled from '{}' to '{}' - display only (not applied yet)",
+                                self.form_data.auth_method,
+                                new_auth_method
+                            );
+
+                            self.form_data.auth_method = new_auth_method;
+
+                            // Only update the display, don't apply immediately
                             Some(Msg::ForceRedraw)
                         } else {
                             // Start editing the field
@@ -773,6 +832,27 @@ impl Component<Msg, NoUserEvent> for ConfigScreen {
                     Some(Msg::ForceRedraw)
                 } else {
                     None
+                }
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('C'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                if !self.editing_mode {
+                    // Reload config data from current state
+                    log::debug!("ConfigScreen: Reloading configuration data");
+                    let config = crate::config::get_config_or_panic();
+                    self.form_data = Self::load_current_config(config);
+                    Some(Msg::ForceRedraw)
+                } else {
+                    // In editing mode, let the general character handler process 'C'
+                    if self.current_input.len() < 512 {
+                        self.current_input.push('C');
+                        Some(Msg::ForceRedraw)
+                    } else {
+                        Some(Msg::ForceRedraw)
+                    }
                 }
             }
             Event::Keyboard(KeyEvent {

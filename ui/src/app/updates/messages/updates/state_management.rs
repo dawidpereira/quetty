@@ -52,11 +52,6 @@ where
 
     /// Handle queue switch completion
     pub fn handle_queue_switched(&mut self, queue_info: QueueInfo) -> Option<Msg> {
-        // Check if Service Bus manager is initialized before attempting to load messages
-        if self.get_service_bus_manager().is_none() {
-            log::warn!("Service Bus manager not initialized - deferring queue switch until ready");
-            return None;
-        }
         // Update the queue state with the new queue information
         self.queue_state_mut().current_queue_name = Some(queue_info.name.clone());
         self.queue_state_mut().current_queue_type = queue_info.queue_type.clone();
@@ -244,10 +239,10 @@ where
         }
 
         let removed_count = self.remove_messages_from_pagination_state(&message_ids);
-        let (target_page, remaining_message_count) =
+        let (target_page, _remaining_message_count) =
             self.calculate_pagination_after_removal(removed_count);
 
-        match self.calculate_and_execute_auto_loading(target_page, remaining_message_count) {
+        match self.calculate_and_execute_auto_loading(target_page) {
             Ok(true) => {
                 // Auto-loading initiated, view will be updated when messages arrive
                 return None;
@@ -480,7 +475,6 @@ where
     pub fn calculate_and_execute_auto_loading(
         &mut self,
         target_page: usize,
-        _remaining_message_count: usize,
     ) -> Result<bool, AppError> {
         self.update_current_page(target_page);
         self.update_pagination_state_after_removal();
@@ -879,32 +873,44 @@ where
                     dead_letter_message_count,
                     ..
                 } => {
-                    let active_count = active_message_count.unwrap_or(0);
-                    let dlq_count = dead_letter_message_count.unwrap_or(0);
+                    match (active_message_count, dead_letter_message_count) {
+                        (Some(active_count), Some(dlq_count)) => {
+                            log::info!(
+                                "Loaded stats for {queue_name}: active={active_count}, dlq={dlq_count}"
+                            );
 
-                    log::info!(
-                        "Loaded stats for {queue_name}: active={active_count}, dlq={dlq_count}"
-                    );
+                            let stats_cache =
+                                crate::app::updates::messages::pagination::QueueStatsCache::new(
+                                    queue_name,
+                                    active_count,
+                                    dlq_count,
+                                );
 
-                    let stats_cache =
-                        crate::app::updates::messages::pagination::QueueStatsCache::new(
-                            queue_name,
-                            active_count,
-                            dlq_count,
-                        );
-
-                    if let Err(e) =
-                        tx_to_main.send(crate::components::common::Msg::MessageActivity(
-                            crate::components::common::MessageActivityMsg::QueueStatsUpdated(
-                                stats_cache,
-                            ),
-                        ))
-                    {
-                        log::error!("Failed to send queue stats update: {e}");
+                            if let Err(e) =
+                                tx_to_main.send(crate::components::common::Msg::MessageActivity(
+                                    crate::components::common::MessageActivityMsg::QueueStatsUpdated(
+                                        stats_cache,
+                                    ),
+                                ))
+                            {
+                                log::error!("Failed to send queue stats update: {e}");
+                            }
+                        }
+                        _ => {
+                            log::info!("Queue statistics not available for {queue_name} - no cache update");
+                        }
                     }
                 }
                 ServiceBusResponse::Error { error } => {
+                    // Check if this is an auth method incompatibility error
+                    if error.to_string().contains("Unsupported auth method: connection_string") {
+                        log::info!("Queue statistics not available for connection string authentication method");
+                        // Don't update cache with 0 values for auth method incompatibility
+                        return Ok(());
+                    }
+
                     log::warn!("Failed to load queue stats for {queue_name}: {error}");
+                    // For other errors, still don't update cache to prevent corruption
                 }
                 _ => {
                     log::warn!("Unexpected response for queue statistics for {queue_name}");

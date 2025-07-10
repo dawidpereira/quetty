@@ -72,9 +72,6 @@ where
             if let Some(namespace) = &config_data.namespace {
                 env::set_var("AZURE_AD__NAMESPACE", namespace);
             }
-            if let Some(queue_name) = &config_data.queue_name {
-                env::set_var("SERVICEBUS__QUEUE_NAME", queue_name);
-            }
         }
 
         // Handle connection string encryption
@@ -133,6 +130,9 @@ where
     fn handle_config_cancel(&mut self) -> AppResult<Option<Msg>> {
         log::debug!("Config/password popup cancelled");
 
+        // Clear any pending config data
+        self.state_manager.pending_config_data = None;
+
         // Check which component is mounted and unmount appropriately
         if self.app.mounted(&ComponentId::ConfigScreen) {
             if let Err(e) = self.unmount_config_screen() {
@@ -156,12 +156,51 @@ where
 
     fn handle_config_confirm_and_proceed(
         &mut self,
-        config_data: ConfigUpdateData,
+        mut config_data: ConfigUpdateData,
     ) -> AppResult<Option<Msg>> {
         log::info!(
             "Confirming and proceeding with configuration - auth method: {}",
             config_data.auth_method
         );
+
+        // If we have pending config data from the config screen, merge it with the password data
+        if let Some(pending_data) = &self.state_manager.pending_config_data {
+            log::info!("Merging pending config data from config screen with password popup data");
+
+            // Preserve non-None values from pending config data
+            if config_data.tenant_id.is_none() && pending_data.tenant_id.is_some() {
+                config_data.tenant_id = pending_data.tenant_id.clone();
+            }
+            if config_data.client_id.is_none() && pending_data.client_id.is_some() {
+                config_data.client_id = pending_data.client_id.clone();
+            }
+            if config_data.client_secret.is_none() && pending_data.client_secret.is_some() {
+                config_data.client_secret = pending_data.client_secret.clone();
+            }
+            if config_data.subscription_id.is_none() && pending_data.subscription_id.is_some() {
+                config_data.subscription_id = pending_data.subscription_id.clone();
+            }
+            if config_data.resource_group.is_none() && pending_data.resource_group.is_some() {
+                config_data.resource_group = pending_data.resource_group.clone();
+            }
+            if config_data.namespace.is_none() && pending_data.namespace.is_some() {
+                config_data.namespace = pending_data.namespace.clone();
+            }
+            if config_data.connection_string.is_none() && pending_data.connection_string.is_some() {
+                config_data.connection_string = pending_data.connection_string.clone();
+            }
+            // Most importantly, preserve the queue name from the config screen
+            if config_data.queue_name.is_none() && pending_data.queue_name.is_some() {
+                config_data.queue_name = pending_data.queue_name.clone();
+                log::info!(
+                    "Preserved queue name from config screen: {:?}",
+                    config_data.queue_name
+                );
+            }
+
+            // Clear the pending config data after merging
+            self.state_manager.pending_config_data = None;
+        }
 
         self.log_config_data(&config_data);
 
@@ -169,6 +208,57 @@ where
         if let Some(master_password) = &config_data.master_password {
             if let Some(msg) = self.handle_password_and_encryption(&config_data, master_password)? {
                 return Ok(Some(msg));
+            }
+        } else if config_data.auth_method == "connection_string" {
+            // Connection string auth requires master password
+            let config = crate::config::get_config_or_panic();
+            if config.servicebus().has_connection_string() {
+                // We have encrypted connection string but no password provided
+                // First update the auth method in config.toml, then show password popup
+                log::info!(
+                    "Connection string auth selected but no password provided - updating config and showing password popup"
+                );
+
+                // Store the config data from the config screen for later use
+                self.state_manager.pending_config_data = Some(config_data.clone());
+
+                // Update auth method in config.toml first
+                if let Err(e) = self.update_config_toml(&config_data) {
+                    log::error!("Failed to update config.toml: {e}");
+                    return Err(e);
+                }
+
+                // Reload configuration to pick up the auth method change
+                if let Err(e) = crate::config::reload_config() {
+                    log::error!("Failed to reload configuration: {e}");
+                    return Err(crate::error::AppError::Config(format!(
+                        "Configuration reload failed: {e}"
+                    )));
+                }
+
+                // Close config screen first
+                if let Err(e) = self.unmount_config_screen() {
+                    self.error_reporter
+                        .report_mount_error("ConfigScreen", "unmount", e);
+                }
+
+                // Show password popup
+                if let Err(e) = self.mount_password_popup(Some(
+                    "Master password required for connection string authentication".to_string(),
+                )) {
+                    self.error_reporter
+                        .report_mount_error("PasswordPopup", "mount", &e);
+                    return Ok(Some(Msg::ToggleConfigScreen));
+                }
+
+                self.set_redraw(true);
+                return Ok(None);
+            } else {
+                // No encrypted connection string exists - need to configure connection string
+                // Keep the config screen open so user can enter connection string and password
+                log::info!(
+                    "Connection string auth selected but no encrypted connection string exists - user needs to configure"
+                );
             }
         }
 
@@ -220,6 +310,47 @@ where
         match config.servicebus().connection_string() {
             Ok(Some(_)) => {
                 log::info!("Password validation successful - connection string decrypted");
+
+                // Check if we have pending config data with queue name that needs to be saved
+                if let Some(pending_config) = &self.state_manager.pending_config_data {
+                    if pending_config.queue_name.is_some() {
+                        log::info!("Saving queue name from pending config data to .env file");
+
+                        // Create a minimal config data with just the queue name for saving
+                        let queue_config_data = crate::components::common::ConfigUpdateData {
+                            auth_method: crate::utils::auth::AUTH_METHOD_CONNECTION_STRING
+                                .to_string(),
+                            tenant_id: None,
+                            client_id: None,
+                            client_secret: None,
+                            subscription_id: None,
+                            resource_group: None,
+                            namespace: None,
+                            connection_string: None,
+                            master_password: None,
+                            queue_name: pending_config.queue_name.clone(),
+                        };
+
+                        // Save queue name to environment and .env file
+                        if let Some(queue_name) = &queue_config_data.queue_name {
+                            unsafe {
+                                std::env::set_var("SERVICEBUS__QUEUE_NAME", queue_name);
+                            }
+                            log::info!("Set queue name in environment: '{queue_name}'");
+                        }
+
+                        // Write to .env file
+                        if let Err(e) = self.write_env_file(&queue_config_data) {
+                            log::error!("Failed to write queue name to .env file: {e}");
+                        } else {
+                            log::info!("Queue name saved to .env file successfully");
+                        }
+
+                        // Clear pending config data since we've processed it
+                        self.state_manager.pending_config_data = None;
+                    }
+                }
+
                 // Reset authenticating flag since password is now valid
                 self.state_manager.is_authenticating = false;
                 Ok(None)
@@ -290,17 +421,32 @@ where
                     }
                 }
             } else if connection_string.contains("<<encrypted-connection-string-present>>") {
-                // Password change with placeholder
-                log::info!(
-                    "Master password changed - clearing existing encrypted connection string"
-                );
-                unsafe {
-                    env::remove_var("SERVICEBUS__ENCRYPTED_CONNECTION_STRING");
-                    env::remove_var("SERVICEBUS__ENCRYPTION_SALT");
+                // Placeholder with password - verify password works with existing connection string
+                log::info!("Placeholder connection string with password - verifying password");
+
+                let config = crate::config::get_config_or_panic();
+                match config.servicebus().connection_string() {
+                    Ok(Some(_)) => {
+                        // Password works with existing connection string - this is just password entry, not a change
+                        log::info!("Password works with existing encrypted connection string");
+                    }
+                    Ok(None) => {
+                        log::warn!("No encrypted connection string found despite placeholder");
+                    }
+                    Err(_) => {
+                        // Password doesn't work - this is a password change
+                        log::info!(
+                            "Password doesn't work with existing connection string - clearing for new setup"
+                        );
+                        unsafe {
+                            env::remove_var("SERVICEBUS__ENCRYPTED_CONNECTION_STRING");
+                            env::remove_var("SERVICEBUS__ENCRYPTION_SALT");
+                        }
+                        return Err(crate::error::AppError::Config(
+                            "Master password doesn't match existing encrypted connection string. Please enter your connection string again.".to_string()
+                        ));
+                    }
                 }
-                return Err(crate::error::AppError::Config(
-                    "Master password changed. Please enter your connection string again for security.".to_string()
-                ));
             } else {
                 log::info!(
                     "Using existing encrypted connection string with provided master password"
@@ -380,8 +526,17 @@ where
             if let Some(namespace) = &config_data.namespace {
                 env::set_var("AZURE_AD__NAMESPACE", namespace);
             }
-            if let Some(queue_name) = &config_data.queue_name {
-                env::set_var("SERVICEBUS__QUEUE_NAME", queue_name);
+
+            // Set queue name only for connection string auth
+            if config_data.auth_method == crate::utils::auth::AUTH_METHOD_CONNECTION_STRING {
+                if let Some(queue_name) = &config_data.queue_name {
+                    if !queue_name.trim().is_empty() {
+                        env::set_var("SERVICEBUS__QUEUE_NAME", queue_name);
+                        log::info!("Updated queue name from config screen: '{queue_name}'");
+                    }
+                } else {
+                    log::debug!("No queue name provided in config screen");
+                }
             }
         }
     }
@@ -391,6 +546,9 @@ where
         config_data: &ConfigUpdateData,
     ) -> AppResult<Option<Msg>> {
         self.state_manager.is_authenticating = false;
+
+        // Clear any pending config data since we're proceeding with the final configuration
+        self.state_manager.pending_config_data = None;
 
         // Cleanup UI components
         if self.app.mounted(&ComponentId::ConfigScreen) {
@@ -415,7 +573,7 @@ where
         }
 
         // Determine next action based on auth method
-        if config_data.auth_method == "connection_string" {
+        if config_data.auth_method == crate::utils::auth::AUTH_METHOD_CONNECTION_STRING {
             log::info!(
                 "Configuration saved successfully. Creating Service Bus manager with connection string."
             );
@@ -516,7 +674,15 @@ where
             &encrypted_connection_string,
         );
         write_value("SERVICEBUS__ENCRYPTION_SALT", &encryption_salt);
-        write_value("SERVICEBUS__QUEUE_NAME", &config_data.queue_name);
+
+        // Write queue name only for connection string auth
+        if config_data.auth_method == crate::utils::auth::AUTH_METHOD_CONNECTION_STRING {
+            write_value("SERVICEBUS__QUEUE_NAME", &config_data.queue_name);
+        } else {
+            // Clear queue name for other auth methods by explicitly not adding it
+            // This will remove the line from the .env file
+            log::debug!("Clearing queue name for non-connection-string auth method");
+        }
 
         // Write the updated content to .env file
         fs::write(env_path, env_content).map_err(|e| {

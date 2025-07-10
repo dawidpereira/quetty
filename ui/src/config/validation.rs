@@ -97,7 +97,7 @@ impl ConfigValidationError {
                 format!(
                     "Invalid authentication method!\n\n\
                     Your configured value: {method}\n\
-                    Valid methods: connection_string, device_code, managed_identity\n\n\
+                    Valid methods: connection_string, device_code, client_secret\n\n\
                     Please update azure_ad.auth_method in config.toml."
                 )
             }

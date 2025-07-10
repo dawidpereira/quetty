@@ -137,6 +137,11 @@ impl AzureAdConfig {
             }
         }
 
+        // For connection string authentication, we cannot get Azure AD tokens
+        if self.auth_method == "connection_string" {
+            return Err("Azure AD token not available for connection string authentication".into());
+        }
+
         // Fallback to regular auth provider
         let auth_provider =
             create_service_bus_auth_provider("azure_ad", None, self, http_client.clone())?;

@@ -154,13 +154,75 @@ where
                         log::info!("Device code authentication - starting Azure discovery flow");
                         Ok(Some(Msg::AzureDiscovery(AzureDiscoveryMsg::StartDiscovery)))
                     }
+                } else if AuthUtils::is_client_secret_auth(config) {
+                    let azure_ad_config = config.azure_ad();
+                    if azure_ad_config.has_subscription_id()
+                        && azure_ad_config.has_resource_group()
+                        && azure_ad_config.has_namespace()
+                    {
+                        log::info!(
+                            "Client secret authentication - all Azure configuration already available, skipping discovery"
+                        );
+                        // All required Azure config is present, fetch connection string directly
+                        let subscription_id = azure_ad_config
+                            .subscription_id()
+                            .expect("subscription_id should be present");
+                        let resource_group = azure_ad_config
+                            .resource_group()
+                            .expect("resource_group should be present");
+                        let namespace = azure_ad_config
+                            .namespace()
+                            .expect("namespace should be present");
+
+                        // Set the selected values in state manager so discovery finalization works properly
+                        self.state_manager.update_azure_selection(
+                            Some(subscription_id.to_string()),
+                            Some(resource_group.to_string()),
+                            Some(namespace.to_string()),
+                        );
+
+                        Ok(Some(Msg::AzureDiscovery(
+                            AzureDiscoveryMsg::FetchingConnectionString {
+                                subscription_id: subscription_id.to_string(),
+                                resource_group: resource_group.to_string(),
+                                namespace: namespace.to_string(),
+                            },
+                        )))
+                    } else {
+                        log::info!("Client secret authentication - starting Azure discovery flow");
+                        Ok(Some(Msg::AzureDiscovery(AzureDiscoveryMsg::StartDiscovery)))
+                    }
                 } else if AuthUtils::is_connection_string_auth(config) {
-                    // Connection string auth should have been handled differently
-                    log::warn!(
-                        "Connection string auth reached device code success handler - this shouldn't happen"
+                    // Connection string auth - check for saved queue name and load it
+                    log::info!(
+                        "Connection string authentication successful - checking for saved queue"
                     );
-                    self.queue_manager.load_namespaces();
-                    Ok(None)
+
+                    // Check if we have a saved queue name to auto-load
+                    match std::env::var("SERVICEBUS__QUEUE_NAME") {
+                        Ok(saved_queue) => {
+                            if !saved_queue.trim().is_empty() {
+                                log::info!("Found saved queue name '{saved_queue}' - auto-loading");
+                                // Send queue selection message to trigger proper queue loading with statistics
+                                return Ok(Some(Msg::QueueActivity(
+                                    crate::components::common::QueueActivityMsg::QueueSelected(
+                                        saved_queue,
+                                    ),
+                                )));
+                            } else {
+                                log::debug!("Saved queue name is empty");
+                            }
+                        }
+                        Err(_) => {
+                            log::debug!("No saved queue name found");
+                        }
+                    }
+
+                    // No saved queue - show queue picker for manual entry
+                    log::info!("No saved queue found - showing queue picker for manual entry");
+                    return Ok(Some(Msg::QueueActivity(
+                        crate::components::common::QueueActivityMsg::QueuesLoaded(vec![]),
+                    )));
                 } else if config.servicebus().has_connection_string() {
                     // Other auth methods with connection string available
                     log::info!("Connection string available, loading namespaces directly");

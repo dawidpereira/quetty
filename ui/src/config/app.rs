@@ -3,7 +3,9 @@ use super::{
     validation::ConfigValidationError,
 };
 use crate::theme::types::ThemeConfig;
-use crate::utils::auth::{AUTH_METHOD_DEVICE_CODE, AuthUtils};
+use crate::utils::auth::{
+    AUTH_METHOD_CLIENT_SECRET, AUTH_METHOD_CONNECTION_STRING, AUTH_METHOD_DEVICE_CODE, AuthUtils,
+};
 use serde::Deserialize;
 use server::bulk_operations::BatchConfig;
 use server::service_bus_manager::AzureAdConfig;
@@ -207,7 +209,7 @@ impl AppConfig {
 
         // Validate authentication method
         match auth_method.as_str() {
-            "connection_string" => {
+            AUTH_METHOD_CONNECTION_STRING => {
                 // When using connection_string, ensure we have an encrypted connection string
                 if !self.servicebus.has_connection_string() {
                     errors.push(ConfigValidationError::ConflictingAuthConfig {
@@ -219,7 +221,7 @@ impl AppConfig {
                     });
                 }
             }
-            AUTH_METHOD_DEVICE_CODE | "managed_identity" => {
+            AUTH_METHOD_DEVICE_CODE | AUTH_METHOD_CLIENT_SECRET => {
                 // Validate Azure AD configuration for these auth methods
                 self.validate_azure_ad_config(errors);
             }
@@ -238,7 +240,7 @@ impl AppConfig {
         // Validate authentication method
         match auth_method.as_str() {
             AUTH_METHOD_DEVICE_CODE => self.validate_device_code_config(errors),
-            "managed_identity" => self.validate_managed_identity_config(errors),
+            AUTH_METHOD_CLIENT_SECRET => self.validate_client_secret_config(errors),
             _ => {
                 errors.push(ConfigValidationError::InvalidAzureAdFlow {
                     flow: auth_method.clone(),
@@ -270,29 +272,31 @@ impl AppConfig {
         }
     }
 
-    /// Validate managed identity configuration
-    fn validate_managed_identity_config(&self, errors: &mut Vec<ConfigValidationError>) {
-        // For managed identity, we might need subscription_id for management API operations
+    /// Validate client secret flow configuration
+    fn validate_client_secret_config(&self, errors: &mut Vec<ConfigValidationError>) {
+        // Required fields for client secret flow
+        if !self.azure_ad.has_tenant_id() && std::env::var("AZURE_AD__TENANT_ID").is_err() {
+            errors.push(ConfigValidationError::MissingAzureAdField {
+                field: "tenant_id".to_string(),
+            });
+        }
+        if !self.azure_ad.has_client_id() && std::env::var("AZURE_AD__CLIENT_ID").is_err() {
+            errors.push(ConfigValidationError::MissingAzureAdField {
+                field: "client_id".to_string(),
+            });
+        }
+        if !self.azure_ad.has_client_secret() && std::env::var("AZURE_AD__CLIENT_SECRET").is_err() {
+            errors.push(ConfigValidationError::MissingAzureAdField {
+                field: "client_secret".to_string(),
+            });
+        }
+
+        // Optional fields for management API operations
         if self.queue_stats_use_management_api() {
-            if !self.azure_ad.has_subscription_id()
-                && std::env::var("AZURE_AD__SUBSCRIPTION_ID").is_err()
-            {
-                errors.push(ConfigValidationError::MissingAzureAdField {
-                    field: "subscription_id".to_string(),
-                });
-            }
-            if !self.azure_ad.has_resource_group()
-                && std::env::var("AZURE_AD__RESOURCE_GROUP").is_err()
-            {
-                errors.push(ConfigValidationError::MissingAzureAdField {
-                    field: "resource_group".to_string(),
-                });
-            }
-            if !self.azure_ad.has_namespace() && std::env::var("AZURE_AD__NAMESPACE").is_err() {
-                errors.push(ConfigValidationError::MissingAzureAdField {
-                    field: "namespace".to_string(),
-                });
-            }
+            // These are optional with client secret flow as they can be discovered interactively
+            log::debug!(
+                "Client secret flow with management API - optional fields can be discovered interactively"
+            );
         }
     }
 
@@ -303,8 +307,11 @@ impl AppConfig {
         } else if AuthUtils::is_device_code_auth(self) {
             (self.azure_ad.has_tenant_id() || std::env::var("AZURE_AD__TENANT_ID").is_ok())
                 && (self.azure_ad.has_client_id() || std::env::var("AZURE_AD__CLIENT_ID").is_ok())
-        } else if self.azure_ad.auth_method == "managed_identity" {
-            true // Managed identity doesn't require explicit config
+        } else if AuthUtils::is_client_secret_auth(self) {
+            (self.azure_ad.has_tenant_id() || std::env::var("AZURE_AD__TENANT_ID").is_ok())
+                && (self.azure_ad.has_client_id() || std::env::var("AZURE_AD__CLIENT_ID").is_ok())
+                && (self.azure_ad.has_client_secret()
+                    || std::env::var("AZURE_AD__CLIENT_SECRET").is_ok())
         } else {
             false
         }
