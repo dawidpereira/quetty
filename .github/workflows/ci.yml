@@ -36,7 +36,7 @@ jobs:
       run: cargo build --verbose
 
     - name: Copy example config.toml for tests
-      run: cp ui/config.example.toml ui/config.toml
+      run: cp config.example.toml config.toml
 
     - name: Run tests
       run: cargo test --verbose
