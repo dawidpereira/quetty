@@ -53,8 +53,8 @@ pub fn setup_logger() -> Result<(), log::SetLoggerError> {
             }
         }
     } else {
-        // If no file is configured, create a default log file in the current directory
-        let default_log_path = "quetty.log";
+        // If no file is configured, create a default log file in the project root
+        let default_log_path = "../quetty.log";
         match OpenOptions::new()
             .create(true)
             .append(true)

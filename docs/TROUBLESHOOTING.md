@@ -255,8 +255,8 @@ Warning: Configuration file not found, using defaults.
 ```
 
 **Solutions:**
-1. **Create Config**: Copy `ui/config.example.toml` to `ui/config.toml`
-2. **Check Location**: Ensure config file is in correct directory (`ui/config.toml`)
+1. **Create Config**: Copy `config.example.toml` to `config.toml`
+2. **Check Location**: Ensure config file is in correct directory (`config.toml`)
 3. **Permissions**: Verify file is readable
 
 #### Issue: Configuration Syntax Errors

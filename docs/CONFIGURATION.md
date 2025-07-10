@@ -5,9 +5,8 @@ This document provides a complete reference for all Quetty configuration options
 ## Configuration File Location
 
 Quetty looks for configuration in these locations (in order):
-1. `ui/config.toml` (relative to project root)
-2. `config.toml` (current working directory)
-3. Default values (built-in)
+1. `config.toml` (project root)
+2. Default values (built-in)
 
 ## Configuration Format
 

@@ -59,10 +59,9 @@ Pre-built binaries will be available for:
 
 ### 1. Configuration Initialization
 
-On first launch, Quetty will create a configuration file at `ui/config.toml`. You can also copy the example configuration:
+On first launch, Quetty will create a configuration file at `config.toml`. You can also copy the example configuration:
 
 ```bash
-cd ui
 cp config.example.toml config.toml
 ```
 
@@ -139,11 +138,10 @@ After installation, your Quetty directory will look like:
 
 ```
 quetty/
-├── ui/
-│   ├── config.toml          # Main configuration file
-│   ├── config.example.toml  # Configuration template
-│   ├── quetty.log          # Application logs (if file logging enabled)
-│   └── src/                # Source code
+├── config.toml          # Main configuration file
+├── config.example.toml  # Configuration template
+├── quetty.log          # Application logs (if file logging enabled)
+├── ui/                     # UI source code
 ├── server/                 # Core library
 ├── themes/                 # Built-in themes
 │   ├── catppuccin/

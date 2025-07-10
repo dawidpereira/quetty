@@ -95,7 +95,7 @@ fn load_config() -> ConfigLoadResult {
     let env_source = Environment::default().separator("__");
 
     // Configuration file is mandatory – fail fast when missing
-    let file_source = File::with_name("config.toml");
+    let file_source = File::with_name("../config.toml");
 
     let config = match Config::builder()
         .add_source(file_source)
@@ -309,7 +309,7 @@ fn load_config_fresh() -> ConfigLoadResult {
     dotenv::dotenv().ok();
 
     let env_source = Environment::default().separator("__");
-    let file_source = File::with_name("config.toml");
+    let file_source = File::with_name("../config.toml");
 
     let config = match Config::builder()
         .add_source(file_source)

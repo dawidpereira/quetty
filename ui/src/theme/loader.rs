@@ -30,25 +30,16 @@ impl ThemeLoader {
     }
 
     fn find_themes_directory() -> PathBuf {
-        // Try different possible locations for the themes directory
-        let possible_paths = vec![
-            PathBuf::from("themes"),      // Current directory
-            PathBuf::from("ui/themes"),   // From project root
-            PathBuf::from("../themes"),   // From target directory
-            PathBuf::from("./ui/themes"), // From project root with ./
-        ];
+        // Themes directory is always in the project root
+        let themes_path = PathBuf::from("../themes");
 
-        for path in possible_paths {
-            if path.exists() && path.is_dir() {
-                log::info!("Found themes directory at: {}", path.display());
-                return path;
-            }
+        if themes_path.exists() && themes_path.is_dir() {
+            log::info!("Found themes directory at: {}", themes_path.display());
+            return themes_path;
         }
 
         // Default fallback - this will likely fail but at least give a clear error
-        log::warn!(
-            "Could not find themes directory in any expected location, using default 'themes'"
-        );
+        log::warn!("Could not find themes directory at '../themes', using fallback");
         PathBuf::from("themes")
     }
 
