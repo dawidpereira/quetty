@@ -1,3 +1,8 @@
+//! Types and data structures for bulk operations.
+//!
+//! This module defines the core types used throughout the bulk operations system,
+//! including result tracking, message identification, configuration, and operation contexts.
+
 use crate::consumer::Consumer;
 use azservicebus::ServiceBusClient;
 use azservicebus::core::BasicRetryPolicy;
@@ -7,18 +12,54 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-/// Result of a bulk operation with detailed statistics
+/// Result of a bulk operation with detailed statistics and error tracking.
+///
+/// Provides comprehensive information about the outcome of bulk operations,
+/// including success counts, failure details, and lists of processed messages.
+/// Used to report operation results to callers and for UI feedback.
+///
+/// # Examples
+///
+/// ```no_run
+/// use server::bulk_operations::BulkOperationResult;
+///
+/// let mut result = BulkOperationResult::new(100);
+/// result.add_success();
+/// result.add_failure("Connection timeout".to_string());
+///
+/// if result.is_complete_success() {
+///     println!("All operations completed successfully");
+/// } else {
+///     println!("Partial success: {} of {} succeeded",
+///              result.successful, result.total_requested);
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub struct BulkOperationResult {
+    /// Total number of operations requested
     pub total_requested: usize,
+    /// Number of operations that completed successfully
     pub successful: usize,
+    /// Number of operations that failed
     pub failed: usize,
+    /// Number of target items that were not found
     pub not_found: usize,
+    /// Detailed error messages for failed operations
     pub error_details: Vec<String>,
+    /// Identifiers of messages that were processed successfully
     pub successful_message_ids: Vec<MessageIdentifier>,
 }
 
 impl BulkOperationResult {
+    /// Creates a new BulkOperationResult for the specified number of operations.
+    ///
+    /// # Arguments
+    ///
+    /// * `total_requested` - The total number of operations that will be attempted
+    ///
+    /// # Returns
+    ///
+    /// A new result tracker with zero counts and empty collections
     pub fn new(total_requested: usize) -> Self {
         Self {
             total_requested,
@@ -53,15 +94,38 @@ impl BulkOperationResult {
         self.not_found += 1;
     }
 
+    /// Checks if all requested operations completed successfully.
+    ///
+    /// # Returns
+    ///
+    /// `true` if all operations succeeded with no failures or missing items
     pub fn is_complete_success(&self) -> bool {
         self.successful == self.total_requested && self.failed == 0 && self.not_found == 0
     }
 }
 
-/// Identifier for targeting specific messages
+/// Identifier for targeting specific messages in bulk operations.
+///
+/// Combines message ID and sequence number for precise message targeting.
+/// The sequence number is used for optimization during bulk scanning operations
+/// to minimize the number of messages that need to be processed.
+///
+/// # Examples
+///
+/// ```no_run
+/// use server::bulk_operations::MessageIdentifier;
+///
+/// let msg_id = MessageIdentifier::new("msg-123".to_string(), 4567);
+/// println!("Message: {} at sequence {}", msg_id.id, msg_id.sequence);
+///
+/// let composite = msg_id.composite_key();
+/// println!("Composite key: {}", composite);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MessageIdentifier {
+    /// The unique message identifier
     pub id: String,
+    /// The message sequence number for optimization
     pub sequence: i64,
 }
 
@@ -72,6 +136,16 @@ impl std::fmt::Display for MessageIdentifier {
 }
 
 impl MessageIdentifier {
+    /// Creates a new MessageIdentifier with the specified ID and sequence.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The unique message identifier
+    /// * `sequence` - The message sequence number
+    ///
+    /// # Returns
+    ///
+    /// A new MessageIdentifier instance
     pub fn new(id: String, sequence: i64) -> Self {
         Self { id, sequence }
     }
@@ -87,7 +161,15 @@ impl MessageIdentifier {
         Self { id, sequence: 0 }
     }
 
-    /// Create composite key for exact matching
+    /// Creates a composite key for exact matching.
+    ///
+    /// Combines the message ID and sequence number into a single string
+    /// that can be used for precise identification in hash maps or other
+    /// data structures that require string keys.
+    ///
+    /// # Returns
+    ///
+    /// A string in the format "id:sequence"
     pub fn composite_key(&self) -> String {
         format!("{}:{}", self.id, self.sequence)
     }
@@ -123,7 +205,27 @@ impl PartialEq<MessageIdentifier> for String {
     }
 }
 
-/// Configuration for bulk operation batching and limits
+/// Configuration for bulk operation batching and limits.
+///
+/// Controls various aspects of bulk operations including batch sizes,
+/// timeouts, processing limits, and UI behavior. Provides sensible defaults
+/// for all configuration values.
+///
+/// # Examples
+///
+/// ```no_run
+/// use server::bulk_operations::BatchConfig;
+///
+/// // Use default configuration
+/// let config = BatchConfig::default();
+///
+/// // Create custom configuration
+/// let config = BatchConfig::new(100, 600);
+///
+/// // Access configuration values
+/// println!("Max batch size: {}", config.max_batch_size());
+/// println!("Timeout: {}s", config.operation_timeout_secs());
+/// ```
 #[derive(Debug, Deserialize, Default, Clone)]
 pub struct BatchConfig {
     /// Maximum batch size for bulk operations (default: 200)
@@ -143,7 +245,18 @@ pub struct BatchConfig {
 }
 
 impl BatchConfig {
-    /// Create a new BatchConfig
+    /// Creates a new BatchConfig with specified batch size and timeout.
+    ///
+    /// Other configuration values will use their defaults when accessed.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_batch_size` - Maximum number of messages per batch
+    /// * `operation_timeout_secs` - Timeout for bulk operations in seconds
+    ///
+    /// # Returns
+    ///
+    /// A new BatchConfig with the specified values
     pub fn new(max_batch_size: u32, operation_timeout_secs: u64) -> Self {
         Self {
             max_batch_size: Some(max_batch_size),

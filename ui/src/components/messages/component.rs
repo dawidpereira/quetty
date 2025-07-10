@@ -19,21 +19,35 @@ use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, NoUserEvent, State, StateValue,
 };
 
+/// Information about message list pagination and queue state.
+///
+/// Contains all the necessary information for displaying pagination controls,
+/// bulk selection status, and queue statistics in the message list component.
 #[derive(Debug, Clone)]
 pub struct PaginationInfo {
+    /// Current page number (0-based)
     pub current_page: usize,
+    /// Total number of pages loaded so far
     pub total_pages_loaded: usize,
+    /// Total number of messages loaded
     pub total_messages_loaded: usize,
+    /// Number of messages per page
     pub current_page_size: usize,
+    /// Whether there are more pages available
     pub has_next_page: bool,
+    /// Whether there are previous pages available
     pub has_previous_page: bool,
+    /// Name of the current queue
     pub queue_name: Option<String>,
+    /// Type of the current queue (Main or DeadLetter)
     pub queue_type: QueueType,
-    // Bulk selection info
+    /// Whether bulk selection mode is active
     pub bulk_mode: bool,
+    /// Number of messages currently selected
     pub selected_count: usize,
-    // Queue statistics
+    /// Total number of messages in the queue (if available)
     pub queue_total_messages: Option<u64>,
+    /// Age of queue statistics in seconds (if available)
     pub queue_stats_age_seconds: Option<i64>,
 }
 

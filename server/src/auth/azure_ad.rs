@@ -4,16 +4,53 @@ use crate::service_bus_manager::ServiceBusError;
 use async_trait::async_trait;
 use serde::Deserialize;
 
+/// Information required to complete an Azure AD Device Code Flow authentication.
+///
+/// Contains the device code, user code, and verification URL that the user needs
+/// to complete the authentication process on a separate device or browser.
 #[derive(Clone, Debug)]
 pub struct DeviceCodeFlowInfo {
+    /// Device-specific code used internally by Azure AD
     pub device_code: String,
+    /// Short user code that the user enters on the verification page
     pub user_code: String,
+    /// URL where the user should go to enter the user code
     pub verification_uri: String,
+    /// Time in seconds until the device code expires
     pub expires_in: u64,
+    /// Recommended polling interval in seconds
     pub interval: u64,
+    /// Human-readable message with authentication instructions
     pub message: String,
 }
 
+/// Authentication provider for Azure Active Directory authentication flows.
+///
+/// Supports both Device Code Flow (for interactive scenarios) and Client Credentials Flow
+/// (for service-to-service authentication). This provider handles the complete OAuth 2.0
+/// authentication process with Azure AD.
+///
+/// # Supported Flows
+///
+/// - **Device Code Flow** - Interactive authentication where users enter a code on a separate device
+/// - **Client Credentials Flow** - Service principal authentication using client ID and secret
+///
+/// # Examples
+///
+/// ```no_run
+/// use server::auth::{AzureAdProvider, AzureAdAuthConfig};
+///
+/// let config = AzureAdAuthConfig {
+///     auth_method: "device_code".to_string(),
+///     tenant_id: Some("your-tenant-id".to_string()),
+///     client_id: Some("your-client-id".to_string()),
+///     ..Default::default()
+/// };
+///
+/// let client = reqwest::Client::new();
+/// let provider = AzureAdProvider::new(config, client)?;
+/// let token = provider.authenticate().await?;
+/// ```
 #[derive(Clone)]
 pub struct AzureAdProvider {
     config: AzureAdAuthConfig,
@@ -45,6 +82,26 @@ struct ErrorResponse {
 }
 
 impl AzureAdProvider {
+    /// Creates a new AzureAdProvider with the specified configuration and HTTP client.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Azure AD authentication configuration
+    /// * `http_client` - HTTP client for making authentication requests
+    ///
+    /// # Returns
+    ///
+    /// A configured AzureAdProvider ready for authentication
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use server::auth::{AzureAdProvider, AzureAdAuthConfig};
+    ///
+    /// let config = AzureAdAuthConfig::default();
+    /// let client = reqwest::Client::new();
+    /// let provider = AzureAdProvider::new(config, client)?;
+    /// ```
     pub fn new(
         config: AzureAdAuthConfig,
         http_client: reqwest::Client,
@@ -55,6 +112,11 @@ impl AzureAdProvider {
         })
     }
 
+    /// Gets the configured authentication flow type.
+    ///
+    /// # Returns
+    ///
+    /// The authentication method string ("device_code" or "client_credentials")
     pub fn flow_type(&self) -> &str {
         &self.config.auth_method
     }
@@ -180,6 +242,34 @@ impl AzureAdProvider {
         })
     }
 
+    /// Initiates a Device Code Flow authentication process.
+    ///
+    /// This method starts the device code flow by requesting a device code from Azure AD.
+    /// The returned information should be displayed to the user so they can complete
+    /// authentication on a separate device or browser.
+    ///
+    /// # Returns
+    ///
+    /// [`DeviceCodeFlowInfo`] containing the user code, verification URL, and other details
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ServiceBusError::AuthenticationError`] if:
+    /// - The device code request fails
+    /// - Invalid client configuration
+    /// - Network connectivity issues
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use server::auth::AzureAdProvider;
+    ///
+    /// let provider = AzureAdProvider::new(config, client)?;
+    /// let device_info = provider.start_device_code_flow().await?;
+    ///
+    /// println!("Go to: {}", device_info.verification_uri);
+    /// println!("Enter code: {}", device_info.user_code);
+    /// ```
     pub async fn start_device_code_flow(&self) -> Result<DeviceCodeFlowInfo, ServiceBusError> {
         let device_code_url = format!(
             "{}/{}/oauth2/v2.0/devicecode",
@@ -254,6 +344,39 @@ impl AzureAdProvider {
         })
     }
 
+    /// Polls Azure AD for completion of device code authentication.
+    ///
+    /// This method continuously polls Azure AD to check if the user has completed
+    /// the device code authentication process. It handles all the standard OAuth 2.0
+    /// device flow polling logic including backoff and error handling.
+    ///
+    /// # Arguments
+    ///
+    /// * `device_info` - Device code information from [`start_device_code_flow`]
+    ///
+    /// # Returns
+    ///
+    /// An [`AuthToken`] when authentication is successfully completed
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ServiceBusError::AuthenticationError`] if:
+    /// - Authentication times out or expires
+    /// - User denies access
+    /// - Network errors during polling
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use server::auth::AzureAdProvider;
+    ///
+    /// let provider = AzureAdProvider::new(config, client)?;
+    /// let device_info = provider.start_device_code_flow().await?;
+    ///
+    /// // Display info to user...
+    ///
+    /// let token = provider.poll_device_code_token(&device_info).await?;
+    /// ```
     pub async fn poll_device_code_token(
         &self,
         device_info: &DeviceCodeFlowInfo,
@@ -352,6 +475,23 @@ impl AzureAdProvider {
 
 #[async_trait]
 impl AuthProvider for AzureAdProvider {
+    /// Authenticates using the configured Azure AD authentication flow.
+    ///
+    /// Automatically selects the appropriate authentication method based on the
+    /// configuration (device_code or client_credentials) and handles the complete
+    /// OAuth 2.0 flow including error handling and token retrieval.
+    ///
+    /// # Returns
+    ///
+    /// An [`AuthToken`] containing the Azure AD access token and metadata
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ServiceBusError`] if:
+    /// - Authentication method is not supported
+    /// - Authentication flow fails
+    /// - Network connectivity issues
+    /// - Invalid credentials or configuration
     async fn authenticate(&self) -> Result<AuthToken, ServiceBusError> {
         match self.config.auth_method.as_str() {
             "device_code" => self.device_code_flow().await,
@@ -363,6 +503,11 @@ impl AuthProvider for AzureAdProvider {
         }
     }
 
+    /// Returns the authentication type for this provider.
+    ///
+    /// # Returns
+    ///
+    /// [`AuthType::AzureAd`] indicating Azure Active Directory authentication
     fn auth_type(&self) -> AuthType {
         AuthType::AzureAd
     }

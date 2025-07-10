@@ -42,7 +42,27 @@ const ERROR_INDIVIDUAL_MSG_OPERATIONS: &str =
     "Individual message operations by ID require message to be received first";
 const ERROR_BULK_OPERATIONS: &str = "Bulk operations require message to be received first";
 
-/// Handles queue-related commands
+/// Handles queue-related commands including queue switching and statistics.
+///
+/// Provides functionality for managing queue connections, retrieving queue
+/// information, and gathering comprehensive statistics from Azure Service Bus.
+///
+/// # Examples
+///
+/// ```no_run
+/// use server::service_bus_manager::command_handlers::QueueCommandHandler;
+///
+/// let handler = QueueCommandHandler::new(consumer_manager, statistics_service);
+///
+/// // Switch to a different queue
+/// let response = handler.handle_switch_queue(
+///     "orders".to_string(),
+///     QueueType::Main
+/// ).await?;
+///
+/// // Get current queue information
+/// let response = handler.handle_get_current_queue().await?;
+/// ```
 pub struct QueueCommandHandler {
     consumer_manager: Arc<Mutex<ConsumerManager>>,
     statistics_service: Arc<QueueStatisticsService>,
@@ -105,7 +125,25 @@ impl QueueCommandHandler {
     }
 }
 
-/// Handles message retrieval commands
+/// Handles message retrieval commands including peek and receive operations.
+///
+/// Provides functionality for retrieving messages from Service Bus queues
+/// in different modes - peeking (non-destructive) and receiving (with locks).
+/// Individual message operations are handled differently and require special setup.
+///
+/// # Examples
+///
+/// ```no_run
+/// use server::service_bus_manager::command_handlers::MessageCommandHandler;
+///
+/// let handler = MessageCommandHandler::new(consumer_manager);
+///
+/// // Peek at messages without removing them
+/// let response = handler.handle_peek_messages(10, None).await?;
+///
+/// // Receive messages with locks for processing
+/// let response = handler.handle_receive_messages(5).await?;
+/// ```
 pub struct MessageCommandHandler {
     consumer_manager: Arc<Mutex<ConsumerManager>>,
 }
@@ -164,7 +202,37 @@ impl MessageCommandHandler {
     }
 }
 
-/// Handles bulk operation commands
+/// Handles bulk operation commands for efficient processing of multiple messages.
+///
+/// Provides functionality for bulk message operations including delete, send,
+/// complete, abandon, and dead letter operations. Uses optimized batching
+/// strategies to handle large numbers of messages efficiently.
+///
+/// # Features
+///
+/// - **Bulk Delete** - Efficient deletion of multiple messages
+/// - **Bulk Send** - Send multiple messages to target queues
+/// - **Bulk Complete/Abandon** - Process multiple received messages
+/// - **Batch Optimization** - Smart batching based on operation size
+///
+/// # Examples
+///
+/// ```no_run
+/// use server::service_bus_manager::command_handlers::BulkCommandHandler;
+///
+/// let handler = BulkCommandHandler::new(
+///     bulk_handler,
+///     consumer_manager,
+///     producer_manager,
+///     batch_config
+/// );
+///
+/// // Bulk delete messages
+/// let response = handler.handle_bulk_delete(
+///     message_ids,
+///     1000  // max position
+/// ).await?;
+/// ```
 pub struct BulkCommandHandler {
     bulk_handler: Arc<BulkOperationHandler>,
     consumer_manager: Arc<Mutex<ConsumerManager>>,
@@ -548,7 +616,31 @@ impl BulkCommandHandler {
     }
 }
 
-/// Handles sending operation commands
+/// Handles message sending commands for single and multiple message operations.
+///
+/// Provides functionality for sending messages to Service Bus queues using
+/// the producer manager. Supports both single message sends and batch sending
+/// operations with comprehensive error handling and statistics tracking.
+///
+/// # Examples
+///
+/// ```no_run
+/// use server::service_bus_manager::command_handlers::SendCommandHandler;
+///
+/// let handler = SendCommandHandler::new(producer_manager);
+///
+/// // Send a single message
+/// let response = handler.handle_send_message(
+///     "target-queue".to_string(),
+///     message_data
+/// ).await?;
+///
+/// // Send multiple messages
+/// let response = handler.handle_send_messages(
+///     "target-queue".to_string(),
+///     vec![message1, message2, message3]
+/// ).await?;
+/// ```
 pub struct SendCommandHandler {
     producer_manager: Arc<Mutex<ProducerManager>>,
 }
@@ -592,7 +684,27 @@ impl SendCommandHandler {
     }
 }
 
-/// Handles status and health check commands
+/// Handles status and health check commands for monitoring Service Bus connections.
+///
+/// Provides functionality for checking connection health, queue status, and
+/// overall system state. Monitors both consumer and producer managers to
+/// provide comprehensive status information.
+///
+/// # Examples
+///
+/// ```no_run
+/// use server::service_bus_manager::command_handlers::StatusCommandHandler;
+///
+/// let handler = StatusCommandHandler::new(consumer_manager, producer_manager);
+///
+/// // Check overall connection status
+/// let response = handler.handle_get_connection_status().await?;
+///
+/// // Get basic queue statistics
+/// let response = handler.handle_get_queue_stats(
+///     "orders".to_string()
+/// ).await?;
+/// ```
 pub struct StatusCommandHandler {
     consumer_manager: Arc<Mutex<ConsumerManager>>,
     producer_manager: Arc<Mutex<ProducerManager>>,
@@ -636,7 +748,28 @@ impl StatusCommandHandler {
     }
 }
 
-/// Handles resource management commands
+/// Handles resource management commands for cleanup and connection management.
+///
+/// Provides functionality for disposing of Service Bus resources, resetting
+/// connections, and performing cleanup operations. Essential for proper
+/// resource lifecycle management and error recovery.
+///
+/// # Examples
+///
+/// ```no_run
+/// use server::service_bus_manager::command_handlers::ResourceCommandHandler;
+///
+/// let handler = ResourceCommandHandler::new(consumer_manager, producer_manager);
+///
+/// // Dispose of current consumer
+/// let response = handler.handle_dispose_consumer().await?;
+///
+/// // Clean up all resources
+/// let response = handler.handle_dispose_all_resources().await?;
+///
+/// // Reset connection
+/// let response = handler.handle_reset_connection().await?;
+/// ```
 pub struct ResourceCommandHandler {
     consumer_manager: Arc<Mutex<ConsumerManager>>,
     producer_manager: Arc<Mutex<ProducerManager>>,

@@ -1,3 +1,39 @@
+//! # Theme Manager
+//!
+//! Centralized theme management system for the Quetty application.
+//! Provides thread-safe access to themes, color schemes, and runtime theme switching.
+//!
+//! ## Features
+//!
+//! - **Global Theme Management** - Singleton pattern for application-wide theme access
+//! - **Runtime Theme Switching** - Change themes without restarting the application
+//! - **Fallback Colors** - Graceful degradation when theme loading fails
+//! - **Thread Safety** - Safe concurrent access from multiple UI components
+//! - **Theme Discovery** - Automatic discovery of available themes and flavors
+//!
+//! ## Usage
+//!
+//! ```no_run
+//! use ui::theme::{manager::ThemeManager, types::ThemeConfig};
+//!
+//! // Initialize at application startup
+//! let config = ThemeConfig {
+//!     theme_name: "catppuccin".to_string(),
+//!     flavor_name: "mocha".to_string(),
+//! };
+//! ThemeManager::init_global(&config)?;
+//!
+//! // Use theme colors in components
+//! let primary_color = ThemeManager::primary_accent();
+//! let text_color = ThemeManager::text_primary();
+//!
+//! // Switch themes at runtime
+//! {
+//!     let mut manager = ThemeManager::global().lock().unwrap();
+//!     manager.switch_theme("nightfox", "carbonfox")?;
+//! }
+//! ```
+
 use crate::error::{AppError, AppResult};
 use crate::theme::{
     loader::ThemeLoader,
@@ -8,10 +44,13 @@ use std::sync::{Arc, Mutex};
 
 use tuirealm::props::Color;
 
-// Global theme manager instance - now wrapped in Mutex for thread-safe updates
+/// Global theme manager instance - thread-safe singleton for application-wide theme access
 static GLOBAL_THEME_MANAGER: OnceCell<Mutex<ThemeManager>> = OnceCell::new();
 
-// Fallback colors for when theme loading fails
+/// Fallback colors used when theme loading fails or theme manager is unavailable.
+///
+/// These colors provide a basic, readable color scheme that ensures the application
+/// remains functional even when themes cannot be loaded.
 mod fallback_colors {
     use tuirealm::props::Color;
 
@@ -43,13 +82,53 @@ mod fallback_colors {
     pub const POPUP_TEXT: Color = Color::White;
 }
 
+/// Central theme management system for the application.
+///
+/// ThemeManager provides thread-safe access to theme data and supports runtime
+/// theme switching. It maintains the current theme state and provides accessor
+/// methods for all color values used throughout the application.
+///
+/// # Thread Safety
+///
+/// The ThemeManager is designed to be used as a global singleton wrapped in a Mutex.
+/// All color accessor methods are thread-safe and include fallback mechanisms.
 pub struct ThemeManager {
     current_theme: Arc<Theme>,
     loader: ThemeLoader,
 }
 
 impl ThemeManager {
-    /// Initialize the global theme manager - call this once at app startup
+    /// Initializes the global theme manager singleton.
+    ///
+    /// This method must be called once at application startup before any theme
+    /// colors are accessed. It loads the initial theme from the provided configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Theme configuration specifying the initial theme and flavor
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if initialization succeeds
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The theme manager is already initialized
+    /// - The initial theme cannot be loaded
+    /// - Theme files are invalid or missing
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ui::theme::{manager::ThemeManager, types::ThemeConfig};
+    ///
+    /// let config = ThemeConfig {
+    ///     theme_name: "catppuccin".to_string(),
+    ///     flavor_name: "mocha".to_string(),
+    /// };
+    /// ThemeManager::init_global(&config)?;
+    /// ```
     pub fn init_global(config: &ThemeConfig) -> AppResult<()> {
         let loader = ThemeLoader::new();
         let theme = loader.load_theme_from_config(config)?;
@@ -67,14 +146,46 @@ impl ThemeManager {
         Ok(())
     }
 
-    /// Get the global theme manager instance
+    /// Gets a reference to the global theme manager instance.
+    ///
+    /// # Returns
+    ///
+    /// A reference to the Mutex-wrapped ThemeManager
+    ///
+    /// # Panics
+    ///
+    /// Panics if the theme manager has not been initialized with [`init_global`]
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ui::theme::manager::ThemeManager;
+    ///
+    /// let manager = ThemeManager::global();
+    /// let mut theme_manager = manager.lock().unwrap();
+    /// theme_manager.switch_theme("nightfox", "carbonfox")?;
+    /// ```
     pub fn global() -> &'static Mutex<ThemeManager> {
         GLOBAL_THEME_MANAGER
             .get()
             .expect("Theme manager not initialized. Call ThemeManager::init_global() first.")
     }
 
-    /// Safe helper function to access the theme manager with timeout and fallback
+    /// Safe helper function to access the theme manager with fallback on lock contention.
+    ///
+    /// This method provides non-blocking access to the theme manager. If the lock
+    /// cannot be acquired immediately or the manager is not initialized, it returns
+    /// the provided fallback value.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `F` - Function that operates on the theme
+    /// * `R` - Return type
+    ///
+    /// # Arguments
+    ///
+    /// * `f` - Function to execute with the current theme
+    /// * `fallback` - Value to return if theme access fails
     fn with_theme_manager<F, R>(f: F, fallback: R) -> R
     where
         F: FnOnce(&Arc<Theme>) -> R,
@@ -97,7 +208,19 @@ impl ThemeManager {
         }
     }
 
-    /// Get a color from the theme with fallback
+    /// Gets a color from the current theme with automatic fallback.
+    ///
+    /// This method safely extracts a color from the theme using the provided
+    /// getter function. If theme access fails, it returns the fallback color.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `F` - Function that extracts a color from the theme
+    ///
+    /// # Arguments
+    ///
+    /// * `color_getter` - Function to extract the desired color
+    /// * `fallback` - Color to use if theme access fails
     fn get_theme_color<F>(color_getter: F, fallback: Color) -> Color
     where
         F: FnOnce(&Theme) -> Color,
@@ -205,7 +328,35 @@ theme_accessor!(
 theme_accessor!(popup_text, popup_text, fallback_colors::POPUP_TEXT);
 
 impl ThemeManager {
-    /// Switch to a new theme by name and flavor
+    /// Switches to a new theme by name and flavor.
+    ///
+    /// This method loads and activates a new theme at runtime. All subsequent
+    /// color accessor calls will use the new theme colors.
+    ///
+    /// # Arguments
+    ///
+    /// * `theme_name` - Name of the theme (e.g., "catppuccin", "nightfox")
+    /// * `flavor_name` - Name of the flavor (e.g., "mocha", "carbonfox")
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the theme switch succeeds
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The theme or flavor does not exist
+    /// - Theme files are invalid or corrupted
+    /// - File system access fails
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ui::theme::manager::ThemeManager;
+    ///
+    /// let mut manager = ThemeManager::global().lock().unwrap();
+    /// manager.switch_theme("catppuccin", "latte")?;
+    /// ```
     pub fn switch_theme(&mut self, theme_name: &str, flavor_name: &str) -> AppResult<()> {
         let theme = self.loader.load_theme(theme_name, flavor_name)?;
         self.current_theme = Arc::new(theme);
@@ -213,12 +364,54 @@ impl ThemeManager {
         Ok(())
     }
 
-    /// Switch to a new theme using ThemeConfig
+    /// Switches to a new theme using a ThemeConfig struct.
+    ///
+    /// Convenience method for switching themes when you have a ThemeConfig.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Theme configuration containing theme and flavor names
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the theme switch succeeds
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`switch_theme`]
     pub fn switch_theme_from_config(&mut self, config: &ThemeConfig) -> AppResult<()> {
         self.switch_theme(&config.theme_name, &config.flavor_name)
     }
 
-    /// Get available themes with metadata
+    /// Discovers all available themes with their metadata and icons.
+    ///
+    /// This method scans the theme directories and loads metadata for all
+    /// available themes and flavors. It includes display names, icons, and
+    /// other theme information.
+    ///
+    /// # Returns
+    ///
+    /// [`ThemeCollectionWithMetadata`] containing all discovered themes with their metadata
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if theme discovery or loading fails
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ui::theme::manager::ThemeManager;
+    ///
+    /// let manager = ThemeManager::global().lock().unwrap();
+    /// let themes = manager.discover_themes_with_metadata()?;
+    ///
+    /// for (theme_name, flavors) in themes {
+    ///     println!("Theme: {}", theme_name);
+    ///     for (flavor_name, theme_icon, flavor_icon) in flavors {
+    ///         println!("  {} {} {}", theme_icon, flavor_icon, flavor_name);
+    ///     }
+    /// }
+    /// ```
     pub fn discover_themes_with_metadata(&self) -> AppResult<ThemeCollectionWithMetadata> {
         let themes = self.loader.discover_themes()?;
         let mut result = Vec::new();
@@ -276,7 +469,29 @@ impl ThemeManager {
         "🎭".to_string()
     }
 
-    /// Static method to get available themes with metadata from global manager
+    /// Static method to discover themes using the global theme manager.
+    ///
+    /// Convenience method that accesses the global theme manager and discovers
+    /// available themes. This method is thread-safe and includes lock contention handling.
+    ///
+    /// # Returns
+    ///
+    /// [`ThemeCollectionWithMetadata`] containing all discovered themes
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Theme manager is not initialized
+    /// - Lock cannot be acquired
+    /// - Theme discovery fails
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ui::theme::manager::ThemeManager;
+    ///
+    /// let themes = ThemeManager::global_discover_themes_with_metadata()?;
+    /// ```
     pub fn global_discover_themes_with_metadata() -> AppResult<ThemeCollectionWithMetadata> {
         match GLOBAL_THEME_MANAGER.get() {
             Some(manager_mutex) => match manager_mutex.try_lock() {

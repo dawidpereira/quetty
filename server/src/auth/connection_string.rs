@@ -13,6 +13,37 @@ pub struct ConnectionStringProvider {
 }
 
 impl ConnectionStringProvider {
+    /// Creates a new ConnectionStringProvider from a connection string configuration.
+    ///
+    /// Parses the connection string to extract the namespace, shared access key name,
+    /// and shared access key. Validates that all required components are present.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Configuration containing the Service Bus connection string
+    ///
+    /// # Returns
+    ///
+    /// A configured ConnectionStringProvider ready for authentication
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ServiceBusError::ConfigurationError`] if:
+    /// - Connection string is empty
+    /// - Connection string is missing required components (Endpoint, SharedAccessKeyName, SharedAccessKey)
+    /// - Connection string format is invalid
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use server::auth::{ConnectionStringProvider, ConnectionStringConfig};
+    ///
+    /// let config = ConnectionStringConfig {
+    ///     value: "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=abc123".to_string(),
+    /// };
+    ///
+    /// let provider = ConnectionStringProvider::new(config)?;
+    /// ```
     pub fn new(config: ConnectionStringConfig) -> Result<Self, ServiceBusError> {
         if config.value.is_empty() {
             return Err(ServiceBusError::ConfigurationError(
@@ -72,6 +103,11 @@ impl ConnectionStringProvider {
         })
     }
 
+    /// Gets the original connection string value.
+    ///
+    /// # Returns
+    ///
+    /// The complete connection string as provided in the configuration
     pub fn connection_string(&self) -> &str {
         &self.config.value
     }
@@ -79,6 +115,19 @@ impl ConnectionStringProvider {
 
 #[async_trait]
 impl AuthProvider for ConnectionStringProvider {
+    /// Authenticates using the connection string by generating a SAS token.
+    ///
+    /// Creates a time-limited SAS token (24 hours) using the shared access key
+    /// from the connection string. The token can be used to authenticate
+    /// Service Bus operations.
+    ///
+    /// # Returns
+    ///
+    /// An [`AuthToken`] containing the SAS-based connection string and expiration
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ServiceBusError`] if SAS token generation fails
     async fn authenticate(&self) -> Result<AuthToken, ServiceBusError> {
         // Generate a SAS token valid for 24 hours
         let sas_token = self.sas_generator.generate_sas_token(
@@ -99,10 +148,23 @@ impl AuthProvider for ConnectionStringProvider {
         })
     }
 
+    /// Returns the authentication type for this provider.
+    ///
+    /// # Returns
+    ///
+    /// [`AuthType::ConnectionString`] indicating connection string authentication
     fn auth_type(&self) -> AuthType {
         AuthType::ConnectionString
     }
 
+    /// Indicates whether this provider's tokens require periodic refresh.
+    ///
+    /// Connection string authentication uses SAS tokens that expire,
+    /// so refresh is required.
+    ///
+    /// # Returns
+    ///
+    /// `true` because SAS tokens have limited validity
     fn requires_refresh(&self) -> bool {
         true // SAS tokens expire, so we need refresh
     }

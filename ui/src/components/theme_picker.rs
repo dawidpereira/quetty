@@ -16,6 +16,30 @@ use tuirealm::{
 const CMD_RESULT_THEME_SELECTED: &str = "ThemeSelected";
 const CMD_RESULT_CLOSE_PICKER: &str = "ClosePicker";
 
+/// Interactive theme picker component for selecting application themes and flavors.
+///
+/// Provides a two-level selection interface where users first choose a theme family,
+/// then select a specific flavor within that theme. Displays theme metadata including
+/// icons and descriptions for better user experience.
+///
+/// # Navigation
+///
+/// - **Arrow Keys** - Navigate between themes and flavors
+/// - **Enter** - Confirm selection and apply theme
+/// - **Tab** - Switch between theme and flavor selection modes
+/// - **Escape** - Cancel and close picker
+///
+/// # Examples
+///
+/// ```no_run
+/// use ui::components::theme_picker::ThemePicker;
+/// use ui::components::state::ComponentState;
+///
+/// let mut picker = ThemePicker::new();
+/// picker.mount()?; // Loads available themes
+///
+/// // Component handles user input and theme selection
+/// ```
 pub struct ThemePicker {
     themes: ThemeCollectionWithMetadata, // (theme_name, [(flavor_name, theme_icon, flavor_icon)])
     theme_selected: usize,               // Selected theme index

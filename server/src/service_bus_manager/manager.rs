@@ -13,7 +13,51 @@ use azservicebus::{ServiceBusClient, ServiceBusClientOptions, core::BasicRetryPo
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-/// The main service bus manager that orchestrates all service bus operations
+/// The main service bus manager that orchestrates all service bus operations.
+///
+/// ServiceBusManager is the central coordinator for all Azure Service Bus operations,
+/// providing a unified interface for queue management, message handling, bulk operations,
+/// and resource management. It uses a command pattern to process operations through
+/// specialized handlers.
+///
+/// # Architecture
+///
+/// The manager is built around specialized command handlers:
+/// - [`QueueCommandHandler`] - Queue switching and statistics
+/// - [`MessageCommandHandler`] - Message retrieval and completion
+/// - [`SendCommandHandler`] - Message sending operations
+/// - [`StatusCommandHandler`] - Connection and status monitoring
+/// - [`BulkCommandHandler`] - Bulk message operations
+/// - [`ResourceCommandHandler`] - Resource discovery and management
+///
+/// # Thread Safety
+///
+/// All internal state is protected by async mutexes, making the manager safe to use
+/// across multiple async tasks and threads.
+///
+/// # Examples
+///
+/// ```no_run
+/// use server::service_bus_manager::{ServiceBusManager, ServiceBusCommand};
+///
+/// let manager = ServiceBusManager::new(/* configuration */);
+///
+/// // Switch to a queue
+/// let response = manager.execute_command(
+///     ServiceBusCommand::SwitchQueue {
+///         queue_name: "my-queue".to_string(),
+///         queue_type: "Queue".to_string(),
+///     }
+/// ).await;
+///
+/// // Get messages
+/// let response = manager.execute_command(
+///     ServiceBusCommand::PeekMessages {
+///         max_count: 10,
+///         from_sequence: None,
+///     }
+/// ).await;
+/// ```
 pub struct ServiceBusManager {
     queue_handler: QueueCommandHandler,
     message_handler: MessageCommandHandler,
@@ -35,7 +79,24 @@ pub struct ServiceBusManager {
 }
 
 impl ServiceBusManager {
-    /// Create a new ServiceBusManager
+    /// Creates a new ServiceBusManager with the specified configuration.
+    ///
+    /// Initializes all command handlers and shared state components needed for
+    /// Service Bus operations. The manager takes ownership of the provided clients
+    /// and configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `service_bus_client` - Azure Service Bus client for operations
+    /// * `http_client` - HTTP client for Azure Management API calls
+    /// * `azure_ad_config` - Azure AD configuration for authentication
+    /// * `statistics_config` - Configuration for queue statistics collection
+    /// * `batch_config` - Configuration for bulk operations
+    /// * `connection_string` - Service Bus connection string for reconnection
+    ///
+    /// # Returns
+    ///
+    /// A fully configured ServiceBusManager ready for operations
     pub fn new(
         service_bus_client: Arc<Mutex<ServiceBusClient<BasicRetryPolicy>>>,
         http_client: reqwest::Client,
@@ -85,7 +146,34 @@ impl ServiceBusManager {
         }
     }
 
-    /// Execute a service bus command and return the response
+    /// Executes a service bus command and returns the response.
+    ///
+    /// This is the main entry point for all Service Bus operations. Commands are
+    /// dispatched to specialized handlers based on their type. Errors are caught
+    /// and converted to error responses.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - The service bus command to execute
+    ///
+    /// # Returns
+    ///
+    /// A [`ServiceBusResponse`] containing either the operation result or an error
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use server::service_bus_manager::{ServiceBusManager, ServiceBusCommand};
+    ///
+    /// let manager = ServiceBusManager::new(/* args */);
+    ///
+    /// let response = manager.execute_command(
+    ///     ServiceBusCommand::GetQueueStatistics {
+    ///         queue_name: "my-queue".to_string(),
+    ///         queue_type: "Queue".to_string(),
+    ///     }
+    /// ).await;
+    /// ```
     pub async fn execute_command(&self, command: ServiceBusCommand) -> ServiceBusResponse {
         log::debug!("Executing command: {command:?}");
 
@@ -106,7 +194,19 @@ impl ServiceBusManager {
         }
     }
 
-    /// Handle a command using specialized command handlers
+    /// Handles a command using specialized command handlers.
+    ///
+    /// Internal method that dispatches commands to the appropriate handler based
+    /// on command type. This method can return errors which are caught and
+    /// converted to error responses by [`execute_command`].
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - The service bus command to handle
+    ///
+    /// # Returns
+    ///
+    /// A [`ServiceBusResult`] containing either the response or an error
     async fn handle_command(
         &self,
         command: ServiceBusCommand,

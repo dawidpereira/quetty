@@ -1,41 +1,105 @@
+//! # Configuration Module
+//!
+//! Centralized configuration management for the Quetty application.
+//! Handles loading, validation, and runtime management of application settings
+//! from TOML files and environment variables.
+//!
+//! ## Features
+//!
+//! - **Multi-Source Loading** - Loads from config.toml and environment variables
+//! - **Runtime Reloading** - Hot reload configuration without restart
+//! - **Type Safety** - Strongly typed configuration with validation
+//! - **Global Access** - Thread-safe global configuration access
+//! - **Environment Override** - Environment variables override file settings
+//! - **Validation** - Comprehensive configuration validation
+//!
+//! ## Configuration Structure
+//!
+//! The configuration is organized into logical modules:
+//! - [`app`] - Core application settings
+//! - [`auth`] - Authentication configuration
+//! - [`azure`] - Azure-specific settings
+//! - [`keys`] - Key bindings and shortcuts
+//! - [`limits`] - Application limits and constraints
+//! - [`ui`] - User interface settings
+//!
+//! ## Usage
+//!
+//! ```no_run
+//! use ui::config::{get_config_or_panic, reload_config};
+//!
+//! // Get configuration (loads on first access)
+//! let config = get_config_or_panic();
+//! let page_size = config.max_messages();
+//!
+//! // Reload configuration at runtime
+//! reload_config()?;
+//! ```
+//!
+//! ## Environment Variable Override
+//!
+//! All configuration values can be overridden with environment variables using
+//! double underscore (`__`) as the separator:
+//!
+//! ```bash
+//! export UI__PAGE_SIZE=50
+//! export AUTH__METHOD="device_code"
+//! export AZURE__TENANT_ID="your-tenant-id"
+//! ```
+
 use config::{Config, Environment, File};
 use serde::Deserialize;
 
-// Re-export all submodules
+/// Core application configuration types and loading
 pub mod app;
+/// Authentication-related configuration
 pub mod auth;
+/// Azure-specific configuration settings
 pub mod azure;
+/// Key bindings and shortcut configuration
 pub mod keys;
+/// Application limits and constraints
 pub mod limits;
+/// User interface configuration
 pub mod ui;
+/// Configuration validation logic
 pub mod validation;
 
-// Re-export main types for backward compatibility
+// Re-export main types for convenient access
 pub use app::AppConfig;
 pub use validation::{ConfigLoadResult, ConfigValidationError};
 
-/// Global configuration loading and access
+/// Global configuration storage - initialized once at startup
 static CONFIG: std::sync::OnceLock<ConfigLoadResult> = std::sync::OnceLock::new();
 
-/// Reloadable configuration that can be updated at runtime
+/// Runtime-reloadable configuration that can be updated without restart
 static RELOADABLE_CONFIG: std::sync::OnceLock<std::sync::RwLock<Option<ConfigLoadResult>>> =
     std::sync::OnceLock::new();
 
-/// Global current page size that can be changed during runtime
+/// Current page size that can be dynamically changed by the user
 static CURRENT_PAGE_SIZE: std::sync::OnceLock<std::sync::Mutex<Option<u32>>> =
     std::sync::OnceLock::new();
 
+/// Loads configuration from config.toml and environment variables.
+///
+/// This function loads configuration using a layered approach:
+/// 1. Loads base configuration from config.toml
+/// 2. Overlays environment variables (with `__` separator)
+/// 3. Deserializes and validates the final configuration
+///
+/// # Returns
+///
+/// [`ConfigLoadResult`] indicating success or specific failure type
 fn load_config() -> ConfigLoadResult {
     dotenv::dotenv().ok();
     let env_source = Environment::default().separator("__");
 
-    // Configuration file is mandatory now – fail fast when it is missing so the
-    // user is clearly informed that a valid `config.toml` must be provided.
+    // Configuration file is mandatory – fail fast when missing
     let file_source = File::with_name("config.toml");
 
     let config = match Config::builder()
         .add_source(file_source)
-        .add_source(env_source) // environment entries still override file values when present
+        .add_source(env_source) // environment entries override file values
         .build()
     {
         Ok(config) => config,
@@ -52,6 +116,21 @@ fn load_config() -> ConfigLoadResult {
     }
 }
 
+/// Gets the current configuration, preferring reloaded config over initial config.
+///
+/// This function provides access to the application configuration with support
+/// for runtime reloading. It first checks for a reloaded configuration, then
+/// falls back to the initial configuration loaded at startup.
+///
+/// # Returns
+///
+/// A reference to the [`ConfigLoadResult`] with static lifetime
+///
+/// # Note
+///
+/// The static lifetime is achieved through intentional memory leaking for
+/// reloaded configurations. This is acceptable since configuration instances
+/// are meant to live for the application lifetime.
 pub fn get_config() -> &'static ConfigLoadResult {
     // First check if we have a reloaded config
     let reloadable_lock = RELOADABLE_CONFIG.get_or_init(|| std::sync::RwLock::new(None));
@@ -67,6 +146,28 @@ pub fn get_config() -> &'static ConfigLoadResult {
     CONFIG.get_or_init(load_config)
 }
 
+/// Gets the application configuration, panicking if loading failed.
+///
+/// This is a convenience function for cases where configuration loading
+/// failure should be treated as a fatal error. Use [`get_config`] if you
+/// need to handle configuration errors gracefully.
+///
+/// # Returns
+///
+/// A reference to the successfully loaded [`AppConfig`]
+///
+/// # Panics
+///
+/// Panics if configuration loading or deserialization failed
+///
+/// # Examples
+///
+/// ```no_run
+/// use ui::config::get_config_or_panic;
+///
+/// let config = get_config_or_panic();
+/// let page_size = config.max_messages();
+/// ```
 pub fn get_config_or_panic() -> &'static AppConfig {
     match get_config() {
         ConfigLoadResult::Success(config) => config,
@@ -79,7 +180,23 @@ pub fn get_config_or_panic() -> &'static AppConfig {
     }
 }
 
-/// Get the current page size, falling back to config if not set
+/// Gets the current page size for message display.
+///
+/// Returns the user-configured page size if set, otherwise falls back
+/// to the default configured maximum messages value.
+///
+/// # Returns
+///
+/// Current page size as a u32
+///
+/// # Examples
+///
+/// ```no_run
+/// use ui::config::get_current_page_size;
+///
+/// let page_size = get_current_page_size();
+/// println!("Displaying {} messages per page", page_size);
+/// ```
 pub fn get_current_page_size() -> u32 {
     let current_page_size = CURRENT_PAGE_SIZE.get_or_init(|| std::sync::Mutex::new(None));
     if let Ok(guard) = current_page_size.lock() {
@@ -91,7 +208,23 @@ pub fn get_current_page_size() -> u32 {
     get_config_or_panic().max_messages()
 }
 
-/// Set the current page size
+/// Sets the current page size for message display.
+///
+/// This setting overrides the configured default and persists until
+/// the application is restarted or the page size is changed again.
+///
+/// # Arguments
+///
+/// * `page_size` - New page size to use for message display
+///
+/// # Examples
+///
+/// ```no_run
+/// use ui::config::set_current_page_size;
+///
+/// // Change to show 100 messages per page
+/// set_current_page_size(100);
+/// ```
 pub fn set_current_page_size(page_size: u32) {
     let current_page_size = CURRENT_PAGE_SIZE.get_or_init(|| std::sync::Mutex::new(None));
     if let Ok(mut guard) = current_page_size.lock() {
@@ -99,8 +232,34 @@ pub fn set_current_page_size(page_size: u32) {
     }
 }
 
-/// Reload the configuration from files and environment variables
-/// This function forces a reload of configuration from disk and environment variables
+/// Reloads configuration from files and environment variables.
+///
+/// This function forces a complete reload of the configuration from disk
+/// and environment variables, allowing runtime configuration changes without
+/// application restart. The new configuration is validated before being applied.
+///
+/// # Returns
+///
+/// `Ok(())` if reload succeeds, `Err(String)` with error details if it fails
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Configuration files cannot be read
+/// - Configuration format is invalid
+/// - Configuration validation fails
+/// - Lock acquisition fails
+///
+/// # Examples
+///
+/// ```no_run
+/// use ui::config::reload_config;
+///
+/// match reload_config() {
+///     Ok(()) => println!("Configuration reloaded successfully"),
+///     Err(e) => eprintln!("Failed to reload config: {}", e),
+/// }
+/// ```
 pub fn reload_config() -> Result<(), String> {
     log::info!("Reloading configuration from files and environment variables");
 
@@ -136,7 +295,15 @@ pub fn reload_config() -> Result<(), String> {
     }
 }
 
-/// Load configuration fresh, bypassing any cache
+/// Loads a fresh configuration, bypassing all caches.
+///
+/// This function performs a complete configuration reload from disk and
+/// environment variables, including re-reading the .env file and
+/// validating the resulting configuration.
+///
+/// # Returns
+///
+/// [`ConfigLoadResult`] with the freshly loaded configuration
 fn load_config_fresh() -> ConfigLoadResult {
     // Reload environment variables from .env file
     dotenv::dotenv().ok();
@@ -174,7 +341,9 @@ fn load_config_fresh() -> ConfigLoadResult {
     }
 }
 
-/// Additional logging configuration
+/// Configuration for application logging behavior.
+///
+/// Controls log level and output file settings for the application logger.
 #[derive(Debug, Deserialize, Default, Clone)]
 pub struct LoggingConfig {
     level: Option<String>,
@@ -182,10 +351,20 @@ pub struct LoggingConfig {
 }
 
 impl LoggingConfig {
+    /// Gets the configured log level, defaulting to "info".
+    ///
+    /// # Returns
+    ///
+    /// Log level as a string ("trace", "debug", "info", "warn", "error")
     pub fn level(&self) -> &str {
         self.level.as_deref().unwrap_or("info")
     }
 
+    /// Gets the configured log file path, if any.
+    ///
+    /// # Returns
+    ///
+    /// Optional log file path, `None` if logging to stdout/stderr
     pub fn file(&self) -> Option<&str> {
         self.file.as_deref()
     }

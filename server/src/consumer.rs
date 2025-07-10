@@ -6,6 +6,38 @@ use tokio::sync::Mutex;
 
 use crate::model::MessageModel;
 
+/// A wrapper around Azure Service Bus receiver for consuming messages from queues.
+///
+/// The Consumer provides a high-level interface for receiving, processing, and managing
+/// messages from Azure Service Bus queues. It supports both peek operations (non-destructive)
+/// and receive operations (which lock messages for processing).
+///
+/// # Thread Safety
+///
+/// The Consumer is thread-safe and can be shared across async tasks. The underlying
+/// receiver is protected by a mutex to ensure safe concurrent access.
+///
+/// # Examples
+///
+/// ```no_run
+/// use server::consumer::Consumer;
+/// use azservicebus::{ServiceBusReceiver, ServiceBusReceiverOptions};
+///
+/// async fn example(receiver: ServiceBusReceiver) {
+///     let mut consumer = Consumer::new(receiver);
+///
+///     // Peek at messages without consuming them
+///     let messages = consumer.peek_messages(10, None).await?;
+///
+///     // Receive messages for processing
+///     let received = consumer.receive_messages_with_timeout(5, std::time::Duration::from_secs(10)).await?;
+///
+///     // Process and complete messages
+///     for message in &received {
+///         consumer.complete_message(message).await?;
+///     }
+/// }
+/// ```
 #[derive(Debug)]
 pub struct Consumer {
     receiver: Arc<Mutex<Option<ServiceBusReceiver>>>,
@@ -18,12 +50,34 @@ impl PartialEq for Consumer {
 }
 
 impl Consumer {
+    /// Creates a new Consumer wrapping the provided Service Bus receiver.
+    ///
+    /// # Arguments
+    ///
+    /// * `receiver` - The Azure Service Bus receiver to wrap
     pub fn new(receiver: ServiceBusReceiver) -> Self {
         Self {
             receiver: Arc::new(Mutex::new(Some(receiver))),
         }
     }
 
+    /// Peeks at messages in the queue without consuming them.
+    ///
+    /// This operation allows you to inspect messages without locking them
+    /// or affecting their delivery count. Useful for browsing queue contents.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_count` - Maximum number of messages to peek at
+    /// * `from_sequence_number` - Optional starting sequence number
+    ///
+    /// # Returns
+    ///
+    /// Vector of MessageModel instances representing the peeked messages
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the receiver has been disposed or if the Service Bus operation fails
     pub async fn peek_messages(
         &mut self,
         max_count: u32,
@@ -41,6 +95,24 @@ impl Consumer {
         }
     }
 
+    /// Receives messages from the queue with a timeout.
+    ///
+    /// This operation locks the received messages for processing. The messages
+    /// must be completed, abandoned, or dead-lettered to release the lock.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_count` - Maximum number of messages to receive
+    /// * `timeout` - Maximum time to wait for messages
+    ///
+    /// # Returns
+    ///
+    /// Vector of received messages that are locked for processing.
+    /// Returns an empty vector if the timeout expires before messages are available.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the receiver has been disposed or if the Service Bus operation fails
     pub async fn receive_messages_with_timeout(
         &mut self,
         max_count: u32,
@@ -63,6 +135,17 @@ impl Consumer {
         }
     }
 
+    /// Abandons a received message, returning it to the queue.
+    ///
+    /// The message becomes available for redelivery and its delivery count is incremented.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - The message to abandon
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the receiver has been disposed or if the Service Bus operation fails
     pub async fn abandon_message(
         &mut self,
         message: &azservicebus::ServiceBusReceivedMessage,
@@ -76,6 +159,20 @@ impl Consumer {
         }
     }
 
+    /// Moves a message to the dead letter queue.
+    ///
+    /// Dead lettered messages are permanently removed from the main queue
+    /// and can be inspected in the dead letter queue for debugging.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - The message to dead letter
+    /// * `reason` - Optional reason for dead lettering
+    /// * `error_description` - Optional error description
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the receiver has been disposed or if the Service Bus operation fails
     pub async fn dead_letter_message(
         &mut self,
         message: &azservicebus::ServiceBusReceivedMessage,
@@ -96,6 +193,17 @@ impl Consumer {
         }
     }
 
+    /// Completes a message, removing it from the queue.
+    ///
+    /// This indicates successful processing of the message.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - The message to complete
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the receiver has been disposed or if the Service Bus operation fails
     pub async fn complete_message(
         &mut self,
         message: &azservicebus::ServiceBusReceivedMessage,
@@ -109,7 +217,24 @@ impl Consumer {
         }
     }
 
-    /// Complete multiple messages in a batch for better performance
+    /// Completes multiple messages in a batch for better performance.
+    ///
+    /// Attempts to complete all provided messages, logging results for each.
+    /// If any message fails to complete, the operation continues with remaining
+    /// messages and returns an error indicating the failure count.
+    ///
+    /// # Arguments
+    ///
+    /// * `messages` - Slice of messages to complete
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if all messages were completed successfully,
+    /// `Err` if any messages failed to complete
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the receiver has been disposed or if any message completion fails
     pub async fn complete_messages(
         &mut self,
         messages: &[azservicebus::ServiceBusReceivedMessage],
@@ -166,7 +291,17 @@ impl Consumer {
         }
     }
 
-    /// Abandon multiple messages in a batch
+    /// Abandons multiple messages in a batch.
+    ///
+    /// All provided messages are returned to the queue for redelivery.
+    ///
+    /// # Arguments
+    ///
+    /// * `messages` - Slice of messages to abandon
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the receiver has been disposed or if any abandon operation fails
     pub async fn abandon_messages(
         &mut self,
         messages: &[azservicebus::ServiceBusReceivedMessage],
@@ -182,7 +317,18 @@ impl Consumer {
         }
     }
 
-    /// Renew the lock on a received message to extend processing time
+    /// Renews the lock on a received message to extend processing time.
+    ///
+    /// This prevents the message from becoming available for redelivery
+    /// while it's still being processed.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - The message whose lock should be renewed
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the receiver has been disposed or if the lock renewal fails
     pub async fn renew_message_lock(
         &mut self,
         message: &mut azservicebus::ServiceBusReceivedMessage,
@@ -196,7 +342,19 @@ impl Consumer {
         }
     }
 
-    /// Renew locks on multiple messages
+    /// Renews locks on multiple messages.
+    ///
+    /// Attempts to renew locks for all provided messages, logging results.
+    /// Continues processing all messages even if some renewals fail.
+    ///
+    /// # Arguments
+    ///
+    /// * `messages` - Mutable slice of messages whose locks should be renewed
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the receiver has been disposed. Lock renewal failures
+    /// are logged but do not cause the method to return an error.
     pub async fn renew_message_locks(
         &mut self,
         messages: &mut [azservicebus::ServiceBusReceivedMessage],
@@ -251,6 +409,13 @@ impl Consumer {
         }
     }
 
+    /// Disposes the underlying Service Bus receiver, releasing all resources.
+    ///
+    /// After disposal, all other operations on this Consumer will fail.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the disposal operation fails
     pub async fn dispose(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut guard = self.receiver.lock().await;
         if let Some(receiver) = guard.take() {
@@ -259,8 +424,22 @@ impl Consumer {
         Ok(())
     }
 
-    /// Receive deferred messages by sequence numbers. This allows operations (delete/complete)
-    /// on messages that were previously deferred without re-activating them first.
+    /// Receives deferred messages by their sequence numbers.
+    ///
+    /// This allows operations (delete/complete) on messages that were previously
+    /// deferred without re-activating them in the main queue first.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_numbers` - Array of sequence numbers for the deferred messages
+    ///
+    /// # Returns
+    ///
+    /// Vector of received deferred messages that are locked for processing
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the receiver has been disposed or if the Service Bus operation fails
     pub async fn receive_deferred_messages(
         &mut self,
         sequence_numbers: &[i64],
@@ -280,7 +459,25 @@ impl Consumer {
     }
 }
 
+/// Extension trait for ServiceBusClient to create Consumer instances.
+///
+/// This trait provides a convenient method to create a Consumer directly
+/// from a ServiceBusClient without manually creating the receiver first.
 pub trait ServiceBusClientExt {
+    /// Creates a Consumer for the specified queue.
+    ///
+    /// # Arguments
+    ///
+    /// * `queue_name` - Name of the queue to create a consumer for
+    /// * `options` - Configuration options for the receiver
+    ///
+    /// # Returns
+    ///
+    /// A Consumer instance configured for the specified queue
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the receiver creation fails
     fn create_consumer_for_queue(
         &mut self,
         queue_name: impl Into<String> + Send,
@@ -296,6 +493,10 @@ where
         + Sync
         + 'static,
 {
+    /// Creates a Consumer for the specified queue using this ServiceBusClient.
+    ///
+    /// This method handles the creation of the underlying receiver and wraps it
+    /// in a Consumer instance for easier usage.
     async fn create_consumer_for_queue(
         &mut self,
         queue_name: impl Into<String> + Send,

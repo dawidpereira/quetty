@@ -7,7 +7,10 @@ use std::error::Error;
 use std::time::Duration;
 use tokio::time::interval;
 
-/// Parameters for batch iteration processing
+/// Parameters for batch iteration processing during large batch operations.
+///
+/// Contains mutable references to state that needs to be updated during
+/// each batch iteration in large bulk delete operations.
 #[derive(Debug)]
 struct BatchIterationParams<'a> {
     context: &'a BulkOperationContext,
@@ -20,7 +23,40 @@ struct BatchIterationParams<'a> {
     result: &'a mut BulkOperationResult,
 }
 
-/// Simple batch-based message deleter
+/// Efficient bulk message deleter for Azure Service Bus operations.
+///
+/// Provides optimized deletion strategies based on batch size and position,
+/// with automatic lock management and progress tracking. Supports both small
+/// batch operations (single batch) and large batch operations (streaming with
+/// sequence-based stopping).
+///
+/// # Features
+///
+/// - **Smart Batching** - Chooses optimal strategy based on operation size
+/// - **Lock Management** - Automatic message lock refresh for long operations
+/// - **Progress Tracking** - Detailed logging and progress monitoring
+/// - **Error Recovery** - Handles partial failures and message abandonment
+/// - **Sequence Optimization** - Uses sequence numbers to minimize scanning
+///
+/// # Examples
+///
+/// ```no_run
+/// use server::bulk_operations::{BulkDeleter, BatchConfig, BulkOperationContext, BulkSendParams};
+///
+/// let config = BatchConfig::default();
+/// let deleter = BulkDeleter::new(config);
+///
+/// let context = BulkOperationContext { /* ... */ };
+/// let params = BulkSendParams::with_retrieval(
+///     "target-queue".to_string(),
+///     true,
+///     message_ids,
+///     100
+/// );
+///
+/// let result = deleter.delete_messages(context, params).await?;
+/// println!("Deleted {} messages", result.successful);
+/// ```
 pub struct BulkDeleter {
     config: BatchConfig,
 }

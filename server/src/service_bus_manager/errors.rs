@@ -1,61 +1,126 @@
+//! Error types for Azure Service Bus operations.
+//!
+//! This module provides comprehensive error handling for all Service Bus operations,
+//! including Azure API errors, connection issues, message operations, and bulk operations.
+//! The error types are designed to provide detailed context for debugging and user feedback.
+
 use crate::common::{CacheError, HttpError};
 use std::fmt;
 
+/// Comprehensive error type for all Service Bus operations.
+///
+/// Provides detailed error information with appropriate context for debugging
+/// and user feedback. Includes specialized variants for different operation types
+/// and Azure API integration.
+///
+/// # Error Categories
+///
+/// - **Azure API Errors** - Detailed Azure service errors with request tracking
+/// - **Connection Errors** - Authentication and connection issues
+/// - **Consumer/Producer Errors** - Client creation and management errors
+/// - **Message Operation Errors** - Message handling failures
+/// - **Bulk Operation Errors** - Batch operation failures with partial success tracking
+/// - **Queue Errors** - Queue management and navigation errors
+/// - **Configuration Errors** - Invalid configuration or setup issues
+///
+/// # Examples
+///
+/// ```no_run
+/// use server::service_bus_manager::{ServiceBusError, ServiceBusResult};
+///
+/// fn handle_error(error: ServiceBusError) {
+///     match error {
+///         ServiceBusError::QueueNotFound(queue) => {
+///             eprintln!("Queue '{}' does not exist", queue);
+///         }
+///         ServiceBusError::AzureApiError { code, message, .. } => {
+///             eprintln!("Azure API error {}: {}", code, message);
+///         }
+///         _ => eprintln!("Service Bus error: {}", error),
+///     }
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub enum ServiceBusError {
-    /// Azure API specific errors with full context
+    /// Azure API specific errors with full context for debugging and support.
+    ///
+    /// Contains detailed information about Azure service errors including
+    /// error codes, HTTP status, and request tracking information.
     AzureApiError {
-        code: String,               // Azure error code (e.g., "SubscriptionNotFound")
-        status_code: u16,           // HTTP status code
-        message: String,            // Human-readable error message
-        request_id: Option<String>, // Azure request ID for tracking
-        operation: String,          // Operation that failed (e.g., "list_subscriptions")
+        /// Azure error code (e.g., "SubscriptionNotFound", "Unauthorized")
+        code: String,
+        /// HTTP status code from the API response
+        status_code: u16,
+        /// Human-readable error message from Azure
+        message: String,
+        /// Azure request ID for tracking and support
+        request_id: Option<String>,
+        /// Operation that failed (e.g., "list_subscriptions", "send_message")
+        operation: String,
     },
 
-    /// Connection related errors
+    /// Connection establishment failed
     ConnectionFailed(String),
+    /// Existing connection was lost during operation
     ConnectionLost(String),
+    /// Authentication process failed
     AuthenticationFailed(String),
+    /// Authentication configuration or credential error
     AuthenticationError(String),
 
-    /// Consumer related errors
+    /// Message consumer creation failed
     ConsumerCreationFailed(String),
+    /// No consumer found for the current context
     ConsumerNotFound,
+    /// Consumer already exists for the specified queue
     ConsumerAlreadyExists(String),
 
-    /// Producer related errors
+    /// Message producer creation failed
     ProducerCreationFailed(String),
+    /// No producer found for the specified queue
     ProducerNotFound(String),
 
-    /// Message operation errors
+    /// Message receive operation failed
     MessageReceiveFailed(String),
+    /// Message send operation failed
     MessageSendFailed(String),
+    /// Message completion failed
     MessageCompleteFailed(String),
+    /// Message abandon operation failed
     MessageAbandonFailed(String),
+    /// Message dead letter operation failed
     MessageDeadLetterFailed(String),
 
-    /// Bulk operation errors
+    /// Bulk operation failed completely
     BulkOperationFailed(String),
+    /// Bulk operation partially failed with detailed results
     BulkOperationPartialFailure {
+        /// Number of successful operations
         successful: usize,
+        /// Number of failed operations
         failed: usize,
+        /// Detailed error messages for failed operations
         errors: Vec<String>,
     },
 
-    /// Queue operation errors
+    /// Specified queue does not exist
     QueueNotFound(String),
+    /// Failed to switch to the specified queue
     QueueSwitchFailed(String),
+    /// Queue name format is invalid
     InvalidQueueName(String),
 
-    /// Configuration errors
+    /// Configuration value is missing or invalid
     ConfigurationError(String),
+    /// Configuration format or structure is invalid
     InvalidConfiguration(String),
 
-    /// Timeout errors
+    /// Operation exceeded timeout limit
     OperationTimeout(String),
 
-    /// Generic errors
+    /// Internal service error
     InternalError(String),
+    /// Unknown or unexpected error
     Unknown(String),
 }
 
@@ -153,7 +218,18 @@ impl fmt::Display for ServiceBusError {
 impl std::error::Error for ServiceBusError {}
 
 impl ServiceBusError {
-    /// Create an Azure API error with full context
+    /// Creates an Azure API error with full context.
+    ///
+    /// # Arguments
+    ///
+    /// * `operation` - The operation that failed (e.g., "list_queues")
+    /// * `code` - Azure error code (e.g., "Unauthorized")
+    /// * `status_code` - HTTP status code from the response
+    /// * `message` - Human-readable error message
+    ///
+    /// # Returns
+    ///
+    /// A new [`ServiceBusError::AzureApiError`] instance
     pub fn azure_api_error(
         operation: impl Into<String>,
         code: impl Into<String>,
@@ -169,7 +245,19 @@ impl ServiceBusError {
         }
     }
 
-    /// Create an Azure API error with request ID for tracing
+    /// Creates an Azure API error with request ID for tracing.
+    ///
+    /// # Arguments
+    ///
+    /// * `operation` - The operation that failed
+    /// * `code` - Azure error code
+    /// * `status_code` - HTTP status code
+    /// * `message` - Error message
+    /// * `request_id` - Azure request ID for support tracking
+    ///
+    /// # Returns
+    ///
+    /// A new [`ServiceBusError::AzureApiError`] with request ID
     pub fn azure_api_error_with_request_id(
         operation: impl Into<String>,
         code: impl Into<String>,
@@ -186,7 +274,19 @@ impl ServiceBusError {
         }
     }
 
-    /// Extract Azure error details from a reqwest Response
+    /// Extracts Azure error details from a reqwest Response.
+    ///
+    /// Parses Azure API error responses and extracts structured error information
+    /// including request IDs for tracking. Handles both JSON and plain text responses.
+    ///
+    /// # Arguments
+    ///
+    /// * `response` - The HTTP response from Azure API
+    /// * `operation` - The operation that resulted in this response
+    ///
+    /// # Returns
+    ///
+    /// A [`ServiceBusError::AzureApiError`] with extracted details
     pub async fn from_azure_response(
         response: reqwest::Response,
         operation: impl Into<String>,
@@ -236,12 +336,20 @@ impl ServiceBusError {
         }
     }
 
-    /// Check if this is an Azure API error
+    /// Checks if this is an Azure API error.
+    ///
+    /// # Returns
+    ///
+    /// `true` if this is an [`AzureApiError`], `false` otherwise
     pub fn is_azure_api_error(&self) -> bool {
         matches!(self, ServiceBusError::AzureApiError { .. })
     }
 
-    /// Get the Azure error code if this is an Azure API error
+    /// Gets the Azure error code if this is an Azure API error.
+    ///
+    /// # Returns
+    ///
+    /// The Azure error code as a string slice, or `None` if not an Azure API error
     pub fn azure_error_code(&self) -> Option<&str> {
         match self {
             ServiceBusError::AzureApiError { code, .. } => Some(code),
@@ -249,7 +357,13 @@ impl ServiceBusError {
         }
     }
 
-    /// Get the Azure request ID if available
+    /// Gets the Azure request ID if available.
+    ///
+    /// Request IDs are useful for tracking issues with Azure support.
+    ///
+    /// # Returns
+    ///
+    /// The Azure request ID as a string slice, or `None` if not available
     pub fn azure_request_id(&self) -> Option<&str> {
         match self {
             ServiceBusError::AzureApiError { request_id, .. } => request_id.as_deref(),
@@ -331,5 +445,18 @@ impl From<CacheError> for ServiceBusError {
     }
 }
 
-// Result type alias for convenience
+/// Type alias for [`Result`] with [`ServiceBusError`] as the error type.
+///
+/// Provides convenient result handling for all Service Bus operations.
+///
+/// # Examples
+///
+/// ```no_run
+/// use server::service_bus_manager::{ServiceBusResult, ServiceBusError};
+///
+/// fn get_queue_info() -> ServiceBusResult<String> {
+///     // ... operation that might fail
+///     Ok("queue-info".to_string())
+/// }
+/// ```
 pub type ServiceBusResult<T> = Result<T, ServiceBusError>;
