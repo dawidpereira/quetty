@@ -1,4 +1,5 @@
 # Quetty
+<div align="center">
 
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Azure](https://img.shields.io/badge/azure-%230072C6.svg?style=for-the-badge&logo=microsoftazure&logoColor=white)](https://azure.microsoft.com/en-us/products/service-bus)
@@ -6,7 +7,17 @@
 [![TUI](https://img.shields.io/badge/TUI-Ratatui-blueviolet?style=for-the-badge&logo=terminal&logoColor=white)](https://github.com/ratatui-org/ratatui)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
+</div>
+
 A powerful terminal-based Azure Service Bus queue manager that provides an intuitive interface for viewing, managing, and interacting with message queues efficiently.
+
+
+<div align="center">
+  <img src="assets/quetty-logo-only-transparent.png" alt="Quetty Logo" width="320" height="320">
+</div>
+<div align="center">
+  <img src="assets/quetty-text-only-transparent.png" alt="Quetty" width="640">
+</div>
 
 ## Table of Contents
 
@@ -21,6 +32,8 @@ A powerful terminal-based Azure Service Bus queue manager that provides an intui
 
 ## Overview
 Quetty combines the power of Azure Service Bus with a sleek terminal interface, making queue management accessible and efficient. Whether you're debugging message flows, managing dead letter queues, or performing bulk operations, Quetty provides the tools you need in a fast, keyboard-driven environment.
+
+
 
 ## Key Features
 
