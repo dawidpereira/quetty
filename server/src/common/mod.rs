@@ -1,3 +1,3 @@
 pub mod errors;
 
-pub use errors::{CacheError, HttpError, TokenRefreshError};
+pub use errors::{CacheError, HttpError};

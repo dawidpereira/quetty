@@ -110,6 +110,7 @@ pub mod auth_setup;
 pub mod auth_state;
 pub mod azure_ad;
 pub mod connection_string;
+pub mod errors;
 pub mod provider;
 pub mod sas_token_generator;
 pub mod service_bus_auth;
@@ -117,11 +118,11 @@ pub mod token_cache;
 pub mod token_refresh_service;
 pub mod types;
 
-pub use crate::common::TokenRefreshError;
 pub use auth_setup::{create_auth_provider, set_global_auth_state};
 pub use auth_state::{AuthStateManager, AuthenticationState};
 pub use azure_ad::{AzureAdProvider, DeviceCodeFlowInfo};
 pub use connection_string::ConnectionStringProvider;
+pub use errors::TokenRefreshError;
 pub use provider::{AuthProvider, AuthToken};
 pub use sas_token_generator::SasTokenGenerator;
 pub use service_bus_auth::{

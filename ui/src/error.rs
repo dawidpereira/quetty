@@ -2,23 +2,309 @@ use crate::components::common::{Msg, PopupActivityMsg};
 use std::fmt::Display;
 use std::sync::mpsc::Sender;
 
-/// Application-wide error types
+/// Application-wide error types for the Quetty terminal user interface.
+///
+/// This enum provides comprehensive error classification for all UI operations
+/// including Service Bus interactions, component lifecycle, state management,
+/// and configuration handling. Each error variant is designed to integrate
+/// seamlessly with the UI error reporting and user feedback systems.
+///
+/// # Error Categories
+///
+/// ## External Service Errors
+/// - [`ServiceBus`] - Azure Service Bus operation failures
+/// - [`Auth`] - Authentication and authorization errors
+///
+/// ## Application Infrastructure Errors
+/// - [`Component`] - UI component lifecycle and rendering errors
+/// - [`State`] - Application state management issues
+/// - [`Channel`] - Inter-component communication failures
+///
+/// ## System and Configuration Errors
+/// - [`Io`] - File system and I/O operation failures
+/// - [`Config`] - Configuration loading and validation errors
+///
+/// # Examples
+///
+/// ## Basic Error Handling with User Feedback
+/// ```no_run
+/// use ui::error::{AppError, ErrorReporter};
+///
+/// async fn handle_app_error(error: AppError, error_reporter: &ErrorReporter) {
+///     match error {
+///         AppError::ServiceBus(msg) => {
+///             error_reporter.report_error(
+///                 "Service Bus Error",
+///                 &format!("Failed to connect to Azure Service Bus: {}", msg),
+///                 Some("Please check your connection and authentication settings.")
+///             ).await;
+///         }
+///         AppError::Auth(msg) => {
+///             error_reporter.report_error(
+///                 "Authentication Error",
+///                 &format!("Authentication failed: {}", msg),
+///                 Some("Please sign in again or check your credentials.")
+///             ).await;
+///         }
+///         AppError::Config(msg) => {
+///             error_reporter.report_error(
+///                 "Configuration Error",
+///                 &format!("Configuration problem: {}", msg),
+///                 Some("Please check your configuration file and restart the application.")
+///             ).await;
+///         }
+///         AppError::Component(msg) => {
+///             // Component errors are typically less critical for users
+///             log::error!("Component error: {}", msg);
+///             error_reporter.show_warning(&format!("Display issue: {}", msg)).await;
+///         }
+///         _ => {
+///             error_reporter.report_error(
+///                 "Application Error",
+///                 &error.to_string(),
+///                 Some("Please try again. If the problem persists, restart the application.")
+///             ).await;
+///         }
+///     }
+/// }
+/// ```
+///
+/// ## Error Context and Recovery
+/// ```no_run
+/// use ui::error::{AppError, AppResult};
+///
+/// async fn load_queue_with_recovery(queue_name: &str) -> AppResult<Vec<Message>> {
+///     match load_queue_messages(queue_name).await {
+///         Ok(messages) => Ok(messages),
+///         Err(AppError::ServiceBus(msg)) if msg.contains("QueueNotFound") => {
+///             // Specific recovery for queue not found
+///             show_queue_selection_dialog().await;
+///             Err(AppError::ServiceBus(format!("Queue '{}' not found. Please select a different queue.", queue_name)))
+///         }
+///         Err(AppError::Auth(_)) => {
+///             // Authentication error - trigger re-auth
+///             trigger_authentication_flow().await;
+///             Err(AppError::Auth("Please authenticate to continue.".to_string()))
+///         }
+///         Err(other) => Err(other),
+///     }
+/// }
+/// ```
+///
+/// ## Error Propagation and Conversion
+/// ```no_run
+/// use ui::error::{AppError, AppResult};
+/// use server::service_bus_manager::ServiceBusError;
+///
+/// // Automatic conversion from server errors
+/// async fn send_message(content: &str) -> AppResult<String> {
+///     // This automatically converts ServiceBusError to AppError
+///     let message_id = server::send_message(content).await?;
+///     Ok(message_id)
+/// }
+///
+/// // Manual error conversion with context
+/// async fn load_configuration() -> AppResult<Config> {
+///     match std::fs::read_to_string("config.toml") {
+///         Ok(content) => {
+///             match toml::from_str(&content) {
+///                 Ok(config) => Ok(config),
+///                 Err(e) => Err(AppError::Config(format!("Invalid configuration format: {}", e))),
+///             }
+///         }
+///         Err(e) => Err(AppError::Io(format!("Failed to read configuration file: {}", e))),
+///     }
+/// }
+/// ```
+///
+/// ## Integration with UI Components
+/// ```no_run
+/// use ui::error::{AppError, ErrorContext, ErrorSeverity};
+/// use ui::components::common::Msg;
+///
+/// fn create_error_message(error: AppError) -> Msg {
+///     let context = match error {
+///         AppError::ServiceBus(ref msg) => ErrorContext {
+///             component: "ServiceBus".to_string(),
+///             operation: "Connection".to_string(),
+///             user_message: "Failed to connect to Azure Service Bus".to_string(),
+///             technical_details: Some(msg.clone()),
+///             suggestion: Some("Check your network connection and authentication settings".to_string()),
+///             severity: ErrorSeverity::Error,
+///         },
+///         AppError::Auth(ref msg) => ErrorContext {
+///             component: "Authentication".to_string(),
+///             operation: "Login".to_string(),
+///             user_message: "Authentication failed".to_string(),
+///             technical_details: Some(msg.clone()),
+///             suggestion: Some("Please sign in again".to_string()),
+///             severity: ErrorSeverity::Error,
+///         },
+///         AppError::Config(ref msg) => ErrorContext {
+///             component: "Configuration".to_string(),
+///             operation: "Load".to_string(),
+///             user_message: "Configuration error".to_string(),
+///             technical_details: Some(msg.clone()),
+///             suggestion: Some("Please check your configuration file".to_string()),
+///             severity: ErrorSeverity::Error,
+///         },
+///         _ => ErrorContext {
+///             component: "Application".to_string(),
+///             operation: "General".to_string(),
+///             user_message: "An error occurred".to_string(),
+///             technical_details: Some(error.to_string()),
+///             suggestion: Some("Please try again".to_string()),
+///             severity: ErrorSeverity::Warning,
+///         },
+///     };
+///
+///     Msg::ErrorOccurred(context)
+/// }
+/// ```
+///
+/// ## Logging Integration
+/// ```no_run
+/// use ui::error::{AppError, ErrorSeverity};
+///
+/// fn log_app_error(error: &AppError, severity: ErrorSeverity) {
+///     match severity {
+///         ErrorSeverity::Critical => {
+///             log::error!("CRITICAL: {}", error);
+///             // Additional alerting logic
+///         }
+///         ErrorSeverity::Error => {
+///             log::error!("{}", error);
+///         }
+///         ErrorSeverity::Warning => {
+///             log::warn!("{}", error);
+///         }
+///         ErrorSeverity::Info => {
+///             log::info!("{}", error);
+///         }
+///     }
+/// }
+/// ```
+///
+/// # Error Recovery Strategies
+///
+/// ## Service Bus Errors
+/// - **Connection failures**: Retry with exponential backoff
+/// - **Authentication errors**: Trigger re-authentication flow
+/// - **Queue not found**: Show queue selection interface
+/// - **Message send failures**: Offer retry with user confirmation
+///
+/// ## Configuration Errors
+/// - **File not found**: Create default configuration
+/// - **Invalid format**: Show configuration editor
+/// - **Permission errors**: Display file permission guidance
+///
+/// ## Component Errors
+/// - **Rendering failures**: Refresh component state
+/// - **State corruption**: Reset to default state
+/// - **Event handling errors**: Log and continue operation
+///
+/// # User Experience Guidelines
+///
+/// - **Service Bus errors**: Provide clear network/auth troubleshooting steps
+/// - **Configuration errors**: Offer to open configuration in editor
+/// - **Authentication errors**: Provide clear re-authentication path
+/// - **Component errors**: Minimize user disruption, prefer silent recovery
+///
+/// [`ServiceBus`]: AppError::ServiceBus
+/// [`Auth`]: AppError::Auth
+/// [`Component`]: AppError::Component
+/// [`State`]: AppError::State
+/// [`Channel`]: AppError::Channel
+/// [`Io`]: AppError::Io
+/// [`Config`]: AppError::Config
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppError {
-    /// Input/Output errors (file operations, etc.)
+    /// File system and I/O operation failures.
+    ///
+    /// This error occurs when file operations fail, including reading
+    /// configuration files, writing logs, or accessing theme files.
+    /// Common causes include permission issues, missing files, or
+    /// disk space problems.
+    ///
+    /// # Recovery
+    /// - Check file permissions and disk space
+    /// - Verify file paths are correct
+    /// - Consider fallback to default values for configuration
     #[allow(dead_code)]
     Io(String),
-    /// Azure Service Bus related errors
+
+    /// Azure Service Bus operation failures.
+    ///
+    /// This error represents failures in Service Bus operations including
+    /// connection issues, authentication problems, message send/receive
+    /// failures, and Azure API errors. This is typically the most common
+    /// error type in the application.
+    ///
+    /// # Recovery
+    /// - Check network connectivity and authentication
+    /// - Retry with exponential backoff for transient failures
+    /// - Show user-friendly error messages with troubleshooting steps
     ServiceBus(String),
-    /// Component-related errors (UI, state management)
+
+    /// UI component lifecycle and rendering errors.
+    ///
+    /// This error occurs when UI components fail to render, update,
+    /// or handle events properly. These errors should generally not
+    /// disrupt the overall application flow but should be logged
+    /// for debugging.
+    ///
+    /// # Recovery
+    /// - Log error details for debugging
+    /// - Attempt component state reset
+    /// - Continue application operation when possible
     Component(String),
-    /// State-related errors (application state issues)
+
+    /// Application state management issues.
+    ///
+    /// This error represents problems with application state consistency,
+    /// state transitions, or state synchronization between components.
+    /// These can be critical as they may affect application reliability.
+    ///
+    /// # Recovery
+    /// - Reset to known good state when possible
+    /// - Restart affected subsystems
+    /// - Preserve user data when feasible
     State(String),
-    /// Configuration errors
+
+    /// Configuration loading and validation errors.
+    ///
+    /// This error occurs when configuration files cannot be loaded,
+    /// parsed, or contain invalid values. Configuration errors can
+    /// prevent application startup or cause runtime issues.
+    ///
+    /// # Recovery
+    /// - Fall back to default configuration
+    /// - Show configuration editor to user
+    /// - Validate and sanitize configuration values
     Config(String),
-    /// Authentication errors
+
+    /// Authentication and authorization errors.
+    ///
+    /// This error represents authentication failures, token expiration,
+    /// authorization issues, or credential problems. These errors
+    /// typically require user intervention to resolve.
+    ///
+    /// # Recovery
+    /// - Trigger re-authentication flow
+    /// - Clear invalid tokens
+    /// - Provide clear guidance for credential setup
     Auth(String),
-    /// Channel communication errors
+
+    /// Inter-component communication failures.
+    ///
+    /// This error occurs when communication between UI components
+    /// fails, typically through message passing or event systems.
+    /// These can indicate serious application state issues.
+    ///
+    /// # Recovery
+    /// - Reset communication channels
+    /// - Restart affected components
+    /// - Log detailed information for debugging
     Channel(String),
 }
 

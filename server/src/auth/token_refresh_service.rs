@@ -1,7 +1,7 @@
 use super::auth_state::AuthStateManager;
+use super::errors::TokenRefreshError;
 use super::provider::AuthProvider;
 use super::types::CachedToken;
-use crate::common::TokenRefreshError;
 use crate::service_bus_manager::ServiceBusError;
 use std::sync::Arc;
 use std::time::Duration;

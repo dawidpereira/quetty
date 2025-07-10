@@ -1,6 +1,6 @@
+use server::auth::TokenRefreshError;
 use server::auth::types::AzureAdAuthConfig;
 use server::auth::{AuthStateManager, AzureAdProvider};
-use server::common::TokenRefreshError;
 use std::sync::Arc;
 use std::time::Duration;
 
