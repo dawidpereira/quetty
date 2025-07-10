@@ -242,6 +242,7 @@ pub enum ResourceGroupSelectionMsg {
 
 pub enum AzureDiscoveryMsg {
     StartDiscovery,
+    StartInteractiveDiscovery,
     DiscoveringSubscriptions,
     SubscriptionsDiscovered(
         Vec<server::service_bus_manager::azure_management_client::Subscription>,
@@ -270,6 +271,7 @@ impl fmt::Debug for AzureDiscoveryMsg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AzureDiscoveryMsg::StartDiscovery => write!(f, "StartDiscovery"),
+            AzureDiscoveryMsg::StartInteractiveDiscovery => write!(f, "StartInteractiveDiscovery"),
             AzureDiscoveryMsg::DiscoveringSubscriptions => write!(f, "DiscoveringSubscriptions"),
             AzureDiscoveryMsg::SubscriptionsDiscovered(subs) => {
                 write!(f, "SubscriptionsDiscovered({} items)", subs.len())
@@ -313,6 +315,10 @@ impl PartialEq for AzureDiscoveryMsg {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (AzureDiscoveryMsg::StartDiscovery, AzureDiscoveryMsg::StartDiscovery) => true,
+            (
+                AzureDiscoveryMsg::StartInteractiveDiscovery,
+                AzureDiscoveryMsg::StartInteractiveDiscovery,
+            ) => true,
             (
                 AzureDiscoveryMsg::DiscoveringSubscriptions,
                 AzureDiscoveryMsg::DiscoveringSubscriptions,

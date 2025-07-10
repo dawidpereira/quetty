@@ -1,5 +1,5 @@
 use crate::components::base_popup::PopupBuilder;
-use crate::components::common::{Msg, NamespaceActivityMsg, QueueActivityMsg};
+use crate::components::common::{AzureDiscoveryMsg, Msg, NamespaceActivityMsg, QueueActivityMsg};
 use crate::config;
 use crate::theme::ThemeManager;
 use tuirealm::command::CmdResult;
@@ -84,8 +84,8 @@ impl MockComponent for QueuePicker {
             })
             .collect();
         // Use PopupBuilder for consistent styling
-        let popup_block =
-            PopupBuilder::new("Queue Picker").create_block_with_title("  🗂️  Select a Queue  ");
+        let popup_block = PopupBuilder::new("Queue Picker")
+            .create_block_with_title("  🗂️  Select a Queue • Press 'd' for Azure Discovery  ");
 
         if self.manual_entry_mode {
             // Show manual queue entry
@@ -113,6 +113,7 @@ impl MockComponent for QueuePicker {
                 "🔍 No queues available for automatic discovery",
                 "",
                 "📝 Press 'm' to MANUALLY ENTER a queue name",
+                "🌐 Press 'd' to change Azure subscription/resource group/namespace",
                 "⬅️  Press ESC to go back",
                 "",
                 "Note: Connection string authentication requires manual queue entry",
@@ -274,6 +275,10 @@ impl Component<Msg, NoUserEvent> for QueuePicker {
                         } else {
                             CmdResult::None
                         }
+                    } else if c == 'd' {
+                        // Enter Azure discovery mode to select subscription/resource group/namespace
+                        log::info!("User pressed 'd' key - starting Azure discovery");
+                        CmdResult::Custom("StartAzureDiscovery", tuirealm::State::None)
                     } else {
                         CmdResult::None
                     }
@@ -309,6 +314,9 @@ impl Component<Msg, NoUserEvent> for QueuePicker {
                     None
                 }
             }
+            CmdResult::Custom("StartAzureDiscovery", _) => Some(Msg::AzureDiscovery(
+                AzureDiscoveryMsg::StartInteractiveDiscovery,
+            )),
             CmdResult::Changed(_) => Some(Msg::ForceRedraw),
             _ => None,
         }

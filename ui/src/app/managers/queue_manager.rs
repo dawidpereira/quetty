@@ -1,3 +1,4 @@
+use crate::app::managers::state_manager::NavigationContext;
 use crate::app::queue_state::QueueState;
 use crate::app::task_manager::TaskManager;
 use crate::components::common::{MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg};
@@ -40,13 +41,13 @@ impl QueueManager {
     }
 
     /// Load namespaces using TaskManager with timeout
-    pub fn load_namespaces(&self) {
+    pub fn load_namespaces(&self, navigation_context: NavigationContext) {
         let config = config::get_config_or_panic();
 
         if AuthUtils::is_connection_string_auth(config) {
             self.load_namespaces_from_connection_string();
         } else {
-            self.load_namespaces_from_azure_ad();
+            self.load_namespaces_from_azure_ad(navigation_context);
         }
     }
 
@@ -115,28 +116,34 @@ impl QueueManager {
     }
 
     /// Load namespaces from Azure AD authentication
-    fn load_namespaces_from_azure_ad(&self) {
+    fn load_namespaces_from_azure_ad(&self, navigation_context: NavigationContext) {
         let tx_to_main = self.tx_to_main.clone();
 
         self.task_manager
             .execute("Loading namespaces...", async move {
-                log::debug!("Requesting namespaces from Azure AD");
+                log::debug!("Starting namespace loading with navigation context: {navigation_context:?}");
 
-                // Check for saved namespace first (config-first approach)
-                if let Ok(saved_namespace) = std::env::var("AZURE_AD__NAMESPACE") {
-                    if !saved_namespace.trim().is_empty() {
-                        log::info!(
-                            "Found saved namespace '{saved_namespace}', using it directly without discovery"
-                        );
+                // Check if we should use saved namespace or force discovery
+                let should_use_saved_config = matches!(navigation_context, NavigationContext::Startup);
+                if should_use_saved_config {
+                    // Only use saved namespace during startup auto-progression
+                    if let Ok(saved_namespace) = std::env::var("AZURE_AD__NAMESPACE") {
+                        if !saved_namespace.trim().is_empty() {
+                            log::info!(
+                                "Startup mode: Found saved namespace '{saved_namespace}', using it directly"
+                            );
 
-                        // Send the saved namespace as a single-item list
-                        if let Err(e) = tx_to_main.send(Msg::NamespaceActivity(
-                            NamespaceActivityMsg::NamespacesLoaded(vec![saved_namespace]),
-                        )) {
-                            log::error!("Failed to send saved namespace message: {e}");
+                            // Send the saved namespace as a single-item list
+                            if let Err(e) = tx_to_main.send(Msg::NamespaceActivity(
+                                NamespaceActivityMsg::NamespacesLoaded(vec![saved_namespace]),
+                            )) {
+                                log::error!("Failed to send saved namespace message: {e}");
+                            }
+                            return Ok(());
                         }
-                        return Ok(());
                     }
+                } else {
+                    log::debug!("Navigation mode ({navigation_context:?}): forcing namespace discovery to allow user selection");
                 }
 
                 let namespaces = ServiceBusManager::list_namespaces_azure_ad(

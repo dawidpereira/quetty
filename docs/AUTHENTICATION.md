@@ -224,13 +224,60 @@ AZURE_AD__AUTH_METHOD="device_code"  # or "client_credentials"
 
 ### Permissions Required
 
-#### Minimum Service Bus Permissions
-- **Azure Service Bus Data Receiver**: Read messages from queues
-- **Azure Service Bus Data Sender**: Send messages to queues (for DLQ operations)
+#### For Azure Navigation & Resource Discovery (Minimal Permissions)
+When using Azure AD authentication with interactive Azure resource navigation (subscription → resource group → namespace → queue), you need these role assignments:
 
-#### Recommended Permissions
-- **Azure Service Bus Data Owner**: Full access to Service Bus resources
-- **Reader**: For resource discovery and namespace access
+1. **Reader** role at **Subscription level** (Required for Azure navigation)
+   - Scope: `/subscriptions/{subscription-id}`
+   - Purpose: Enables discovery of resource groups, namespaces, and Azure resources
+   - **Critical**: Without this, resource group discovery will return empty results even if other operations work
+
+2. **Contributor** role at **Namespace level** (Required for Service Bus operations)
+   - Scope: `/subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/Microsoft.ServiceBus/namespaces/{namespace}`
+   - Purpose: Access to Service Bus queues and connection strings
+
+3. **Azure Service Bus Data Receiver** role at **Namespace level** (Required for message operations)
+   - Scope: `/subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/Microsoft.ServiceBus/namespaces/{namespace}`
+   - Purpose: Read messages from queues
+
+4. **Azure Service Bus Data Sender** role at **Namespace level** (Required for message operations)
+   - Scope: `/subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/Microsoft.ServiceBus/namespaces/{namespace}`
+   - Purpose: Send messages to queues
+
+#### Alternative: Simplified Setup (No Azure Navigation)
+If you don't need interactive Azure resource navigation and will provide all Azure resource details in configuration:
+
+- **Contributor** role at **Namespace level**
+- **Azure Service Bus Data Receiver** role at **Namespace level**
+- **Azure Service Bus Data Sender** role at **Namespace level**
+- Provide `subscription_id`, `resource_group`, and `namespace` in configuration
+
+#### Role Assignment Commands
+```bash
+# Add Reader role at subscription level (for Azure navigation)
+az role assignment create \
+  --assignee <service-principal-id> \
+  --role "Reader" \
+  --scope "/subscriptions/{subscription-id}"
+
+# Add Contributor role at namespace level (for Service Bus operations)
+az role assignment create \
+  --assignee <service-principal-id> \
+  --role "Contributor" \
+  --scope "/subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/Microsoft.ServiceBus/namespaces/{namespace}"
+
+# Add Service Bus Data Receiver role at namespace level (for message operations)
+az role assignment create \
+  --assignee <service-principal-id> \
+  --role "Azure Service Bus Data Receiver" \
+  --scope "/subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/Microsoft.ServiceBus/namespaces/{namespace}"
+
+# Add Service Bus Data Sender role at namespace level (for message operations)
+az role assignment create \
+  --assignee <service-principal-id> \
+  --role "Azure Service Bus Data Sender" \
+  --scope "/subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/Microsoft.ServiceBus/namespaces/{namespace}"
+```
 
 ### Token Management
 - **Automatic refresh**: Quetty automatically refreshes tokens before expiration
@@ -272,6 +319,29 @@ Solution: Verify connection string format and escape special characters
 ```
 Error: Access denied
 Solution: Check shared access policy permissions (Send, Listen, Manage)
+```
+
+#### Azure Navigation Issues
+```
+Error: Resource group discovery returns 0 results (empty)
+Symptoms: Azure authentication succeeds, queue operations work, but no resource groups found
+Root Cause: Missing Reader role at subscription level
+Solution: Add Reader role assignment at subscription scope
+```
+
+```bash
+# Fix: Add subscription-level Reader role
+az role assignment create \
+  --assignee <service-principal-id> \
+  --role "Reader" \
+  --scope "/subscriptions/{subscription-id}"
+```
+
+```
+Error: "No resource groups found - this may be due to limited permissions"
+Symptoms: Interactive navigation shows empty resource group picker
+Root Cause: Service principal has namespace-level permissions but lacks subscription-level read access
+Solution: The service principal needs both namespace-level Service Bus permissions AND subscription-level Reader permissions
 ```
 
 

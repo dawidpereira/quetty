@@ -74,9 +74,12 @@ impl ResourceGroupHandler {
         }
 
         if groups.is_empty() {
-            return Some(Msg::AzureDiscovery(AzureDiscoveryMsg::DiscoveryError(
-                "No resource groups found in this subscription.".to_string(),
-            )));
+            log::warn!("No resource groups found - this may be due to limited permissions");
+            log::info!(
+                "Mounting empty resource group picker to allow navigation back to subscription selection"
+            );
+            // Still mount the picker with empty list to allow proper navigation
+            // Users can use ESC to go back to subscription selection
         }
 
         // Cache resource groups

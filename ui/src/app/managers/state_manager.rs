@@ -19,6 +19,16 @@ pub enum AppState {
     AzureDiscovery,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum NavigationContext {
+    /// Initial app startup - auto-load using saved config
+    Startup,
+    /// User navigating from queue selection - allow full hierarchy navigation
+    QueueNavigation,
+    /// User requested discovery mode - force interactive selection
+    DiscoveryMode,
+}
+
 /// Manages application state transitions and UI state
 pub struct StateManager {
     pub app_state: AppState,
@@ -43,6 +53,9 @@ pub struct StateManager {
     pub selected_resource_group: Option<String>,
     pub discovered_namespaces: Vec<ServiceBusNamespace>,
     pub discovered_connection_string: Option<String>,
+
+    // Navigation context
+    pub navigation_context: NavigationContext,
 }
 
 impl StateManager {
@@ -74,6 +87,7 @@ impl StateManager {
             selected_resource_group: None,
             discovered_namespaces: Vec::new(),
             discovered_connection_string: None,
+            navigation_context: NavigationContext::Startup,
         }
     }
 
@@ -339,5 +353,28 @@ impl StateManager {
         self.discovered_connection_string = None;
         self.azure_cache.clear();
         self.redraw = true;
+    }
+
+    /// Set navigation context for tracking user navigation intent
+    pub fn set_navigation_context(&mut self, context: NavigationContext) {
+        log::debug!("Setting navigation context: {context:?}");
+        self.navigation_context = context;
+    }
+
+    /// Check if should auto-progress through discovery steps
+    pub fn should_auto_progress(&self) -> bool {
+        matches!(self.navigation_context, NavigationContext::Startup)
+    }
+
+    /// Start navigation session from queue picker
+    pub fn start_queue_navigation(&mut self) {
+        log::info!("Starting queue navigation session");
+        self.set_navigation_context(NavigationContext::QueueNavigation);
+    }
+
+    /// Start discovery mode (forced interactive)
+    pub fn start_discovery_mode(&mut self) {
+        log::info!("Starting discovery mode session");
+        self.set_navigation_context(NavigationContext::DiscoveryMode);
     }
 }

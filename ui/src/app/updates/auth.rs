@@ -226,7 +226,9 @@ where
                 } else if config.servicebus().has_connection_string() {
                     // Other auth methods with connection string available
                     log::info!("Connection string available, loading namespaces directly");
-                    self.queue_manager.load_namespaces();
+                    self.queue_manager.load_namespaces(
+                        crate::app::managers::state_manager::NavigationContext::Startup,
+                    );
                     Ok(None)
                 } else if AuthUtils::supports_discovery(config) {
                     // Other auth methods without connection string - start discovery
@@ -240,7 +242,9 @@ where
                         "Auth method {} does not support automatic discovery",
                         AuthUtils::auth_method_description(config)
                     );
-                    self.queue_manager.load_namespaces();
+                    self.queue_manager.load_namespaces(
+                        crate::app::managers::state_manager::NavigationContext::Startup,
+                    );
                     Ok(None)
                 }
             }

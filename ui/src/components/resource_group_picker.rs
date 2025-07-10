@@ -26,26 +26,37 @@ impl ResourceGroupPicker {
 
 impl MockComponent for ResourceGroupPicker {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        let items: Vec<ListItem> = self
-            .resource_groups
-            .iter()
-            .enumerate()
-            .map(|(i, group)| {
-                let group_text = format!("📁 {} ({})", group.name, group.location);
-                let mut item = ListItem::new(group_text);
-                if i == self.selected {
-                    item = item.style(
-                        Style::default()
-                            .fg(ThemeManager::primary_accent())
-                            .bg(ThemeManager::surface())
-                            .add_modifier(TextModifiers::BOLD),
-                    );
-                } else {
-                    item = item.style(Style::default().fg(ThemeManager::text_primary()));
-                }
-                item
-            })
-            .collect();
+        let items: Vec<ListItem> = if self.resource_groups.is_empty() {
+            vec![
+                ListItem::new("⚠️  No resource groups found")
+                    .style(Style::default().fg(ThemeManager::text_muted())),
+                ListItem::new(""),
+                ListItem::new("This may be due to limited permissions.")
+                    .style(Style::default().fg(ThemeManager::text_muted())),
+                ListItem::new("Press ESC to go back to subscription selection.")
+                    .style(Style::default().fg(ThemeManager::text_muted())),
+            ]
+        } else {
+            self.resource_groups
+                .iter()
+                .enumerate()
+                .map(|(i, group)| {
+                    let group_text = format!("📁 {} ({})", group.name, group.location);
+                    let mut item = ListItem::new(group_text);
+                    if i == self.selected {
+                        item = item.style(
+                            Style::default()
+                                .fg(ThemeManager::primary_accent())
+                                .bg(ThemeManager::surface())
+                                .add_modifier(TextModifiers::BOLD),
+                        );
+                    } else {
+                        item = item.style(Style::default().fg(ThemeManager::text_primary()));
+                    }
+                    item
+                })
+                .collect()
+        };
 
         let popup_block = PopupBuilder::new("Resource Group Picker")
             .create_block_with_title("  📁 Select Resource Group  ");

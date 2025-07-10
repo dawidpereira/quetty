@@ -120,6 +120,10 @@ where
                 log::info!("Starting Azure resource discovery");
                 self.start_azure_discovery()
             }
+            AzureDiscoveryMsg::StartInteractiveDiscovery => {
+                log::info!("Starting interactive Azure resource discovery");
+                self.start_interactive_discovery()
+            }
             AzureDiscoveryMsg::DiscoveringSubscriptions => {
                 log::info!("Discovering Azure subscriptions");
                 SubscriptionHandler::discover(self)
@@ -219,10 +223,15 @@ where
             azure_ad_config.has_resource_group()
         );
         log::debug!("  has_namespace: {}", azure_ad_config.has_namespace());
+        log::debug!(
+            "  navigation_context: {:?}",
+            self.state_manager.navigation_context
+        );
 
         if azure_ad_config.has_subscription_id()
             && azure_ad_config.has_resource_group()
             && azure_ad_config.has_namespace()
+            && self.state_manager.should_auto_progress()
         {
             // All required fields are present, get them and fetch connection string directly
             let subscription_id = azure_ad_config
@@ -236,7 +245,7 @@ where
                 .expect("namespace should be present");
 
             log::info!(
-                "Azure AD config complete, skipping discovery and fetching connection string directly"
+                "Azure AD config complete and auto-progression enabled, skipping discovery and fetching connection string directly"
             );
             return Some(Msg::AzureDiscovery(
                 AzureDiscoveryMsg::FetchingConnectionString {
@@ -249,6 +258,24 @@ where
 
         // Start with subscription discovery
         log::info!("Azure AD config incomplete, starting discovery process");
+        Some(Msg::AzureDiscovery(
+            AzureDiscoveryMsg::DiscoveringSubscriptions,
+        ))
+    }
+
+    /// Start interactive discovery mode - forces user through hierarchy selection
+    fn start_interactive_discovery(&mut self) -> Option<Msg> {
+        log::info!("Starting interactive discovery mode");
+
+        // Set navigation context to DiscoveryMode to force interactive selection
+        self.state_manager.start_discovery_mode();
+
+        // Reset any previous discovery state to force fresh discovery
+        // This allows users to navigate through the hierarchy even when config is saved
+        log::info!("Resetting Azure discovery state to enable navigation");
+        self.state_manager.reset_azure_discovery_state();
+
+        // Always start with subscription discovery in interactive mode
         Some(Msg::AzureDiscovery(
             AzureDiscoveryMsg::DiscoveringSubscriptions,
         ))

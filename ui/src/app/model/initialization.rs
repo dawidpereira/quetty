@@ -397,7 +397,9 @@ impl Model<CrosstermTerminalAdapter> {
                     Ok(Some(_)) => {
                         // Successfully decrypted connection string - load namespaces directly
                         log::info!("Connection string decrypted successfully - loading namespaces");
-                        app.queue_manager.load_namespaces();
+                        app.queue_manager.load_namespaces(
+                            crate::app::managers::state_manager::NavigationContext::Startup,
+                        );
                     }
                     Ok(None) => {
                         // This shouldn't happen if has_connection_string() returned true

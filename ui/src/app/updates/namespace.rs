@@ -29,10 +29,13 @@ where
                     return None;
                 }
 
-                // If there's only one namespace (e.g., from connection string), automatically select it
-                if namespaces.len() == 1 {
+                // Check if we should auto-select when there's only one namespace
+                let should_auto_select =
+                    namespaces.len() == 1 && self.state_manager.should_auto_progress();
+
+                if should_auto_select {
                     log::info!(
-                        "Only one namespace available, automatically selecting: '{}'",
+                        "Auto-progression mode: Only one namespace available, automatically selecting: '{}'",
                         namespaces[0]
                     );
                     self.set_selected_namespace(Some(namespaces[0].clone()));
@@ -45,6 +48,11 @@ where
 
                     log::info!("Proceeding to handle namespace selection automatically");
                     return self.handle_namespace_selection();
+                } else if namespaces.len() == 1 {
+                    log::info!(
+                        "Navigation mode: Only one namespace available but forcing picker to allow navigation: '{}'",
+                        namespaces[0]
+                    );
                 }
 
                 // Multiple namespaces - show picker
@@ -57,8 +65,31 @@ where
             }
             NamespaceActivityMsg::NamespaceSelected => self.handle_namespace_selection(),
             NamespaceActivityMsg::NamespaceCancelled => {
-                // In discovery mode, go back to resource group selection
-                if self.state_manager.selected_subscription.is_some()
+                // In discovery mode or navigation mode, go back one level in hierarchy
+                if self.state_manager.navigation_context
+                    == crate::app::managers::state_manager::NavigationContext::DiscoveryMode
+                {
+                    log::info!(
+                        "Discovery mode: Going back to subscription selection (bypass resource groups)"
+                    );
+                    // Clear all selections to restart from subscription picker
+                    self.state_manager.selected_subscription = None;
+                    self.state_manager.selected_resource_group = None;
+                    self.set_selected_namespace(None);
+
+                    // Change state to AzureDiscovery before unmounting to avoid rendering issues
+                    self.set_app_state(crate::app::model::AppState::AzureDiscovery);
+
+                    // Unmount namespace picker
+                    if let Err(e) = self.app.umount(&ComponentId::NamespacePicker) {
+                        log::error!("Failed to unmount namespace picker: {e}");
+                    }
+
+                    // Go back to subscription selection instead of resource groups
+                    Some(Msg::AzureDiscovery(
+                        AzureDiscoveryMsg::DiscoveringSubscriptions,
+                    ))
+                } else if self.state_manager.selected_subscription.is_some()
                     && self.state_manager.selected_resource_group.is_some()
                 {
                     log::info!("Discovery mode: Going back to resource group selection");
@@ -89,8 +120,13 @@ where
                 }
             }
             NamespaceActivityMsg::NamespaceUnselected => {
+                log::debug!("User navigating back from queue selection");
                 // Clear selected namespace
                 self.set_selected_namespace(None);
+
+                // Set navigation context to indicate user is navigating from queue selection
+                self.state_manager.start_queue_navigation();
+                log::debug!("Navigation context set to QueueNavigation mode");
 
                 // Check if we're in discovery mode
                 if self.state_manager.selected_subscription.is_some()
@@ -127,8 +163,8 @@ where
                             NamespaceActivityMsg::NamespacesLoaded(namespaces),
                         ));
                     } else {
-                        // Normal mode - load namespaces from Azure
-                        self.load_namespaces();
+                        // Navigation mode - load namespaces from Azure respecting navigation context
+                        self.load_namespaces(self.state_manager.navigation_context.clone());
                     }
                 }
                 None

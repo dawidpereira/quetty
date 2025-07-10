@@ -7,14 +7,17 @@ where
     T: TerminalAdapter,
 {
     /// Load namespaces using QueueManager
-    pub fn load_namespaces(&self) {
+    pub fn load_namespaces(
+        &self,
+        navigation_context: crate::app::managers::state_manager::NavigationContext,
+    ) {
         // Don't load namespaces if authentication is in progress
         if self.state_manager.is_authenticating {
             log::info!("Skipping namespace loading - authentication in progress");
             return;
         }
         log::info!("Proceeding with namespace loading - not authenticating");
-        self.queue_manager.load_namespaces();
+        self.queue_manager.load_namespaces(navigation_context);
     }
 
     /// Load queues using QueueManager
