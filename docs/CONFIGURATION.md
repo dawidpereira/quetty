@@ -389,12 +389,30 @@ key_confirm_no = "n"            # Confirm no
 
 #### `file`
 - **Type**: String (optional)
-- **Description**: Path to log file. If not specified, logs go to stdout.
+- **Description**: Path to log file. If not specified, logs go to default file (`quetty.log`).
+
+#### `max_file_size_mb`
+- **Type**: Integer (optional)
+- **Default**: `10`
+- **Description**: Maximum log file size in megabytes before rotation occurs.
+
+#### `max_backup_files`
+- **Type**: Integer (optional)
+- **Default**: `5`
+- **Description**: Maximum number of backup log files to keep when rotating.
+
+#### `cleanup_on_startup`
+- **Type**: Boolean (optional)
+- **Default**: `true`
+- **Description**: Whether to clean up old backup log files on application startup.
 
 ```toml
 [logging]
 level = "debug"              # Show debug information
 file = "quetty.log"         # Log to file
+max_file_size_mb = 10       # Rotate after 10MB
+max_backup_files = 5        # Keep 5 backup files
+cleanup_on_startup = true   # Clean old files on startup
 # file = "/tmp/quetty.log"  # Absolute path
 ```
 
@@ -430,6 +448,9 @@ export KEYS__KEY_HELP="?"
 # Logging
 export LOGGING__LEVEL="debug"
 export LOGGING__FILE="debug.log"
+export LOGGING__MAX_FILE_SIZE_MB=50
+export LOGGING__MAX_BACKUP_FILES=10
+export LOGGING__CLEANUP_ON_STARTUP=false
 ```
 
 ## Configuration Validation

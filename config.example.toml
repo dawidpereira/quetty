@@ -189,6 +189,15 @@ level = "info"
 # Log file path (optional - if not specified, logs go to stdout)
 # file = "quetty.log"
 
+# Maximum log file size in MB before rotation (default: 10)
+# max_file_size_mb = 10
+
+# Maximum number of backup log files to keep (default: 5)
+# max_backup_files = 5
+
+# Whether to clean up old log files on startup (default: true)
+# cleanup_on_startup = true
+
 # =============================================================================
 # ENVIRONMENT VARIABLE REFERENCE
 # =============================================================================
@@ -206,5 +215,8 @@ level = "info"
 # export SERVICEBUS__CONNECTION_STRING="Endpoint=sb://..."
 # export LOGGING__LEVEL="debug"
 # export LOGGING__FILE="debug.log"
+# export LOGGING__MAX_FILE_SIZE_MB=50
+# export LOGGING__MAX_BACKUP_FILES=10
+# export LOGGING__CLEANUP_ON_STARTUP=false
 #
 # For detailed configuration documentation, see: docs/CONFIGURATION.md

@@ -344,11 +344,14 @@ fn load_config_fresh() -> ConfigLoadResult {
 
 /// Configuration for application logging behavior.
 ///
-/// Controls log level and output file settings for the application logger.
+/// Controls log level, output file settings, and log rotation for the application logger.
 #[derive(Debug, Deserialize, Default, Clone)]
 pub struct LoggingConfig {
     level: Option<String>,
     file: Option<String>,
+    max_file_size_mb: Option<u64>,
+    max_backup_files: Option<u32>,
+    cleanup_on_startup: Option<bool>,
 }
 
 impl LoggingConfig {
@@ -368,5 +371,32 @@ impl LoggingConfig {
     /// Optional log file path, `None` if logging to stdout/stderr
     pub fn file(&self) -> Option<&str> {
         self.file.as_deref()
+    }
+
+    /// Gets the maximum log file size in MB before rotation, defaulting to 10MB.
+    ///
+    /// # Returns
+    ///
+    /// Maximum file size in megabytes
+    pub fn max_file_size_mb(&self) -> u64 {
+        self.max_file_size_mb.unwrap_or(10)
+    }
+
+    /// Gets the maximum number of backup files to keep, defaulting to 5.
+    ///
+    /// # Returns
+    ///
+    /// Maximum number of backup log files
+    pub fn max_backup_files(&self) -> u32 {
+        self.max_backup_files.unwrap_or(5)
+    }
+
+    /// Gets whether to clean up old log files on startup, defaulting to true.
+    ///
+    /// # Returns
+    ///
+    /// `true` if old log files should be cleaned up on startup
+    pub fn cleanup_on_startup(&self) -> bool {
+        self.cleanup_on_startup.unwrap_or(true)
     }
 }
