@@ -115,7 +115,7 @@ impl ConsumerManager {
         let mut consumer_guard = consumer.lock().await;
 
         // Use timeout-based receive for consistency and to prevent indefinite blocking
-        let timeout = Duration::from_secs(self.batch_config.operation_timeout_secs());
+        let timeout = Duration::from_secs(self.batch_config.receive_timeout_secs());
         consumer_guard
             .receive_messages_with_timeout(max_count, timeout)
             .await

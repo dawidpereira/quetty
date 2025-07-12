@@ -242,6 +242,8 @@ pub struct BatchConfig {
     max_messages_to_process: Option<usize>,
     /// Auto-reload threshold for UI refresh after bulk operations (default: 50)
     auto_reload_threshold: Option<usize>,
+    /// Timeout for individual receive message operations in seconds (default: 5)
+    receive_timeout_secs: Option<u64>,
 }
 
 impl BatchConfig {
@@ -266,6 +268,7 @@ impl BatchConfig {
             lock_timeout_secs: None,
             max_messages_to_process: None,
             auto_reload_threshold: None,
+            receive_timeout_secs: None,
         }
     }
 
@@ -302,6 +305,11 @@ impl BatchConfig {
     /// Get the threshold for triggering auto-reload after bulk operations
     pub fn auto_reload_threshold(&self) -> usize {
         self.auto_reload_threshold.unwrap_or(50)
+    }
+
+    /// Get the timeout for individual receive message operations in seconds
+    pub fn receive_timeout_secs(&self) -> u64 {
+        self.receive_timeout_secs.unwrap_or(5)
     }
 }
 

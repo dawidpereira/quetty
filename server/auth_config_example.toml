@@ -17,7 +17,7 @@ value = "Endpoint=sb://namespace.servicebus.windows.net/;SharedAccessKeyName=Roo
 # - "device_code": Interactive device code flow
 flow = "device_code"
 
-# Required for most flows (except managed_identity)
+# Required for Azure AD authentication flows
 tenant_id = "your-tenant-id"
 client_id = "your-client-id"
 

@@ -349,6 +349,43 @@ impl BulkCommandHandler {
         repeat_count: usize,
         _max_position: usize,
     ) -> ServiceBusResult<ServiceBusResponse> {
+        // Wrap the entire operation in a timeout
+        let operation_timeout = Duration::from_secs(self.batch_config.operation_timeout_secs());
+
+        match tokio::time::timeout(
+            operation_timeout,
+            self.handle_bulk_send_internal(
+                message_ids,
+                target_queue,
+                should_delete_source,
+                repeat_count,
+                _max_position,
+            ),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => {
+                log::error!(
+                    "Bulk send operation timed out after {} seconds",
+                    self.batch_config.operation_timeout_secs()
+                );
+                Err(ServiceBusError::OperationTimeout(format!(
+                    "Bulk send operation timed out after {} seconds",
+                    self.batch_config.operation_timeout_secs()
+                )))
+            }
+        }
+    }
+
+    async fn handle_bulk_send_internal(
+        &self,
+        message_ids: Vec<MessageIdentifier>,
+        target_queue: String,
+        should_delete_source: bool,
+        repeat_count: usize,
+        _max_position: usize,
+    ) -> ServiceBusResult<ServiceBusResponse> {
         log::info!(
             "Starting bulk send: {} -> {}, delete_source={}, repeat={}",
             message_ids.len(),
@@ -370,95 +407,113 @@ impl BulkCommandHandler {
         ) = self.setup_bulk_send_operation(&message_ids).await?;
 
         // Main processing loop
-        {
+        let batch_size = self.batch_config.bulk_chunk_size() as u32;
+        let mut processed_count = 0;
+        let mut highest_sequence_seen = 0i64;
+        let target_max_sequence = message_ids
+            .iter()
+            .map(|msg_id| msg_id.sequence)
+            .max()
+            .unwrap_or(0);
+        let mut pending_non_targets: Vec<azservicebus::ServiceBusReceivedMessage> = Vec::new();
+        let mut consecutive_empty_batches = 0;
+        let max_empty_batches = 3; // Exit after 3 consecutive empty batches
+
+        while self.should_continue_bulk_send(
+            &remaining,
+            target_max_sequence,
+            highest_sequence_seen,
+            consecutive_empty_batches,
+            max_empty_batches,
+        ) {
+            // Acquire consumer lock per batch instead of holding it for entire operation
             let mut consumer = consumer_arc.lock().await;
-            let batch_size = self.batch_config.bulk_chunk_size() as u32;
-            let mut processed_count = 0;
-            let mut highest_sequence_seen = 0i64;
-            let target_max_sequence = message_ids
-                .iter()
-                .map(|msg_id| msg_id.sequence)
-                .max()
-                .unwrap_or(0);
-            let mut pending_non_targets: Vec<azservicebus::ServiceBusReceivedMessage> = Vec::new();
-
-            while self.should_continue_bulk_send(
-                &remaining,
-                target_max_sequence,
-                highest_sequence_seen,
-            ) {
-                let batch = match consumer
-                    .receive_messages_with_timeout(
-                        batch_size,
-                        Duration::from_secs(self.batch_config.operation_timeout_secs()),
-                    )
-                    .await
-                {
-                    Ok(msgs) => msgs,
-                    Err(e) => {
-                        log::error!("Receive error during bulk send: {e}");
-                        break;
-                    }
-                };
-
-                if batch.is_empty() {
-                    log::debug!(
-                        "Receive batch empty after processing {processed_count} messages (highest_sequence: {highest_sequence_seen})"
-                    );
+            let batch = match consumer
+                .receive_messages_with_timeout(
+                    batch_size,
+                    Duration::from_secs(self.batch_config.receive_timeout_secs()),
+                )
+                .await
+            {
+                Ok(msgs) => msgs,
+                Err(e) => {
+                    log::error!("Receive error during bulk send: {e}");
+                    drop(consumer); // Release lock before breaking
                     break;
                 }
+            };
 
-                let batch_len = batch.len();
-                for msg in batch.into_iter() {
-                    let msg_id = msg.message_id().map(|s| s.to_string()).unwrap_or_default();
-                    let msg_sequence = msg.sequence_number();
-                    if msg_sequence > highest_sequence_seen {
-                        highest_sequence_seen = msg_sequence;
-                    }
-                    if remaining.remove(&msg_id).is_some() {
-                        let params = TargetMessageParams {
-                            consumer: &mut consumer,
-                            msg: &msg,
-                            is_dlq_operation,
-                            should_delete_source,
-                            message_bytes: &mut message_bytes,
-                            successful_count: &mut successful_count,
-                            failed_count: &mut failed_count,
-                        };
-                        self.process_target_message(params).await;
-                    } else {
-                        pending_non_targets.push(msg);
-                    }
+            if batch.is_empty() {
+                consecutive_empty_batches += 1;
+                log::debug!(
+                    "Receive batch empty after processing {processed_count} messages (highest_sequence: {highest_sequence_seen}), consecutive empty: {consecutive_empty_batches}"
+                );
+                drop(consumer); // Release lock before continuing
+                continue;
+            } else {
+                consecutive_empty_batches = 0; // Reset counter on successful batch
+            }
+
+            let batch_len = batch.len();
+            for msg in batch.into_iter() {
+                let msg_id = msg.message_id().map(|s| s.to_string()).unwrap_or_default();
+                let msg_sequence = msg.sequence_number();
+                if msg_sequence > highest_sequence_seen {
+                    highest_sequence_seen = msg_sequence;
                 }
-                processed_count += batch_len;
-                if processed_count % (batch_size as usize * 10) == 0 {
-                    log::info!(
-                        "Bulk send progress: processed {} messages, highest_sequence: {}, remaining targets: {}",
-                        processed_count,
-                        highest_sequence_seen,
-                        remaining.len()
-                    );
-                }
-                if target_max_sequence > 0
-                    && highest_sequence_seen > target_max_sequence + 1000
-                    && !remaining.is_empty()
-                {
-                    log::warn!(
-                        "Safety break: highest_sequence {} exceeds target {} by 1000+, {} targets still remaining",
-                        highest_sequence_seen,
-                        target_max_sequence,
-                        remaining.len()
-                    );
-                    break;
+                if remaining.remove(&msg_id).is_some() {
+                    let params = TargetMessageParams {
+                        consumer: &mut consumer,
+                        msg: &msg,
+                        is_dlq_operation,
+                        should_delete_source,
+                        message_bytes: &mut message_bytes,
+                        successful_count: &mut successful_count,
+                        failed_count: &mut failed_count,
+                    };
+                    self.process_target_message(params).await;
+                } else {
+                    pending_non_targets.push(msg);
                 }
             }
-            log::info!(
-                "Bulk send scan completed: processed {} messages, highest_sequence: {}, targets found: {}, remaining: {}",
-                processed_count,
-                highest_sequence_seen,
-                successful_count,
-                remaining.len()
-            );
+            processed_count += batch_len;
+
+            // Release consumer lock after processing batch
+            drop(consumer);
+
+            if processed_count % (batch_size as usize * 10) == 0 {
+                log::info!(
+                    "Bulk send progress: processed {} messages, highest_sequence: {}, remaining targets: {}",
+                    processed_count,
+                    highest_sequence_seen,
+                    remaining.len()
+                );
+            }
+            if target_max_sequence > 0
+                && highest_sequence_seen > target_max_sequence + 1000
+                && !remaining.is_empty()
+            {
+                log::warn!(
+                    "Safety break: highest_sequence {} exceeds target {} by 1000+, {} targets still remaining",
+                    highest_sequence_seen,
+                    target_max_sequence,
+                    remaining.len()
+                );
+                break;
+            }
+        }
+
+        log::info!(
+            "Bulk send scan completed: processed {} messages, highest_sequence: {}, targets found: {}, remaining: {}",
+            processed_count,
+            highest_sequence_seen,
+            successful_count,
+            remaining.len()
+        );
+
+        // Abandon non-target messages (acquire lock one final time)
+        if !pending_non_targets.is_empty() {
+            let mut consumer = consumer_arc.lock().await;
             self.abandon_pending_non_targets(&mut consumer, pending_non_targets)
                 .await;
         }
@@ -508,9 +563,30 @@ impl BulkCommandHandler {
         remaining: &HashMap<String, MessageIdentifier>,
         target_max_sequence: i64,
         highest_sequence_seen: i64,
+        consecutive_empty_batches: u32,
+        max_empty_batches: u32,
     ) -> bool {
-        !remaining.is_empty()
-            && (target_max_sequence == 0 || highest_sequence_seen < target_max_sequence)
+        // Exit if no more targets remain
+        if remaining.is_empty() {
+            return false;
+        }
+
+        // Exit if too many consecutive empty batches (likely no more messages available)
+        if consecutive_empty_batches >= max_empty_batches {
+            log::warn!(
+                "Stopping bulk send after {} consecutive empty batches, {} targets still remaining",
+                consecutive_empty_batches,
+                remaining.len()
+            );
+            return false;
+        }
+
+        // Exit if we've gone far beyond the target sequence range
+        if target_max_sequence > 0 && highest_sequence_seen > target_max_sequence {
+            return false;
+        }
+
+        true
     }
 
     async fn process_target_message(&self, params: TargetMessageParams<'_>) {
