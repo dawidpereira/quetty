@@ -589,7 +589,7 @@ where
     }
 
     pub fn write_env_file(&self, config_data: &ConfigUpdateData) -> AppResult<()> {
-        let env_path = ".env";
+        let env_path = "../.env";
         let mut env_content = String::new();
         let mut existing_values = std::collections::HashMap::new();
 

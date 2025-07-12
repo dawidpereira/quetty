@@ -91,7 +91,8 @@ static CURRENT_PAGE_SIZE: std::sync::OnceLock<std::sync::Mutex<Option<u32>>> =
 ///
 /// [`ConfigLoadResult`] indicating success or specific failure type
 fn load_config() -> ConfigLoadResult {
-    dotenv::dotenv().ok();
+    // Load .env file from the project root directory
+    dotenv::from_path("../.env").ok();
     let env_source = Environment::default().separator("__");
 
     // Configuration file is mandatory – fail fast when missing
@@ -305,8 +306,8 @@ pub fn reload_config() -> Result<(), String> {
 ///
 /// [`ConfigLoadResult`] with the freshly loaded configuration
 fn load_config_fresh() -> ConfigLoadResult {
-    // Reload environment variables from .env file
-    dotenv::dotenv().ok();
+    // Reload environment variables from .env file in the project root directory
+    dotenv::from_path("../.env").ok();
 
     let env_source = Environment::default().separator("__");
     let file_source = File::with_name("../config.toml");
