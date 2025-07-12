@@ -84,7 +84,12 @@ cargo test
 
 # Run with specific config
 cargo run -- --config config.dev.toml
+
+# Run traffic simulator for testing
+make test-server QUEUE=test-queue-name
 ```
+
+For traffic simulation testing, see [TRAFFIC_SIMULATOR.md](TRAFFIC_SIMULATOR.md) for detailed usage instructions.
 
 
 ## Project Structure
@@ -108,12 +113,23 @@ quetty/
 │   │   ├── bulk_operations/    # Bulk operation handlers
 │   │   └── lib.rs             # Library entry point
 │   └── Cargo.toml
+├── traffic-simulator/          # Standalone traffic simulation tool
+│   ├── src/
+│   │   ├── main.rs            # Traffic simulator application
+│   │   ├── service_bus.rs     # Azure Service Bus wrapper
+│   │   ├── producer.rs        # Message sending
+│   │   ├── consumer.rs        # Message receiving
+│   │   └── config.rs          # Configuration management
+│   ├── config.toml            # Traffic-specific settings
+│   └── Cargo.toml             # Independent project
 ├── themes/                     # Built-in themes
 │   ├── nightfox/
 │   ├── catppuccin/
 │   └── quetty/
 ├── scripts/                    # Build and utility scripts
 └── docs/                      # Additional documentation
+    ├── TRAFFIC_SIMULATOR.md   # Traffic simulator guide
+    └── ...                    # Other documentation
 ```
 
 ### Module Organization
@@ -131,6 +147,15 @@ quetty/
 - **`service_bus_manager/`**: Azure Service Bus operations
 - **`bulk_operations/`**: Efficient bulk operation implementations
 - **`common/`**: Shared types and utilities
+
+#### Traffic Simulator (`traffic-simulator/src/`)
+- **`main.rs`**: Standalone traffic simulation application
+- **`service_bus.rs`**: Azure Service Bus client wrapper
+- **`producer.rs`**: Message sending functionality
+- **`consumer.rs`**: Message receiving functionality
+- **`config.rs`**: Configuration loading and validation
+
+See [TRAFFIC_SIMULATOR.md](TRAFFIC_SIMULATOR.md) for detailed development and usage instructions.
 
 ## Development Workflow
 

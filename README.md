@@ -104,6 +104,7 @@ For development setup and contribution guidelines, see [CONTRIBUTING.md](docs/CO
 - **[User Guide](docs/USER_GUIDE.md)** - Complete feature walkthrough and usage
 - **[Configuration Reference](docs/CONFIGURATION.md)** - Complete config.toml documentation
 - **[Theming Guide](docs/THEMING.md)** - Create and customize themes
+- **[Traffic Simulator](docs/TRAFFIC_SIMULATOR.md)** - Standalone testing tool for queue load simulation
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 - **[Contributing](docs/CONTRIBUTING.md)** - Development and contribution guidelines
 

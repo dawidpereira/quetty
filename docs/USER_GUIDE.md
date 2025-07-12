@@ -471,9 +471,38 @@ file = "quetty.log"
 - Take advantage of message editing for testing
 - Use themes and customization for comfortable long-term use
 
+## Development and Testing
+
+### Traffic Simulator
+
+For load testing and queue performance validation, Quetty includes a standalone traffic simulator:
+
+```bash
+# Basic usage - generates 60-180 messages/minute
+make test-server QUEUE=my-test-queue
+
+# Custom rate testing
+export TRAFFIC_MIN_RATE=100
+export TRAFFIC_MAX_RATE=300
+make test-server QUEUE=load-test-queue
+
+# Development testing with custom prefix
+export TRAFFIC_MESSAGE_PREFIX="DevTest"
+make test-server QUEUE=dev-queue
+```
+
+The traffic simulator provides:
+- **Realistic Traffic Patterns**: Random message intervals between configurable rates
+- **Complete Message Flow**: Sends and immediately receives/completes messages
+- **Real-time Statistics**: Live monitoring of send/receive rates
+- **JSON Message Format**: Structured test data with timestamps and UUIDs
+
+See [TRAFFIC_SIMULATOR.md](TRAFFIC_SIMULATOR.md) for detailed usage and configuration options.
+
 For additional help and advanced configuration, see the other documentation files:
 - [INSTALLATION.md](INSTALLATION.md) - Setup and installation
 - [AUTHENTICATION.md](AUTHENTICATION.md) - Authentication configuration
 - [CONFIGURATION.md](CONFIGURATION.md) - Complete configuration reference
 - [THEMING.md](THEMING.md) - Theme development and customization
+- [TRAFFIC_SIMULATOR.md](TRAFFIC_SIMULATOR.md) - Load testing and traffic simulation
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Problem resolution

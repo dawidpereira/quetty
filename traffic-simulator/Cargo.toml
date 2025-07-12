@@ -1,0 +1,23 @@
+[package]
+name = "traffic-simulator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.45.0", features = ["rt-multi-thread", "macros", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+azservicebus = "0.20.4"
+azure_core = "0.25.0"
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
+dotenv = "0.15"
+toml = "0.8"
+fastrand = "2.0"
+thiserror = "1.0"
+# Password input support
+rpassword = "7.0"
+# Secure memory handling
+zeroize = { version = "1.8", features = ["derive"] }
+# Use server encryption utilities
+server = { path = "../server" }

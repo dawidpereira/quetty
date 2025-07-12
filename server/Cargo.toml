@@ -39,6 +39,11 @@ thiserror = "1.0"
 log = "0.4"
 tracing = "0.1"
 dirs = "5"
+# Encryption support
+aes-gcm = "0.10"
+pbkdf2 = "0.12"
+rand = "0.8"
+zeroize = { version = "1.8", features = ["derive"] }
 
 [dev-dependencies]
 claims = "0.8"
