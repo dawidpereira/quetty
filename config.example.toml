@@ -136,9 +136,10 @@ auth_method = "device_code"
 # =============================================================================
 [keys]
 # Global keys
-key_quit = "q"  # Key to quit the application
-key_help = "h"  # Key to show help screen
-key_theme = "t" # Key to toggle theme
+key_quit = "q"    # Key to quit the application
+key_help = "h"    # Key to show help screen
+key_theme = "t"   # Key to toggle theme
+key_refresh = "r" # Key to refresh messages (reload from beginning)
 
 # Navigation keys
 key_down = "j"          # Key to move down (vim-style)

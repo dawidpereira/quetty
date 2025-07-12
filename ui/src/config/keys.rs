@@ -8,6 +8,7 @@ pub struct KeyBindingsConfig {
     key_help: Option<char>,
     key_theme: Option<char>,
     key_config: Option<char>,
+    key_refresh: Option<char>,
 
     // Navigation keys
     key_down: Option<char>,
@@ -68,6 +69,10 @@ impl KeyBindingsConfig {
         self.key_config.unwrap_or('C')
     }
 
+    pub fn refresh(&self) -> char {
+        self.key_refresh.unwrap_or('r')
+    }
+
     // Navigation keys
     pub fn down(&self) -> char {
         self.key_down.unwrap_or('j')
@@ -96,7 +101,7 @@ impl KeyBindingsConfig {
     // Message actions
 
     pub fn resend_from_dlq(&self) -> char {
-        self.key_resend_from_dlq.unwrap_or('r')
+        self.key_resend_from_dlq.unwrap_or('s')
     }
 
     pub fn resend_and_delete_from_dlq(&self) -> char {

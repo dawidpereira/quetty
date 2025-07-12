@@ -72,6 +72,10 @@ impl HelpContent {
                 .add_single_key(format!("[{}]", keys.help()), "Toggle this help screen")
                 .add_single_key(format!("[{}]", keys.theme()), "Open theme picker")
                 .add_single_key(format!("[{}]", keys.config()), "Open configuration screen")
+                .add_single_key(
+                    format!("[{}]", keys.refresh()),
+                    "Refresh messages (reload from beginning)",
+                )
                 .add_single_key("[Esc]".to_string(), "Go back / Cancel operation"),
             // Navigation Section
             HelpSection::new("NAVIGATION", "🧭")

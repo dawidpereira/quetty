@@ -11,8 +11,27 @@ where
 {
     /// Load a specific count of messages from API
     pub fn load_messages_from_api_with_count(&mut self, message_count: u32) -> AppResult<()> {
-        // Check if already loading to prevent concurrent operations
-        if self.queue_state().message_pagination.is_loading() {
+        self.load_messages_from_api_with_count_internal(message_count, false, None)
+    }
+
+    /// Load messages from API with explicit sequence override (for refresh functionality)
+    pub fn load_messages_from_api_with_force_sequence(
+        &mut self,
+        message_count: u32,
+        from_sequence: Option<i64>,
+    ) -> AppResult<()> {
+        self.load_messages_from_api_with_count_internal(message_count, true, Some(from_sequence))
+    }
+
+    /// Internal method to load messages with optional force parameter and sequence override
+    fn load_messages_from_api_with_count_internal(
+        &mut self,
+        message_count: u32,
+        force: bool,
+        force_sequence: Option<Option<i64>>,
+    ) -> AppResult<()> {
+        // Check if already loading to prevent concurrent operations (unless force is true)
+        if !force && self.queue_state().message_pagination.is_loading() {
             log::debug!("Already loading messages, skipping request");
             return Ok(());
         }
@@ -41,11 +60,16 @@ where
                 ));
             }
         };
-        let from_sequence = self
-            .queue_state()
-            .message_pagination
-            .last_loaded_sequence
-            .map(|seq| seq + 1);
+        let from_sequence = if let Some(force_seq) = force_sequence {
+            // Use forced sequence for refresh functionality
+            force_seq
+        } else {
+            // Use normal pagination logic
+            self.queue_state()
+                .message_pagination
+                .last_loaded_sequence
+                .map(|seq| seq + 1)
+        };
 
         self.task_manager
             .execute("Loading more messages...", async move {

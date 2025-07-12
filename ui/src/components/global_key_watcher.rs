@@ -46,6 +46,10 @@ impl Component<Msg, NoUserEvent> for GlobalKeyWatcher {
                     Some(Msg::ToggleThemePicker)
                 } else if c == keys.config() {
                     Some(Msg::ToggleConfigScreen)
+                } else if c == keys.refresh() {
+                    Some(Msg::MessageActivity(
+                        crate::components::common::MessageActivityMsg::ForceReloadMessages,
+                    ))
                 } else {
                     None
                 }
