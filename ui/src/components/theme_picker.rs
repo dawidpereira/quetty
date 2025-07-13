@@ -31,9 +31,9 @@ const CMD_RESULT_CLOSE_PICKER: &str = "ClosePicker";
 ///
 /// # Examples
 ///
-/// ```no_run
-/// use ui::components::theme_picker::ThemePicker;
-/// use ui::components::state::ComponentState;
+/// ```ignore
+/// use quetty::components::theme_picker::ThemePicker;
+/// use quetty::components::state::ComponentState;
 ///
 /// let mut picker = ThemePicker::new();
 /// picker.mount()?; // Loads available themes

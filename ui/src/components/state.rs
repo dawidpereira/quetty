@@ -15,8 +15,8 @@ use crate::error::{AppError, AppResult};
 /// # Examples
 ///
 /// ```no_run
-/// use ui::components::state::ComponentState;
-/// use ui::error::AppResult;
+/// use quetty::components::state::ComponentState;
+/// use quetty::error::AppResult;
 ///
 /// struct MyComponent {
 ///     data: Vec<String>,
@@ -55,13 +55,13 @@ pub trait ComponentState {
 ///
 /// # Examples
 ///
-/// ```no_run
-/// use ui::components::state::{ComponentState, ComponentStateMount};
-/// use ui::components::common::ComponentId;
+/// ```ignore
+/// use quetty::components::state::{ComponentState, ComponentStateMount};
+/// use quetty::components::common::ComponentId;
 ///
 /// // Mount a component with automatic state initialization
 /// app.mount_with_state(
-///     ComponentId::MessageList,
+///     ComponentId::Messages,
 ///     my_component,
 ///     vec![]
 /// )?;

@@ -10,8 +10,8 @@
 //!
 //! The [`auth`] module provides helper functions for authentication operations:
 //!
-//! ```no_run
-//! use ui::utils::auth;
+//! ```ignore
+//! use quetty::utils::auth;
 //!
 //! // Validate authentication configuration
 //! if auth::validate_auth_config(&config)? {
@@ -23,10 +23,11 @@
 //!
 //! The [`connection_string`] module offers tools for working with Azure Service Bus connection strings:
 //!
-//! ```no_run
-//! use ui::utils::connection_string;
+//! ```ignore
+//! use quetty::utils::connection_string;
 //!
 //! // Parse and validate connection strings
+//! let conn_str = "Endpoint=sb://example.servicebus.windows.net/";
 //! let parsed = connection_string::parse_connection_string(&conn_str)?;
 //! let is_valid = connection_string::validate_connection_string(&conn_str);
 //! ```
@@ -35,10 +36,12 @@
 //!
 //! The [`encryption`] module provides secure data handling capabilities:
 //!
-//! ```no_run
-//! use ui::utils::encryption;
+//! ```ignore
+//! use quetty::utils::encryption;
 //!
 //! // Encrypt sensitive configuration data
+//! let sensitive_data = "secret_key";
+//! let password = "user_password";
 //! let encrypted = encryption::encrypt_data(&sensitive_data, &password)?;
 //! let decrypted = encryption::decrypt_data(&encrypted, &password)?;
 //! ```

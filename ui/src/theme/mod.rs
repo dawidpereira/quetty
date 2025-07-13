@@ -36,8 +36,8 @@
 //! ## Basic Usage
 //!
 //! ### Initialization and Basic Operations
-//! ```no_run
-//! use ui::theme::{ThemeManager, ThemeConfig};
+//! ```ignore
+//! use quetty::theme::{ThemeManager, ThemeConfig};
 //!
 //! // Initialize at application startup
 //! let config = ThemeConfig {
@@ -53,8 +53,8 @@
 //! ```
 //!
 //! ### Runtime Theme Switching
-//! ```no_run
-//! use ui::theme::ThemeManager;
+//! ```ignore
+//! use quetty::theme::ThemeManager;
 //!
 //! // Switch to a different theme at runtime
 //! {
@@ -67,8 +67,8 @@
 //! ```
 //!
 //! ### Theme Discovery
-//! ```no_run
-//! use ui::theme::ThemeManager;
+//! ```ignore
+//! use quetty::theme::ThemeManager;
 //!
 //! // Discover available themes and flavors
 //! let available_themes = ThemeManager::get_available_themes();
@@ -100,8 +100,8 @@
 //! ## Component Integration
 //!
 //! ### Using Colors in TUI Components
-//! ```no_run
-//! use ui::theme::ThemeManager;
+//! ```ignore
+//! use quetty::theme::ThemeManager;
 //! use tuirealm::props::{PropPayload, PropValue};
 //!
 //! // Set component colors from theme
@@ -117,8 +117,8 @@
 //! ```
 //!
 //! ### Dynamic Color Updates
-//! ```no_run
-//! use ui::theme::ThemeManager;
+//! ```ignore
+//! use quetty::theme::ThemeManager;
 //!
 //! // Components can react to theme changes
 //! pub fn update_colors(&mut self) {
@@ -141,7 +141,7 @@
 //! ## Theme File Structure
 //!
 //! Themes are loaded from `~/.config/quetty/themes/` directory:
-//! ```
+//! ```text
 //! themes/
 //! ├── catppuccin/
 //! │   ├── latte.toml

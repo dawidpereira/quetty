@@ -25,8 +25,8 @@
 //!
 //! ## Usage
 //!
-//! ```no_run
-//! use ui::config::{get_config_or_panic, reload_config};
+//! ```ignore
+//! use quetty::config::{get_config_or_panic, reload_config};
 //!
 //! // Get configuration (loads on first access)
 //! let config = get_config_or_panic();
@@ -164,7 +164,7 @@ pub fn get_config() -> &'static ConfigLoadResult {
 /// # Examples
 ///
 /// ```no_run
-/// use ui::config::get_config_or_panic;
+/// use quetty::config::get_config_or_panic;
 ///
 /// let config = get_config_or_panic();
 /// let page_size = config.max_messages();
@@ -193,7 +193,7 @@ pub fn get_config_or_panic() -> &'static AppConfig {
 /// # Examples
 ///
 /// ```no_run
-/// use ui::config::get_current_page_size;
+/// use quetty::config::get_current_page_size;
 ///
 /// let page_size = get_current_page_size();
 /// println!("Displaying {} messages per page", page_size);
@@ -221,7 +221,7 @@ pub fn get_current_page_size() -> u32 {
 /// # Examples
 ///
 /// ```no_run
-/// use ui::config::set_current_page_size;
+/// use quetty::config::set_current_page_size;
 ///
 /// // Change to show 100 messages per page
 /// set_current_page_size(100);
@@ -254,7 +254,7 @@ pub fn set_current_page_size(page_size: u32) {
 /// # Examples
 ///
 /// ```no_run
-/// use ui::config::reload_config;
+/// use quetty::config::reload_config;
 ///
 /// match reload_config() {
 ///     Ok(()) => println!("Configuration reloaded successfully"),

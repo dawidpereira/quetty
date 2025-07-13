@@ -33,7 +33,7 @@
 //! ## Usage
 //!
 //! ```no_run
-//! use ui::app::application_lifecycle::ApplicationLifecycle;
+//! use quetty::app::application_lifecycle::ApplicationLifecycle;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {

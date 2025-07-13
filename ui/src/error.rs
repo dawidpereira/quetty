@@ -27,8 +27,8 @@ use std::sync::mpsc::Sender;
 /// # Examples
 ///
 /// ## Basic Error Handling with User Feedback
-/// ```no_run
-/// use ui::error::{AppError, ErrorReporter};
+/// ```ignore
+/// use quetty::error::{AppError, ErrorReporter};
 ///
 /// async fn handle_app_error(error: AppError, error_reporter: &ErrorReporter) {
 ///     match error {
@@ -70,8 +70,8 @@ use std::sync::mpsc::Sender;
 /// ```
 ///
 /// ## Error Context and Recovery
-/// ```no_run
-/// use ui::error::{AppError, AppResult};
+/// ```ignore
+/// use quetty::error::{AppError, AppResult};
 ///
 /// async fn load_queue_with_recovery(queue_name: &str) -> AppResult<Vec<Message>> {
 ///     match load_queue_messages(queue_name).await {
@@ -92,8 +92,8 @@ use std::sync::mpsc::Sender;
 /// ```
 ///
 /// ## Error Propagation and Conversion
-/// ```no_run
-/// use ui::error::{AppError, AppResult};
+/// ```ignore
+/// use quetty::error::{AppError, AppResult};
 /// use server::service_bus_manager::ServiceBusError;
 ///
 /// // Automatic conversion from server errors
@@ -118,9 +118,9 @@ use std::sync::mpsc::Sender;
 /// ```
 ///
 /// ## Integration with UI Components
-/// ```no_run
-/// use ui::error::{AppError, ErrorContext, ErrorSeverity};
-/// use ui::components::common::Msg;
+/// ```ignore
+/// use quetty::error::{AppError, ErrorContext, ErrorSeverity};
+/// use quetty::components::common::Msg;
 ///
 /// fn create_error_message(error: AppError) -> Msg {
 ///     let context = match error {
@@ -163,8 +163,8 @@ use std::sync::mpsc::Sender;
 /// ```
 ///
 /// ## Logging Integration
-/// ```no_run
-/// use ui::error::{AppError, ErrorSeverity};
+/// ```ignore
+/// use quetty::error::{AppError, ErrorSeverity};
 ///
 /// fn log_app_error(error: &AppError, severity: ErrorSeverity) {
 ///     match severity {

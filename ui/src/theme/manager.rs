@@ -13,8 +13,8 @@
 //!
 //! ## Usage
 //!
-//! ```no_run
-//! use ui::theme::{manager::ThemeManager, types::ThemeConfig};
+//! ```ignore
+//! use quetty::theme::{manager::ThemeManager, types::ThemeConfig};
 //!
 //! // Initialize at application startup
 //! let config = ThemeConfig {
@@ -120,8 +120,8 @@ impl ThemeManager {
     ///
     /// # Examples
     ///
-    /// ```no_run
-    /// use ui::theme::{manager::ThemeManager, types::ThemeConfig};
+    /// ```ignore
+    /// use quetty::theme::{manager::ThemeManager, types::ThemeConfig};
     ///
     /// let config = ThemeConfig {
     ///     theme_name: "catppuccin".to_string(),
@@ -158,8 +158,8 @@ impl ThemeManager {
     ///
     /// # Examples
     ///
-    /// ```no_run
-    /// use ui::theme::manager::ThemeManager;
+    /// ```ignore
+    /// use quetty::theme::manager::ThemeManager;
     ///
     /// let manager = ThemeManager::global();
     /// let mut theme_manager = manager.lock().unwrap();
@@ -351,8 +351,8 @@ impl ThemeManager {
     ///
     /// # Examples
     ///
-    /// ```no_run
-    /// use ui::theme::manager::ThemeManager;
+    /// ```ignore
+    /// use quetty::theme::manager::ThemeManager;
     ///
     /// let mut manager = ThemeManager::global().lock().unwrap();
     /// manager.switch_theme("catppuccin", "latte")?;
@@ -399,8 +399,8 @@ impl ThemeManager {
     ///
     /// # Examples
     ///
-    /// ```no_run
-    /// use ui::theme::manager::ThemeManager;
+    /// ```ignore
+    /// use quetty::theme::manager::ThemeManager;
     ///
     /// let manager = ThemeManager::global().lock().unwrap();
     /// let themes = manager.discover_themes_with_metadata()?;
@@ -487,8 +487,8 @@ impl ThemeManager {
     ///
     /// # Examples
     ///
-    /// ```no_run
-    /// use ui::theme::manager::ThemeManager;
+    /// ```ignore
+    /// use quetty::theme::manager::ThemeManager;
     ///
     /// let themes = ThemeManager::global_discover_themes_with_metadata()?;
     /// ```

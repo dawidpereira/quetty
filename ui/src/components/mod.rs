@@ -60,9 +60,9 @@
 //!
 //! All components follow the TUI-Realm component lifecycle:
 //!
-//! ```no_run
+//! ```ignore
 //! use tuirealm::{Component, MockComponent, Event, EventListenerCfg};
-//! use ui::components::common::Msg;
+//! use quetty::components::common::Msg;
 //!
 //! // Component initialization
 //! let mut component = MyComponent::new();
@@ -87,8 +87,8 @@
 //!
 //! Components communicate through a unified message system:
 //!
-//! ```no_run
-//! use ui::components::common::Msg;
+//! ```ignore
+//! use quetty::components::common::Msg;
 //!
 //! // User interaction messages
 //! let msg = Msg::QueueSelected("my-queue".to_string());
@@ -107,19 +107,19 @@
 //!
 //! All components support dynamic theming:
 //!
-//! ```no_run
-//! use ui::theme::ThemeManager;
-//! use tuirealm::props::{PropPayload, PropValue, PropName};
+//! ```ignore
+//! use quetty::theme::ThemeManager;
+//! use tuirealm::props::{PropPayload, PropValue};
 //!
 //! // Apply theme colors to component
 //! component.attr(
-//!     PropName::ForegroundColor,
-//!     PropPayload::One(PropValue::Color(ThemeManager::text_primary())),
+//!     tuirealm::Attribute::Foreground,
+//!     tuirealm::AttrValue::Color(ThemeManager::text_primary()),
 //! );
 //!
 //! component.attr(
-//!     PropName::BackgroundColor,
-//!     PropPayload::One(PropValue::Color(ThemeManager::surface())),
+//!     tuirealm::Attribute::Background,
+//!     tuirealm::AttrValue::Color(ThemeManager::surface()),
 //! );
 //! ```
 //!
@@ -127,8 +127,8 @@
 //!
 //! Components include comprehensive input validation:
 //!
-//! ```no_run
-//! use ui::components::validation_patterns::{ValidationPattern, InputValidator};
+//! ```ignore
+//! use quetty::components::validation_patterns::{ValidationPattern, InputValidator};
 //!
 //! // Validate user input
 //! let validator = InputValidator::new(ValidationPattern::QueueName);

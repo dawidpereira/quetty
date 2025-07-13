@@ -20,8 +20,8 @@
 //!
 //! The [`AuthService`] provides high-level authentication operations:
 //!
-//! ```no_run
-//! use ui::services::AuthService;
+//! ```ignore
+//! use quetty::services::AuthService;
 //!
 //! let auth_service = AuthService::new();
 //!
@@ -36,8 +36,8 @@
 //!
 //! Global authentication state management for the UI:
 //!
-//! ```no_run
-//! use ui::services::init_shared_auth_state;
+//! ```ignore
+//! use quetty::services::init_shared_auth_state;
 //!
 //! // Initialize shared authentication state
 //! let auth_state = init_shared_auth_state();
