@@ -1,4 +1,5 @@
 use crate::components::common::{AuthActivityMsg, Msg};
+use crate::constants::env_vars::*;
 use crate::error::{AppError, AppResult};
 use server::auth::auth_state::AuthStateManager;
 use server::auth::{AuthProvider, AzureAdProvider};
@@ -12,7 +13,32 @@ pub struct AuthService {
     tx: Sender<Msg>,
 }
 
+/// Helper trait to convert config string options to owned strings
+trait ConfigStringExt {
+    fn to_option_string(self) -> Option<String>;
+}
+
+impl<T: AsRef<str>> ConfigStringExt for Result<T, server::service_bus_manager::ServiceBusError> {
+    fn to_option_string(self) -> Option<String> {
+        self.ok().map(|s| s.as_ref().to_string())
+    }
+}
+
 impl AuthService {
+    /// Create a new authentication service instance
+    ///
+    /// Initializes the Azure AD authentication provider and auth state manager.
+    /// Configures authentication based on the provided configuration including
+    /// client credentials, tenant information, and auth method selection.
+    ///
+    /// # Arguments
+    /// * `config` - Azure AD configuration containing auth method and credentials
+    /// * `tx` - Channel sender for communicating with the main UI thread
+    /// * `http_client` - HTTP client for making authentication API calls
+    ///
+    /// # Returns
+    /// * `Ok(AuthService)` - Successfully initialized authentication service
+    /// * `Err(AppError)` - Configuration or initialization error
     pub fn new(
         config: &server::service_bus_manager::AzureAdConfig,
         tx: Sender<Msg>,
@@ -22,17 +48,46 @@ impl AuthService {
         let auth_state = super::init_shared_auth_state();
 
         // Convert AzureAdConfig to AzureAdAuthConfig
+        // For client secret auth, read the decrypted secret from environment variable
+        let client_secret = if config.auth_method == "client_secret" {
+            // First try to get decrypted client secret from environment (set after password validation)
+            match std::env::var(AZURE_AD_CLIENT_SECRET) {
+                Ok(decrypted_secret) => {
+                    log::info!("Using decrypted client secret from environment for authentication");
+                    Some(decrypted_secret)
+                }
+                Err(_) => {
+                    // Fall back to config value (which would be encrypted and unusable)
+                    log::warn!(
+                        "AZURE_AD__CLIENT_SECRET environment variable not found, falling back to config value"
+                    );
+                    config.client_secret().to_option_string()
+                }
+            }
+        } else {
+            // For other auth methods, use config value (usually None anyway)
+            config.client_secret().to_option_string()
+        };
+
         let auth_config = server::auth::types::AzureAdAuthConfig {
             auth_method: config.auth_method.clone(),
-            tenant_id: config.tenant_id().ok().map(|s| s.to_string()),
-            client_id: config.client_id().ok().map(|s| s.to_string()),
-            client_secret: config.client_secret().ok().map(|s| s.to_string()),
-            subscription_id: config.subscription_id().ok().map(|s| s.to_string()),
-            resource_group: config.resource_group().ok().map(|s| s.to_string()),
+            tenant_id: config.tenant_id().to_option_string(),
+            client_id: config.client_id().to_option_string(),
+            client_secret,
+            encrypted_client_secret: None,
+            client_secret_encryption_salt: None,
+            subscription_id: config.subscription_id().to_option_string(),
+            resource_group: config.resource_group().to_option_string(),
             namespace: config.namespace.clone(),
             authority_host: None,
             scope: None,
         };
+
+        log::info!(
+            "Auth service created with auth_method: '{}', has_client_secret: {}",
+            auth_config.auth_method,
+            auth_config.client_secret.is_some()
+        );
 
         let azure_ad_provider = Arc::new(
             AzureAdProvider::new(auth_config, http_client)
@@ -69,27 +124,46 @@ impl AuthService {
             return self.handle_device_code_flow(provider.clone()).await;
         }
 
-        // For other flows, authenticate directly
-        match provider.authenticate().await {
-            Ok(token) => {
-                self.auth_state
-                    .set_authenticated(
-                        token.token,
-                        Duration::from_secs(token.expires_in_secs.unwrap_or(3600)),
-                        None,
-                    )
-                    .await;
+        // For other flows, authenticate directly with timeout
+        log::info!("Starting Azure AD authentication for client secret flow");
+        let auth_future = provider.authenticate();
+        let timeout_duration = std::time::Duration::from_secs(30); // 30 second timeout
 
-                self.tx
-                    .send(Msg::AuthActivity(AuthActivityMsg::AuthenticationSuccess))
-                    .map_err(|e| AppError::Channel(e.to_string()))?;
-            }
-            Err(e) => {
-                self.auth_state.set_failed(e.to_string()).await;
+        match tokio::time::timeout(timeout_duration, auth_future).await {
+            Ok(auth_result) => match auth_result {
+                Ok(token) => {
+                    log::info!("Azure AD authentication successful, received token");
+                    self.auth_state
+                        .set_authenticated(
+                            token.token,
+                            Duration::from_secs(token.expires_in_secs.unwrap_or(3600)),
+                            None,
+                        )
+                        .await;
+
+                    self.tx
+                        .send(Msg::AuthActivity(AuthActivityMsg::AuthenticationSuccess))
+                        .map_err(|e| AppError::Channel(e.to_string()))?;
+                }
+                Err(e) => {
+                    log::error!("Azure AD authentication failed: {e}");
+                    self.auth_state.set_failed(e.to_string()).await;
+
+                    self.tx
+                        .send(Msg::AuthActivity(AuthActivityMsg::AuthenticationFailed(
+                            e.to_string(),
+                        )))
+                        .map_err(|e| AppError::Channel(e.to_string()))?;
+                }
+            },
+            Err(_timeout) => {
+                let error_msg = "Azure AD authentication timed out after 30 seconds. Please check your network connection and Azure AD configuration.";
+                log::error!("{error_msg}");
+                self.auth_state.set_failed(error_msg.to_string()).await;
 
                 self.tx
                     .send(Msg::AuthActivity(AuthActivityMsg::AuthenticationFailed(
-                        e.to_string(),
+                        error_msg.to_string(),
                     )))
                     .map_err(|e| AppError::Channel(e.to_string()))?;
             }

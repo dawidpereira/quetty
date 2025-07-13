@@ -127,8 +127,8 @@ where
 
                 // Debug: log sequence range of received messages
                 if !messages.is_empty() {
-                    let first_seq = messages.first().unwrap().sequence;
-                    let last_seq = messages.last().unwrap().sequence;
+                    let first_seq = messages.first().map(|m| m.sequence).unwrap_or(-1);
+                    let last_seq = messages.last().map(|m| m.sequence).unwrap_or(-1);
                     log::debug!(
                         "Received messages with sequences: {} to {} (count: {})",
                         first_seq,

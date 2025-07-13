@@ -18,6 +18,7 @@
 //! - [`app`] - Main application logic and component orchestration
 //! - [`components`] - UI components and message handling
 //! - [`config`] - Configuration management and persistence
+//! - [`constants`] - Global constants for environment variables and shared values
 //! - [`error`] - Error types and centralized error reporting
 //! - [`logger`] - Logging configuration and utilities
 //! - [`services`] - Business logic and external service integration
@@ -31,6 +32,7 @@ pub mod app;
 
 pub mod components;
 pub mod config;
+pub mod constants;
 pub mod error;
 pub mod logger;
 pub mod services;

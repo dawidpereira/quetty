@@ -404,33 +404,6 @@ impl BulkOperationPostProcessor {
             }
         }
     }
-
-    /// Convenience wrapper retained for test compatibility.
-    /// Generates a user-facing summary for bulk send operations (copy/move).
-    #[allow(clippy::too_many_arguments)]
-    #[allow(dead_code)]
-    pub fn format_send_success_message(
-        successful_count: usize,
-        failed_count: usize,
-        total_count: usize,
-        from_queue: &str,
-        to_queue: &str,
-        is_delete: bool,
-    ) -> String {
-        let not_found_count = total_count.saturating_sub(successful_count + failed_count);
-        let operation = if is_delete { "move" } else { "copy" };
-        let combined_queue = format!("{from_queue} → {to_queue}");
-
-        Self::format_bulk_operation_result_message(
-            operation,
-            &combined_queue,
-            successful_count,
-            failed_count,
-            not_found_count,
-            total_count,
-            is_delete,
-        )
-    }
 }
 
 #[cfg(test)]
@@ -603,27 +576,5 @@ mod tests {
                 "Expected LocalRemoval strategy for large send operation that doesn't move entire current page"
             ),
         }
-    }
-
-    #[test]
-    fn test_format_send_success_message_full_success() {
-        let message =
-            BulkOperationPostProcessor::format_send_success_message(10, 0, 10, "Main", "DLQ", true);
-
-        assert!(message.contains("✅ Bulk move operation completed successfully!"));
-        assert!(message.contains("10 messages processed from Main to DLQ"));
-        assert!(message.contains("moved successfully"));
-    }
-
-    #[test]
-    fn test_format_send_success_message_partial_success() {
-        let message =
-            BulkOperationPostProcessor::format_send_success_message(7, 2, 10, "Main", "DLQ", false);
-
-        assert!(message.contains("Bulk copy operation completed with mixed results"));
-        assert!(message.contains("✅ Successfully processed: 7 messages"));
-        assert!(message.contains("❌ Failed: 2 messages"));
-        assert!(message.contains("⚠️  Not found: 1 messages"));
-        assert!(message.contains("Main → DLQ"));
     }
 }

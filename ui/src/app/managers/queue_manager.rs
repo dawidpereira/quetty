@@ -3,6 +3,7 @@ use crate::app::queue_state::QueueState;
 use crate::app::task_manager::TaskManager;
 use crate::components::common::{MessageActivityMsg, Msg, NamespaceActivityMsg, QueueActivityMsg};
 use crate::config;
+use crate::constants::env_vars::*;
 use crate::error::AppError;
 use crate::utils::auth::AuthUtils;
 use crate::utils::connection_string::ConnectionStringParser;
@@ -127,7 +128,7 @@ impl QueueManager {
                 let should_use_saved_config = matches!(navigation_context, NavigationContext::Startup);
                 if should_use_saved_config {
                     // Only use saved namespace during startup auto-progression
-                    if let Ok(saved_namespace) = std::env::var("AZURE_AD__NAMESPACE") {
+                    if let Ok(saved_namespace) = std::env::var(AZURE_AD_NAMESPACE) {
                         if !saved_namespace.trim().is_empty() {
                             log::info!(
                                 "Startup mode: Found saved namespace '{saved_namespace}', using it directly"

@@ -1,3 +1,4 @@
+use crate::encryption::{ClientSecretEncryption, ConnectionStringEncryption, EncryptionError};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
@@ -28,6 +29,44 @@ pub struct AuthConfig {
     pub connection_string: Option<ConnectionStringConfig>,
     /// Azure AD authentication configuration (if using AzureAd auth)
     pub azure_ad: Option<AzureAdAuthConfig>,
+}
+
+impl AuthConfig {
+    /// Returns true if any encrypted data is present in this config
+    pub fn has_encrypted_data(&self) -> bool {
+        let connection_string_encrypted = self
+            .connection_string
+            .as_ref()
+            .map(|cs| cs.is_encrypted())
+            .unwrap_or(false);
+
+        let azure_ad_encrypted = self
+            .azure_ad
+            .as_ref()
+            .map(|ad| ad.has_encrypted_data())
+            .unwrap_or(false);
+
+        connection_string_encrypted || azure_ad_encrypted
+    }
+
+    /// Returns a list of authentication methods that require password decryption
+    pub fn get_encrypted_auth_methods(&self) -> Vec<String> {
+        let mut methods = Vec::new();
+
+        if let Some(cs) = &self.connection_string {
+            if cs.is_encrypted() {
+                methods.push("Connection String".to_string());
+            }
+        }
+
+        if let Some(ad) = &self.azure_ad {
+            if ad.has_encrypted_client_secret() {
+                methods.push("Azure AD Client Secret".to_string());
+            }
+        }
+
+        methods
+    }
 }
 
 /// Configuration for connection string authentication.
@@ -63,11 +102,60 @@ pub struct AuthConfig {
 /// - Use principle of least privilege - avoid "RootManageSharedAccessKey" in production
 /// - Rotate access keys regularly
 /// - Consider using Azure AD authentication for enhanced security
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ConnectionStringConfig {
     /// The Azure Service Bus connection string (REQUIRED)
     /// Must include Endpoint, SharedAccessKeyName, and SharedAccessKey
     pub value: String,
+    /// Encrypted connection string (alternative to value)
+    pub encrypted_value: Option<String>,
+    /// Salt for connection string encryption (required when encrypted_value is used)
+    pub encryption_salt: Option<String>,
+}
+
+impl ConnectionStringConfig {
+    /// Returns the actual connection string, decrypting if necessary
+    pub fn get_connection_string(&self, password: Option<&str>) -> Result<String, EncryptionError> {
+        // If we have an encrypted value, decrypt it
+        if let (Some(encrypted), Some(salt)) = (&self.encrypted_value, &self.encryption_salt) {
+            let password = password.ok_or_else(|| {
+                EncryptionError::InvalidData(
+                    "Password required for encrypted connection string".to_string(),
+                )
+            })?;
+
+            let encryption = ConnectionStringEncryption::from_salt_base64(salt)?;
+            encryption.decrypt_connection_string(encrypted, password)
+        } else {
+            // Return plain text value
+            Ok(self.value.clone())
+        }
+    }
+
+    /// Returns true if this config contains encrypted data
+    pub fn is_encrypted(&self) -> bool {
+        self.encrypted_value.is_some() && self.encryption_salt.is_some()
+    }
+
+    /// Encrypts the connection string with the given password
+    pub fn encrypt_with_password(&mut self, password: &str) -> Result<(), EncryptionError> {
+        if self.value.trim().is_empty() {
+            return Err(EncryptionError::InvalidData(
+                "Connection string cannot be empty".to_string(),
+            ));
+        }
+
+        let encryption = ConnectionStringEncryption::new();
+        let encrypted = encryption.encrypt_connection_string(&self.value, password)?;
+
+        self.encrypted_value = Some(encrypted);
+        self.encryption_salt = Some(encryption.salt_base64());
+
+        // Clear the plain text value for security
+        self.value.clear();
+
+        Ok(())
+    }
 }
 
 /// Configuration for Azure Active Directory authentication.
@@ -133,9 +221,10 @@ pub struct ConnectionStringConfig {
 ///     scope: None, // Uses default
 /// };
 /// ```
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct AzureAdAuthConfig {
     /// Authentication method: "device_code" or "client_credentials" (REQUIRED)
+    #[serde(default = "default_auth_method")]
     pub auth_method: String,
     /// Azure AD tenant ID (REQUIRED for all flows)
     pub tenant_id: Option<String>,
@@ -143,6 +232,10 @@ pub struct AzureAdAuthConfig {
     pub client_id: Option<String>,
     /// Azure AD application client secret (REQUIRED for client_credentials flow)
     pub client_secret: Option<String>,
+    /// Encrypted client secret (alternative to client_secret)
+    pub encrypted_client_secret: Option<String>,
+    /// Salt for client secret encryption (required when encrypted_client_secret is used)
+    pub client_secret_encryption_salt: Option<String>,
     /// Azure subscription ID (OPTIONAL - defaults to env AZURE_SUBSCRIPTION_ID)
     pub subscription_id: Option<String>,
     /// Resource group name (OPTIONAL - defaults to auto-discovery)
@@ -153,6 +246,73 @@ pub struct AzureAdAuthConfig {
     pub authority_host: Option<String>,
     /// OAuth scope for token requests (OPTIONAL - defaults to https://servicebus.azure.net/.default)
     pub scope: Option<String>,
+}
+
+fn default_auth_method() -> String {
+    "device_code".to_string()
+}
+
+impl AzureAdAuthConfig {
+    /// Returns the actual client secret, decrypting if necessary
+    pub fn get_client_secret(
+        &self,
+        password: Option<&str>,
+    ) -> Result<Option<String>, EncryptionError> {
+        // If we have an encrypted client secret, decrypt it
+        if let (Some(encrypted), Some(salt)) = (
+            &self.encrypted_client_secret,
+            &self.client_secret_encryption_salt,
+        ) {
+            let password = password.ok_or_else(|| {
+                EncryptionError::InvalidData(
+                    "Password required for encrypted client secret".to_string(),
+                )
+            })?;
+
+            let encryption = ClientSecretEncryption::from_salt_base64(salt)?;
+            let decrypted = encryption.decrypt_client_secret(encrypted, password)?;
+            Ok(Some(decrypted))
+        } else {
+            // Return plain text client secret
+            Ok(self.client_secret.clone())
+        }
+    }
+
+    /// Returns true if this config contains encrypted client secret
+    pub fn has_encrypted_client_secret(&self) -> bool {
+        self.encrypted_client_secret.is_some() && self.client_secret_encryption_salt.is_some()
+    }
+
+    /// Returns true if any encrypted data is present in this config
+    pub fn has_encrypted_data(&self) -> bool {
+        self.has_encrypted_client_secret()
+    }
+
+    /// Encrypts the client secret with the given password
+    pub fn encrypt_client_secret_with_password(
+        &mut self,
+        password: &str,
+    ) -> Result<(), EncryptionError> {
+        let client_secret = match &self.client_secret {
+            Some(secret) if !secret.trim().is_empty() => secret,
+            _ => {
+                return Err(EncryptionError::InvalidData(
+                    "Client secret cannot be empty".to_string(),
+                ));
+            }
+        };
+
+        let encryption = ClientSecretEncryption::new();
+        let encrypted = encryption.encrypt_client_secret(client_secret, password)?;
+
+        self.encrypted_client_secret = Some(encrypted);
+        self.client_secret_encryption_salt = Some(encryption.salt_base64());
+
+        // Clear the plain text value for security
+        self.client_secret = None;
+
+        Ok(())
+    }
 }
 
 /// A cached authentication token with expiration tracking.

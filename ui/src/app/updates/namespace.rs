@@ -9,6 +9,18 @@ impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
+    /// Handle namespace-related messages from the UI
+    ///
+    /// Processes namespace loading, selection, and cancellation operations.
+    /// This includes managing the namespace picker UI, handling discovery mode
+    /// navigation, and coordinating with Azure resource management.
+    ///
+    /// # Arguments
+    /// * `msg` - The namespace activity message to process
+    ///
+    /// # Returns
+    /// * `Some(Msg)` - Next UI action to take
+    /// * `None` - No further action needed
     pub fn update_namespace(&mut self, msg: NamespaceActivityMsg) -> Option<Msg> {
         match msg {
             NamespaceActivityMsg::NamespacesLoaded(namespaces) => {
@@ -104,11 +116,14 @@ where
                         log::error!("Failed to unmount namespace picker: {e}");
                     }
                     // Go back to resource group selection
-                    Some(Msg::AzureDiscovery(
-                        AzureDiscoveryMsg::DiscoveringResourceGroups(
-                            self.state_manager.selected_subscription.clone().unwrap(),
-                        ),
-                    ))
+                    if let Some(subscription) = &self.state_manager.selected_subscription {
+                        Some(Msg::AzureDiscovery(
+                            AzureDiscoveryMsg::DiscoveringResourceGroups(subscription.clone()),
+                        ))
+                    } else {
+                        log::error!("No subscription selected when going back to resource groups");
+                        None
+                    }
                 } else {
                     // Not in discovery mode, just close
                     log::info!("Not in discovery mode, closing namespace picker");
@@ -209,13 +224,19 @@ where
                 .iter()
                 .find(|n| n.name == namespace)
             {
-                let subscription_id = self.state_manager.selected_subscription.clone().unwrap();
-                let resource_group = self.state_manager.selected_resource_group.clone().unwrap();
+                let Some(subscription_id) = &self.state_manager.selected_subscription else {
+                    log::error!("No subscription selected for namespace fetch");
+                    return None;
+                };
+                let Some(resource_group) = &self.state_manager.selected_resource_group else {
+                    log::error!("No resource group selected for namespace fetch");
+                    return None;
+                };
 
                 return Some(Msg::AzureDiscovery(
                     AzureDiscoveryMsg::FetchingConnectionString {
-                        subscription_id,
-                        resource_group,
+                        subscription_id: subscription_id.clone(),
+                        resource_group: resource_group.clone(),
                         namespace: namespace.clone(),
                     },
                 ));

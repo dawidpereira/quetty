@@ -1,13 +1,78 @@
 use crate::app::model::{AppState, Model};
 use crate::components::common::{Msg, QueueActivityMsg};
+use crate::constants::env_vars::*;
 use crate::error::AppError;
 use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
+use std::env;
+use std::sync::Mutex;
 use tuirealm::terminal::TerminalAdapter;
+
+/// Thread-safe environment variable management
+/// This provides a safe wrapper around env::set_var to prevent data races
+static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+/// Safe wrapper for setting environment variables
+/// This prevents data races by using a mutex lock and handles lock poisoning
+fn safe_set_env_var(key: &str, value: &str) -> crate::error::AppResult<()> {
+    let _lock = ENV_LOCK.lock().map_err(|e| {
+        crate::error::AppError::State(format!("Environment variable lock poisoned: {e}"))
+    })?;
+    unsafe {
+        env::set_var(key, value);
+    }
+    Ok(())
+}
 
 impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
+    /// Helper method to save queue name for connection string auth
+    /// This handles both environment variable and .env file persistence
+    fn save_queue_name_for_connection_string_auth(&mut self, queue_name: &str) {
+        let config = crate::config::get_config_or_panic();
+        if config.azure_ad().auth_method == crate::utils::auth::AUTH_METHOD_CONNECTION_STRING {
+            log::info!("Saving queue name '{queue_name}' for connection string auth");
+
+            // Save to environment variable
+            if let Err(e) = safe_set_env_var(SERVICEBUS_QUEUE_NAME, queue_name) {
+                log::error!("Failed to save queue name to environment: {e}");
+                return;
+            }
+
+            // Also persist to .env file immediately
+            let config_data = crate::components::common::ConfigUpdateData {
+                auth_method: crate::utils::auth::AUTH_METHOD_CONNECTION_STRING.to_string(),
+                tenant_id: None,
+                client_id: None,
+                client_secret: None,
+                subscription_id: None,
+                resource_group: None,
+                namespace: None,
+                connection_string: None,
+                master_password: None,
+                queue_name: Some(queue_name.to_string()),
+            };
+
+            if let Err(e) = self.write_env_file(&config_data) {
+                log::error!("Failed to persist queue name to .env file: {e}");
+            } else {
+                log::info!("Queue name persisted to .env file");
+            }
+        }
+    }
+    /// Handle queue-related messages from the UI
+    ///
+    /// Processes queue selection, switching, unselection, and exit operations.
+    /// This includes initializing consumers, managing queue state transitions,
+    /// handling discovery mode, and resource cleanup.
+    ///
+    /// # Arguments
+    /// * `msg` - The queue activity message to process
+    ///
+    /// # Returns
+    /// * `Some(Msg)` - Next UI action to take
+    /// * `None` - No further action needed
     pub fn update_queue(&mut self, msg: QueueActivityMsg) -> Option<Msg> {
         match msg {
             QueueActivityMsg::QueueSelected(queue) => {
@@ -28,35 +93,7 @@ where
                 }
 
                 // Save queue name for connection string auth only
-                let config = crate::config::get_config_or_panic();
-                if config.azure_ad().auth_method
-                    == crate::utils::auth::AUTH_METHOD_CONNECTION_STRING
-                {
-                    log::info!("Saving queue name '{queue}' for connection string auth");
-                    unsafe {
-                        std::env::set_var("SERVICEBUS__QUEUE_NAME", &queue);
-                    }
-
-                    // Also persist to .env file immediately
-                    let config_data = crate::components::common::ConfigUpdateData {
-                        auth_method: crate::utils::auth::AUTH_METHOD_CONNECTION_STRING.to_string(),
-                        tenant_id: None,
-                        client_id: None,
-                        client_secret: None,
-                        subscription_id: None,
-                        resource_group: None,
-                        namespace: None,
-                        connection_string: None,
-                        master_password: None,
-                        queue_name: Some(queue.clone()),
-                    };
-
-                    if let Err(e) = self.write_env_file(&config_data) {
-                        log::error!("Failed to persist queue name to .env file: {e}");
-                    } else {
-                        log::info!("Queue name persisted to .env file");
-                    }
-                }
+                self.save_queue_name_for_connection_string_auth(&queue);
 
                 // Now select the queue
                 self.queue_state_mut().set_selected_queue(queue);

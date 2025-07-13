@@ -331,6 +331,50 @@ authority_host = "https://login.microsoftonline.com"
 scope = "https://servicebus.azure.net/.default"
 ```
 
+## Encryption Configuration
+
+For enhanced security, Quetty supports encryption of sensitive authentication data including connection strings and client secrets. When encrypted data is detected on startup, the application will prompt for a master password.
+
+### Encrypted Connection Strings
+
+Instead of storing connection strings in plain text, you can use encrypted storage:
+
+```bash
+# Set encrypted connection string and its salt
+export SERVICEBUS__ENCRYPTED_CONNECTION_STRING="<encrypted-connection-string>"
+export SERVICEBUS__ENCRYPTION_SALT="<salt-for-connection-string-encryption>"
+```
+
+### Encrypted Client Secrets
+
+For Azure AD client credentials flow, client secrets can be encrypted:
+
+```bash
+# Set encrypted client secret and its salt
+export AZURE_AD__ENCRYPTED_CLIENT_SECRET="<encrypted-client-secret>"
+export AZURE_AD__ENCRYPTION_SALT="<salt-for-client-secret-encryption>"
+```
+
+### Setting Up Encryption
+
+1. **Through the UI**: Use the configuration screen to enter your credentials - they will be automatically encrypted when you provide a master password.
+
+2. **Manual Setup**: Use the encryption utilities provided with Quetty to encrypt your credentials before setting the environment variables.
+
+### Password Prompt Behavior
+
+- **Startup Detection**: If encrypted data is detected, Quetty will show a password prompt on startup
+- **Unified Password**: The same master password is used for all encrypted data (connection strings and client secrets)
+- **Session Caching**: The password is cached for the duration of the application session
+- **Error Handling**: Invalid passwords will show an error and allow retry
+
+### Security Benefits
+
+- **At-rest Encryption**: Credentials are encrypted using AES-256-GCM encryption
+- **Key Derivation**: Uses PBKDF2 with 100,000 iterations and SHA-256
+- **Unique Salts**: Each encrypted value uses a unique salt for additional security
+- **Memory Safety**: Decrypted credentials are automatically zeroed from memory when no longer needed
+
 ## Key Bindings Configuration
 
 ### `[keys]` Section
@@ -438,8 +482,16 @@ export AZURE_AD__TENANT_ID="your-tenant-id"
 export AZURE_AD__CLIENT_ID="your-client-id"
 export AZURE_AD__CLIENT_SECRET="your-client-secret"
 
+# Azure AD encrypted settings (alternative to plain text)
+export AZURE_AD__ENCRYPTED_CLIENT_SECRET="<encrypted-client-secret>"
+export AZURE_AD__ENCRYPTION_SALT="<salt-for-client-secret-encryption>"
+
 # Service Bus settings
 export SERVICEBUS__CONNECTION_STRING="Endpoint=sb://..."
+
+# Service Bus encrypted settings (alternative to plain text)
+export SERVICEBUS__ENCRYPTED_CONNECTION_STRING="<encrypted-connection-string>"
+export SERVICEBUS__ENCRYPTION_SALT="<salt-for-connection-string-encryption>"
 
 # Key bindings
 export KEYS__KEY_QUIT="q"
@@ -530,7 +582,10 @@ file = "/var/log/quetty.log"
 
 ### Security
 - **Never commit secrets**: Use environment variables for sensitive data
+- **Use encryption**: Enable encryption for connection strings and client secrets to protect credentials at rest
+- **Strong master passwords**: Choose a strong master password for encryption - it protects all your encrypted credentials
 - **Rotate credentials**: Regularly update client secrets and connection strings
+- **Environment isolation**: Use different credentials for development, staging, and production environments
 
 ### Performance
 - **Tune page size**: Balance between memory usage and loading time

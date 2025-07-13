@@ -108,6 +108,8 @@ fn create_provider_for_type(
 
             let provider = ConnectionStringProvider::new(ConnectionStringConfig {
                 value: conn_str.to_string(),
+                encrypted_value: None,
+                encryption_salt: None,
             })?;
             Ok(Arc::new(provider))
         }
@@ -117,6 +119,8 @@ fn create_provider_for_type(
                 tenant_id: azure_ad_config.tenant_id().ok().map(|s| s.to_string()),
                 client_id: azure_ad_config.client_id().ok().map(|s| s.to_string()),
                 client_secret: azure_ad_config.client_secret().ok().map(|s| s.to_string()),
+                encrypted_client_secret: None,
+                client_secret_encryption_salt: None,
                 subscription_id: azure_ad_config
                     .subscription_id()
                     .ok()

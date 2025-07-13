@@ -38,7 +38,7 @@ test-server:
 		echo "Example: make test-server QUEUE=my-test-queue"; \
 		echo ""; \
 		echo "Environment variables (can be set in .env file or system environment):"; \
-		echo "  SERVICEBUS_CONNECTION_STRING  Required: Azure Service Bus connection string"; \
+		echo "  SERVICEBUS__ENCRYPTED_CONNECTION_STRING  Required: Encrypted Azure Service Bus connection string"; \
 		echo "  TRAFFIC_MIN_RATE             Optional: Minimum messages per minute (default: 60)"; \
 		echo "  TRAFFIC_MAX_RATE             Optional: Maximum messages per minute (default: 180)"; \
 		echo "  TRAFFIC_MESSAGE_PREFIX       Optional: Message prefix (default: 'TrafficSim')"; \

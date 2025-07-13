@@ -165,29 +165,6 @@ impl MessagePaginationState {
         self.total_pages_loaded += 1;
     }
 
-    /// Extend the current page with additional messages (used for automatic page filling)
-    #[allow(dead_code)]
-    pub fn extend_current_page(&mut self, additional_messages: Vec<MessageModel>) {
-        if additional_messages.is_empty() {
-            // Empty result means we've reached the end of the queue
-            self.reached_end_of_queue = true;
-            return;
-        }
-
-        // Add messages to the existing page without incrementing page count
-        self.all_loaded_messages.extend(additional_messages.clone());
-        self.update_last_loaded_sequence(&additional_messages);
-
-        log::debug!(
-            "Extended current page with {} messages, total now: {}",
-            additional_messages.len(),
-            self.all_loaded_messages.len()
-        );
-
-        // Note: Do NOT increment total_pages_loaded since we're extending existing page
-        // Note: Do NOT add to page_start_indices since this isn't a new page
-    }
-
     /// Get current page messages
     pub fn get_current_page_messages(&self, page_size: u32) -> Vec<MessageModel> {
         let (start_idx, end_idx) = self.calculate_page_bounds(page_size);
@@ -210,11 +187,19 @@ impl MessagePaginationState {
 
             // Log first and last message IDs for debugging
             if !page_messages.is_empty() {
+                let first_id = page_messages
+                    .first()
+                    .map(|m| m.id.as_str())
+                    .unwrap_or("<unknown>");
+                let last_id = page_messages
+                    .last()
+                    .map(|m| m.id.as_str())
+                    .unwrap_or("<unknown>");
                 log::debug!(
                     "Page {} messages: first_id={}, last_id={}",
                     self.current_page,
-                    page_messages.first().unwrap().id,
-                    page_messages.last().unwrap().id
+                    first_id,
+                    last_id
                 );
             }
 
@@ -461,11 +446,15 @@ where
         );
 
         if !current_page_messages.is_empty() {
-            log::debug!(
-                "Current page messages: first_id={}, last_id={}",
-                current_page_messages.first().unwrap().id,
-                current_page_messages.last().unwrap().id
-            );
+            let first_id = current_page_messages
+                .first()
+                .map(|m| m.id.as_str())
+                .unwrap_or("<unknown>");
+            let last_id = current_page_messages
+                .last()
+                .map(|m| m.id.as_str())
+                .unwrap_or("<unknown>");
+            log::debug!("Current page messages: first_id={first_id}, last_id={last_id}");
         }
 
         // Update the queue state messages to reflect current page
@@ -573,8 +562,8 @@ where
 
                 // Debug: log sequence range of received messages
                 if !messages.is_empty() {
-                    let first_seq = messages.first().unwrap().sequence;
-                    let last_seq = messages.last().unwrap().sequence;
+                    let first_seq = messages.first().map(|m| m.sequence).unwrap_or(-1);
+                    let last_seq = messages.last().map(|m| m.sequence).unwrap_or(-1);
                     log::debug!(
                         "Backfill messages with sequences: {} to {} (count: {})",
                         first_seq,

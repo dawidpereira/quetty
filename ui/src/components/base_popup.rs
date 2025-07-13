@@ -80,35 +80,15 @@ impl PopupBuilder {
         }
     }
 
-    #[allow(dead_code)]
     pub fn add_text(mut self, text: impl Into<String>) -> Self {
         self.content_lines.push(Line::from(text.into()));
         self
     }
 
-    #[allow(dead_code)]
     pub fn add_error_text(mut self, text: impl Into<String>) -> Self {
         self.content_lines.push(Line::from(Span::styled(
             text.into(),
             Style::default().fg(ThemeManager::status_error()),
-        )));
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn add_success_text(mut self, text: impl Into<String>) -> Self {
-        self.content_lines.push(Line::from(Span::styled(
-            text.into(),
-            Style::default().fg(ThemeManager::status_success()),
-        )));
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn add_muted_text(mut self, text: impl Into<String>) -> Self {
-        self.content_lines.push(Line::from(Span::styled(
-            text.into(),
-            Style::default().fg(self.style.muted_color),
         )));
         self
     }

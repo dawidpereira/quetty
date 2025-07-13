@@ -65,7 +65,6 @@ struct TokenResponse {
 }
 
 #[derive(Deserialize)]
-#[allow(dead_code)]
 struct DeviceCodeResponse {
     device_code: String,
     user_code: String,

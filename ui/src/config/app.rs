@@ -2,6 +2,7 @@ use super::{
     LoggingConfig, azure::ServicebusConfig, keys::KeyBindingsConfig, limits::*, ui::UIConfig,
     validation::ConfigValidationError,
 };
+use crate::constants::env_vars::*;
 use crate::theme::types::ThemeConfig;
 use crate::utils::auth::{
     AUTH_METHOD_CLIENT_SECRET, AUTH_METHOD_CONNECTION_STRING, AUTH_METHOD_DEVICE_CODE, AuthUtils,
@@ -252,12 +253,12 @@ impl AppConfig {
     /// Validate device code flow configuration
     fn validate_device_code_config(&self, errors: &mut Vec<ConfigValidationError>) {
         // Required fields for device code flow
-        if !self.azure_ad.has_tenant_id() && std::env::var("AZURE_AD__TENANT_ID").is_err() {
+        if !self.azure_ad.has_tenant_id() && std::env::var(AZURE_AD_TENANT_ID).is_err() {
             errors.push(ConfigValidationError::MissingAzureAdField {
                 field: "tenant_id".to_string(),
             });
         }
-        if !self.azure_ad.has_client_id() && std::env::var("AZURE_AD__CLIENT_ID").is_err() {
+        if !self.azure_ad.has_client_id() && std::env::var(AZURE_AD_CLIENT_ID).is_err() {
             errors.push(ConfigValidationError::MissingAzureAdField {
                 field: "client_id".to_string(),
             });
@@ -275,17 +276,20 @@ impl AppConfig {
     /// Validate client secret flow configuration
     fn validate_client_secret_config(&self, errors: &mut Vec<ConfigValidationError>) {
         // Required fields for client secret flow
-        if !self.azure_ad.has_tenant_id() && std::env::var("AZURE_AD__TENANT_ID").is_err() {
+        if !self.azure_ad.has_tenant_id() && std::env::var(AZURE_AD_TENANT_ID).is_err() {
             errors.push(ConfigValidationError::MissingAzureAdField {
                 field: "tenant_id".to_string(),
             });
         }
-        if !self.azure_ad.has_client_id() && std::env::var("AZURE_AD__CLIENT_ID").is_err() {
+        if !self.azure_ad.has_client_id() && std::env::var(AZURE_AD_CLIENT_ID).is_err() {
             errors.push(ConfigValidationError::MissingAzureAdField {
                 field: "client_id".to_string(),
             });
         }
-        if !self.azure_ad.has_client_secret() && std::env::var("AZURE_AD__CLIENT_SECRET").is_err() {
+        if !self.azure_ad.has_client_secret()
+            && std::env::var(AZURE_AD_CLIENT_SECRET).is_err()
+            && std::env::var(AZURE_AD_ENCRYPTED_CLIENT_SECRET).is_err()
+        {
             errors.push(ConfigValidationError::MissingAzureAdField {
                 field: "client_secret".to_string(),
             });
@@ -305,15 +309,41 @@ impl AppConfig {
         if AuthUtils::is_connection_string_auth(self) {
             self.servicebus.has_connection_string()
         } else if AuthUtils::is_device_code_auth(self) {
-            (self.azure_ad.has_tenant_id() || std::env::var("AZURE_AD__TENANT_ID").is_ok())
-                && (self.azure_ad.has_client_id() || std::env::var("AZURE_AD__CLIENT_ID").is_ok())
+            (self.azure_ad.has_tenant_id() || std::env::var(AZURE_AD_TENANT_ID).is_ok())
+                && (self.azure_ad.has_client_id() || std::env::var(AZURE_AD_CLIENT_ID).is_ok())
         } else if AuthUtils::is_client_secret_auth(self) {
-            (self.azure_ad.has_tenant_id() || std::env::var("AZURE_AD__TENANT_ID").is_ok())
-                && (self.azure_ad.has_client_id() || std::env::var("AZURE_AD__CLIENT_ID").is_ok())
+            (self.azure_ad.has_tenant_id() || std::env::var(AZURE_AD_TENANT_ID).is_ok())
+                && (self.azure_ad.has_client_id() || std::env::var(AZURE_AD_CLIENT_ID).is_ok())
                 && (self.azure_ad.has_client_secret()
-                    || std::env::var("AZURE_AD__CLIENT_SECRET").is_ok())
+                    || std::env::var(AZURE_AD_CLIENT_SECRET).is_ok()
+                    || std::env::var(AZURE_AD_ENCRYPTED_CLIENT_SECRET).is_ok())
         } else {
             false
         }
+    }
+
+    /// Get a list of encrypted authentication methods that require password decryption
+    /// Only returns methods relevant to the current authentication method
+    pub fn get_encrypted_auth_methods(&self) -> Vec<String> {
+        let mut methods = Vec::new();
+        let auth_method = &self.azure_ad().auth_method;
+
+        // Only include connection string if using connection_string auth method
+        if auth_method == "connection_string"
+            && std::env::var(SERVICEBUS_ENCRYPTED_CONNECTION_STRING).is_ok()
+            && std::env::var(SERVICEBUS_ENCRYPTION_SALT).is_ok()
+        {
+            methods.push("Connection String".to_string());
+        }
+
+        // Only include client secret if using client_secret auth method
+        if auth_method == "client_secret"
+            && std::env::var(AZURE_AD_ENCRYPTED_CLIENT_SECRET).is_ok()
+            && std::env::var(AZURE_AD_CLIENT_SECRET_ENCRYPTION_SALT).is_ok()
+        {
+            methods.push("Azure AD Client Secret".to_string());
+        }
+
+        methods
     }
 }

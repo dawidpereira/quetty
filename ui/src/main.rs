@@ -1,6 +1,7 @@
 mod app;
 mod components;
 mod config;
+mod constants;
 mod error;
 mod logger;
 mod services;

@@ -16,6 +16,8 @@ mod auth_flow_helpers {
             tenant_id: Some("test-tenant-auth-flow".to_string()),
             client_id: Some("test-client-auth-flow".to_string()),
             client_secret: Some("test-client-secret-auth-flow".to_string()),
+            encrypted_client_secret: None,
+            client_secret_encryption_salt: None,
             subscription_id: Some("test-subscription-auth-flow".to_string()),
             resource_group: Some("test-resource-group-auth-flow".to_string()),
             namespace: Some("test-namespace-auth-flow".to_string()),
@@ -30,7 +32,9 @@ mod auth_flow_helpers {
             auth_method: "device_code".to_string(),
             tenant_id: Some("incomplete-tenant".to_string()),
             client_id: Some("incomplete-client".to_string()),
-            client_secret: None,   // Missing
+            client_secret: None, // Missing
+            encrypted_client_secret: None,
+            client_secret_encryption_salt: None,
             subscription_id: None, // Missing
             resource_group: None,  // Missing
             namespace: None,       // Missing
@@ -43,9 +47,11 @@ mod auth_flow_helpers {
     pub fn create_malformed_config() -> AzureAdAuthConfig {
         AzureAdAuthConfig {
             auth_method: "invalid_method".to_string(),
-            tenant_id: Some("".to_string()),       // Empty string
-            client_id: Some("".to_string()),       // Empty string
-            client_secret: Some("".to_string()),   // Empty string
+            tenant_id: Some("".to_string()),     // Empty string
+            client_id: Some("".to_string()),     // Empty string
+            client_secret: Some("".to_string()), // Empty string
+            encrypted_client_secret: None,
+            client_secret_encryption_salt: None,
             subscription_id: Some("".to_string()), // Empty string
             resource_group: Some("".to_string()),  // Empty string
             namespace: Some("".to_string()),       // Empty string
@@ -108,6 +114,8 @@ mod auth_state_manager {
                 tenant_id: Some(format!("tenant-{i}")),
                 client_id: Some(format!("client-{i}")),
                 client_secret: Some(format!("secret-{i}")),
+                encrypted_client_secret: None,
+                client_secret_encryption_salt: None,
                 subscription_id: Some(format!("sub-{i}")),
                 resource_group: Some(format!("rg-{i}")),
                 namespace: Some(format!("ns-{i}")),
@@ -520,6 +528,8 @@ mod auth_flow_performance {
                 tenant_id: Some(format!("tenant-{i}")),
                 client_id: Some(format!("client-{i}")),
                 client_secret: Some(format!("secret-{i}")),
+                encrypted_client_secret: None,
+                client_secret_encryption_salt: None,
                 subscription_id: Some(format!("sub-{i}")),
                 resource_group: Some(format!("rg-{i}")),
                 namespace: Some(format!("ns-{i}")),
@@ -549,6 +559,8 @@ mod auth_flow_performance {
                     tenant_id: Some(format!("tenant-{i}")),
                     client_id: Some(format!("client-{i}")),
                     client_secret: Some(format!("secret-{i}")),
+                    encrypted_client_secret: None,
+                    client_secret_encryption_salt: None,
                     subscription_id: Some(format!("sub-{i}")),
                     resource_group: Some(format!("rg-{i}")),
                     namespace: Some(format!("ns-{i}")),

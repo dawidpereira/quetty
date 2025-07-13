@@ -148,18 +148,6 @@ impl NumericRangeValidator {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn with_min(mut self, min: i64) -> Self {
-        self.min = Some(min);
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn with_max(mut self, max: i64) -> Self {
-        self.max = Some(max);
-        self
-    }
-
     pub fn with_range(mut self, min: i64, max: i64) -> Self {
         self.min = Some(min);
         self.max = Some(max);

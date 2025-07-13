@@ -200,13 +200,6 @@ pub enum ConfigActivityMsg {
     Save(ConfigUpdateData),
     ConfirmAndProceed(ConfigUpdateData),
     Cancel,
-    #[allow(dead_code)]
-    FieldChanged {
-        field: String,
-        value: String,
-    },
-    #[allow(dead_code)]
-    AuthMethodChanged(String),
 }
 
 #[derive(Debug, PartialEq)]

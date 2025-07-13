@@ -105,7 +105,7 @@ method = "azure_ad"
 [servicebus]
 # Azure Service Bus connection string
 # Format: "Endpoint=sb://namespace.servicebus.windows.net/;SharedAccessKeyName=...;SharedAccessKey=..."
-# SECURITY: Use environment variable SERVICEBUS__CONNECTION_STRING instead of storing here
+# SECURITY: Use environment variables SERVICEBUS__ENCRYPTED_CONNECTION_STRING and SERVICEBUS__ENCRYPTION_SALT instead of storing here
 # connection_string = ""
 
 # =============================================================================
@@ -121,6 +121,7 @@ auth_method = "device_code"
 # tenant_id = ""       # Set via AZURE_AD__TENANT_ID environment variable
 # client_id = ""       # Set via AZURE_AD__CLIENT_ID environment variable
 # client_secret = ""   # Set via AZURE_AD__CLIENT_SECRET (client_credentials only)
+#                      # Or use encrypted: AZURE_AD__ENCRYPTED_CLIENT_SECRET + AZURE_AD__ENCRYPTION_SALT
 
 # Azure Resource Information (optional - auto-discovered if not specified)
 # subscription_id = "" # Set via AZURE_AD__SUBSCRIPTION_ID environment variable
@@ -208,11 +209,14 @@ level = "info"
 # export QUETTY_PAGE_SIZE=50
 # export THEME__THEME_NAME="catppuccin"
 # export THEME__FLAVOR_NAME="mocha"
-# export AZURE_AD__AUTH_METHOD="device_code"
+# Auth method is configured in config.toml azure_ad.auth_method, not via environment variable
 # export AZURE_AD__TENANT_ID="your-tenant-id"
 # export AZURE_AD__CLIENT_ID="your-client-id"
 # export AZURE_AD__CLIENT_SECRET="your-client-secret"
-# export SERVICEBUS__CONNECTION_STRING="Endpoint=sb://..."
+# export AZURE_AD__ENCRYPTED_CLIENT_SECRET="<encrypted-client-secret>"  # Alternative to plain client secret
+# export AZURE_AD__ENCRYPTION_SALT="<salt-for-client-secret-encryption>"
+# export SERVICEBUS__ENCRYPTED_CONNECTION_STRING="<encrypted-connection-string>"  # UI requires encrypted connection strings
+# export SERVICEBUS__ENCRYPTION_SALT="<salt-for-connection-string-encryption>"
 # export LOGGING__LEVEL="debug"
 # export LOGGING__FILE="debug.log"
 # export LOGGING__MAX_FILE_SIZE_MB=50

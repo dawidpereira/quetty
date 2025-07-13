@@ -12,6 +12,7 @@ use crate::components::queue_picker::QueuePicker;
 use crate::components::state::ComponentStateMount;
 use crate::components::text_label::TextLabel;
 use crate::config;
+use crate::constants::env_vars::*;
 use crate::error::{AppError, AppResult, ErrorReporter};
 use crate::utils::auth::AuthUtils;
 use server::service_bus_manager::ServiceBusManager;
@@ -310,128 +311,215 @@ impl Model<CrosstermTerminalAdapter> {
             app.auth_service.is_some()
         );
 
-        // First check if we have the required configuration for the selected auth method
-        if !config.has_required_auth_fields() {
-            log::info!("Required configuration fields are missing, opening config screen directly");
-
-            // Set authentication flag to prevent namespace loading
-            app.state_manager.is_authenticating = true;
-
-            // Auto-open config screen for missing authentication fields
-            let tx = app.state_manager.tx_to_main.clone();
-            tokio::spawn(async move {
-                // Small delay to ensure UI is ready
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-                let _ = tx.send(Msg::ToggleConfigScreen);
-            });
-
+        // Check for encrypted data that needs password first
+        if Self::check_encrypted_data_flow(config, app)? {
             return Ok(());
         }
 
+        // Check if required configuration fields are present
+        if Self::check_required_config_flow(config, app)? {
+            return Ok(());
+        }
+
+        // Route to appropriate authentication flow
         if needs_auth {
-            if let Some(ref auth_service) = app.auth_service {
-                // Set authentication flag to prevent namespace loading
-                app.state_manager.is_authenticating = true;
-
-                // Clone auth_service to move into async task
-                let auth_service = auth_service.clone();
-
-                // Start authentication process immediately (not in background)
-                // This will show the device code popup
-                let tx = app.state_manager.tx_to_main.clone();
-                tokio::spawn(async move {
-                    // Small delay to ensure UI is ready
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-                    // Initiate authentication - this will show device code popup
-                    if let Err(e) = auth_service.initiate_authentication().await {
-                        log::error!("Failed to initiate authentication: {e}");
-
-                        // Check if error is due to missing fields, redirect to config
-                        let error_str = e.to_string();
-                        if error_str.contains("client ID")
-                            || error_str.contains("tenant ID")
-                            || error_str.contains("Invalid authentication request")
-                        {
-                            log::info!(
-                                "Authentication failed due to invalid credentials, opening config screen"
-                            );
-                            let _ = tx.send(Msg::ToggleConfigScreen);
-                        } else {
-                            let _ = tx.send(Msg::Error(e));
-                        }
-                    }
-                });
-
-                // IMPORTANT: Do not load namespaces when authentication is needed
-                // The namespace loading will happen after successful authentication
-                log::info!("Skipping namespace loading - authentication required first");
-            } else {
-                // Auth service should have been created but wasn't - config issue
-                log::error!("Authentication required but auth service not initialized");
-                return Err(AppError::Config(
-                    "Authentication required but auth service not initialized".to_string(),
-                ));
-            }
+            Self::handle_azure_ad_flow(app)
         } else {
-            // Using connection string authentication - check if we can decrypt connection string
-            log::info!("Using connection string authentication");
+            Self::handle_connection_string_flow(app)
+        }
+    }
 
-            let config = config::get_config_or_panic();
+    /// Check if encrypted data requires password input
+    fn check_encrypted_data_flow(
+        config: &crate::config::AppConfig,
+        app: &mut Model<CrosstermTerminalAdapter>,
+    ) -> AppResult<bool> {
+        let auth_method = &config.azure_ad().auth_method;
+        let needs_encrypted_connection_string = auth_method == "connection_string";
+        let needs_encrypted_client_secret = auth_method == "client_secret";
 
-            // Check if we have encrypted connection string data first
-            if !config.servicebus().has_connection_string() {
-                // No encrypted connection string configured at all
-                log::info!("No connection string configured - opening config screen");
-                app.state_manager.is_authenticating = true;
+        let has_relevant_encrypted_data = (needs_encrypted_connection_string
+            && std::env::var(SERVICEBUS_ENCRYPTED_CONNECTION_STRING).is_ok())
+            || (needs_encrypted_client_secret
+                && std::env::var(AZURE_AD_ENCRYPTED_CLIENT_SECRET).is_ok());
 
-                let tx = app.state_manager.tx_to_main.clone();
-                tokio::spawn(async move {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    let _ = tx.send(Msg::ToggleConfigScreen);
-                });
-            } else {
-                // We have encrypted connection string, try to decrypt it
-                match config.servicebus().connection_string() {
-                    Ok(Some(_)) => {
-                        // Successfully decrypted connection string - load namespaces directly
-                        log::info!("Connection string decrypted successfully - loading namespaces");
-                        app.queue_manager.load_namespaces(
-                            crate::app::managers::state_manager::NavigationContext::Startup,
-                        );
-                    }
-                    Ok(None) => {
-                        // This shouldn't happen if has_connection_string() returned true
-                        log::error!(
-                            "has_connection_string() returned true but connection_string() returned None"
-                        );
-                        app.state_manager.is_authenticating = true;
+        if has_relevant_encrypted_data {
+            let encrypted_methods = Self::get_encrypted_methods_list(
+                needs_encrypted_connection_string,
+                needs_encrypted_client_secret,
+            );
 
-                        let tx = app.state_manager.tx_to_main.clone();
-                        tokio::spawn(async move {
-                            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                            let _ = tx.send(Msg::ToggleConfigScreen);
-                        });
-                    }
-                    Err(e) => {
-                        // Failed to decrypt - likely missing master password
-                        log::info!(
-                            "Failed to decrypt connection string (master password needed): {e}"
-                        );
-                        log::info!("Opening password popup for master password input");
-                        app.state_manager.is_authenticating = true;
+            log::info!(
+                "Found encrypted authentication data relevant to '{}' auth method: {}. Prompting for password.",
+                auth_method,
+                encrypted_methods.join(", ")
+            );
 
-                        let tx = app.state_manager.tx_to_main.clone();
-                        tokio::spawn(async move {
-                            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                            let _ = tx.send(Msg::TogglePasswordPopup);
-                        });
-                    }
-                }
-            }
+            Self::set_authenticating_and_show_password_popup(app);
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    /// Check if required configuration fields are missing
+    fn check_required_config_flow(
+        config: &crate::config::AppConfig,
+        app: &mut Model<CrosstermTerminalAdapter>,
+    ) -> AppResult<bool> {
+        if !config.has_required_auth_fields() {
+            log::info!("Required configuration fields are missing, opening config screen directly");
+            Self::set_authenticating_and_show_config_screen(app);
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    /// Handle Azure AD authentication flow
+    fn handle_azure_ad_flow(app: &mut Model<CrosstermTerminalAdapter>) -> AppResult<()> {
+        if let Some(ref auth_service) = app.auth_service {
+            // Set authentication flag to prevent namespace loading
+            app.state_manager.is_authenticating = true;
+
+            // Clone auth_service to move into async task
+            let auth_service = auth_service.clone();
+            let tx = app.state_manager.tx_to_main.clone();
+
+            tokio::spawn(async move {
+                Self::initiate_azure_ad_authentication(auth_service, tx).await;
+            });
+
+            log::info!("Skipping namespace loading - authentication required first");
+            Ok(())
+        } else {
+            log::error!("Authentication required but auth service not initialized");
+            Err(AppError::Config(
+                "Authentication required but auth service not initialized".to_string(),
+            ))
+        }
+    }
+
+    /// Handle connection string authentication flow
+    fn handle_connection_string_flow(app: &mut Model<CrosstermTerminalAdapter>) -> AppResult<()> {
+        log::info!("Using connection string authentication");
+        let config = config::get_config_or_panic();
+
+        if !config.servicebus().has_connection_string() {
+            Self::handle_missing_connection_string(app);
+        } else {
+            Self::handle_connection_string_decryption(config, app);
         }
 
         Ok(())
+    }
+
+    /// Get list of encrypted authentication methods
+    fn get_encrypted_methods_list(
+        needs_encrypted_connection_string: bool,
+        needs_encrypted_client_secret: bool,
+    ) -> Vec<String> {
+        let mut encrypted_methods = Vec::new();
+
+        if needs_encrypted_connection_string
+            && std::env::var(SERVICEBUS_ENCRYPTED_CONNECTION_STRING).is_ok()
+        {
+            encrypted_methods.push("Connection String".to_string());
+        }
+
+        if needs_encrypted_client_secret && std::env::var(AZURE_AD_ENCRYPTED_CLIENT_SECRET).is_ok()
+        {
+            encrypted_methods.push("Azure AD Client Secret".to_string());
+        }
+
+        encrypted_methods
+    }
+
+    /// Set authentication flag and show password popup
+    fn set_authenticating_and_show_password_popup(app: &mut Model<CrosstermTerminalAdapter>) {
+        app.state_manager.is_authenticating = true;
+        Self::show_popup_async(
+            app.state_manager.tx_to_main.clone(),
+            Msg::TogglePasswordPopup,
+        );
+    }
+
+    /// Set authentication flag and show config screen
+    fn set_authenticating_and_show_config_screen(app: &mut Model<CrosstermTerminalAdapter>) {
+        app.state_manager.is_authenticating = true;
+        Self::show_popup_async(
+            app.state_manager.tx_to_main.clone(),
+            Msg::ToggleConfigScreen,
+        );
+    }
+
+    /// Show popup/screen asynchronously with UI delay
+    fn show_popup_async(tx: mpsc::Sender<Msg>, message: Msg) {
+        tokio::spawn(async move {
+            // Small delay to ensure UI is ready
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            let _ = tx.send(message);
+        });
+    }
+
+    /// Initiate Azure AD authentication with error handling
+    async fn initiate_azure_ad_authentication(
+        auth_service: std::sync::Arc<crate::services::AuthService>,
+        tx: mpsc::Sender<Msg>,
+    ) {
+        // Small delay to ensure UI is ready
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        if let Err(e) = auth_service.initiate_authentication().await {
+            log::error!("Failed to initiate authentication: {e}");
+
+            // Check if error is due to missing fields, redirect to config
+            let error_str = e.to_string();
+            if error_str.contains("client ID")
+                || error_str.contains("tenant ID")
+                || error_str.contains("Invalid authentication request")
+            {
+                log::info!(
+                    "Authentication failed due to invalid credentials, opening config screen"
+                );
+                let _ = tx.send(Msg::ToggleConfigScreen);
+            } else {
+                let _ = tx.send(Msg::Error(e));
+            }
+        }
+    }
+
+    /// Handle missing connection string scenario
+    fn handle_missing_connection_string(app: &mut Model<CrosstermTerminalAdapter>) {
+        log::info!("No connection string configured - opening config screen");
+        Self::set_authenticating_and_show_config_screen(app);
+    }
+
+    /// Handle connection string decryption attempts
+    fn handle_connection_string_decryption(
+        config: &crate::config::AppConfig,
+        app: &mut Model<CrosstermTerminalAdapter>,
+    ) {
+        match config.servicebus().connection_string() {
+            Ok(Some(_)) => {
+                // Successfully decrypted connection string - load namespaces directly
+                log::info!("Connection string decrypted successfully - loading namespaces");
+                app.queue_manager.load_namespaces(
+                    crate::app::managers::state_manager::NavigationContext::Startup,
+                );
+            }
+            Ok(None) => {
+                // This shouldn't happen if has_connection_string() returned true
+                log::error!(
+                    "has_connection_string() returned true but connection_string() returned None"
+                );
+                Self::set_authenticating_and_show_config_screen(app);
+            }
+            Err(e) => {
+                // Failed to decrypt - likely missing master password
+                log::info!("Failed to decrypt connection string (master password needed): {e}");
+                log::info!("Opening password popup for master password input");
+                Self::set_authenticating_and_show_password_popup(app);
+            }
+        }
     }
 }

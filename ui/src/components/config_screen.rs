@@ -1,6 +1,7 @@
 use crate::components::common::{ConfigActivityMsg, ConfigUpdateData, Msg};
 use crate::components::state::ComponentState;
 use crate::config::{self, AppConfig};
+use crate::constants::env_vars::*;
 use crate::error::AppResult;
 use crate::theme::ThemeManager;
 use crate::utils::auth::{
@@ -8,7 +9,7 @@ use crate::utils::auth::{
 };
 use crate::utils::connection_string::ConnectionStringParser;
 use tuirealm::command::{Cmd, CmdResult};
-use tuirealm::event::{Key, KeyEvent, KeyModifiers};
+use tuirealm::event::KeyEvent;
 use tuirealm::props::{Alignment, Style};
 use tuirealm::ratatui::layout::{Constraint, Direction, Layout, Rect};
 use tuirealm::ratatui::style::Modifier;
@@ -20,6 +21,19 @@ use tuirealm::{
 
 const CMD_RESULT_SAVE: &str = "Save";
 const CMD_RESULT_CANCEL: &str = "Cancel";
+
+// UI text constants
+const PLACEHOLDER_ENCRYPTED_CONNECTION_STRING: &str = "<<encrypted-connection-string-present>>";
+const PLACEHOLDER_ENCRYPTED_CLIENT_SECRET: &str = "<<encrypted-client-secret-present>>";
+const UI_HINT_CYCLE: &str = " (Enter to cycle)";
+const UI_CURSOR_INDICATOR: &str = "_";
+const UI_EMPTY_FIELD: &str = "<empty>";
+const UI_PASSWORD_MASK: &str = "*";
+const UI_ENCRYPTED_DATA_MESSAGE: &str = "****** (encrypted data present - enter new to replace)";
+
+// UI size constants
+const PASSWORD_DISPLAY_LENGTH: usize = 20;
+const MAX_INPUT_LENGTH: usize = 512;
 
 #[derive(Debug, Clone)]
 pub struct ConfigFormData {
@@ -67,6 +81,23 @@ impl Default for ConfigScreen {
 }
 
 impl ConfigScreen {
+    /// Helper to convert string fields to Option, returning None for empty/whitespace-only strings
+    fn string_to_option(value: &str) -> Option<String> {
+        if value.trim().is_empty() {
+            None
+        } else {
+            Some(value.to_string())
+        }
+    }
+
+    /// Create a new configuration screen with current configuration loaded
+    ///
+    /// Initializes the configuration form with values from the current app configuration
+    /// and environment variables. Handles encrypted values by showing placeholders.
+    /// Sets up the UI state for configuration editing and validation.
+    ///
+    /// # Returns
+    /// A new ConfigScreen instance ready for user interaction
     pub fn new() -> Self {
         let config = config::get_config_or_panic();
         let form_data = Self::load_current_config(config);
@@ -84,7 +115,7 @@ impl ConfigScreen {
         // Check if we have existing encrypted connection string
         let connection_string = if config.servicebus().has_connection_string() {
             // Show placeholder indicating encrypted data exists - user only needs to enter password
-            "<<encrypted-connection-string-present>>".to_string()
+            PLACEHOLDER_ENCRYPTED_CONNECTION_STRING.to_string()
         } else {
             // No encrypted connection string - user needs to enter new one
             String::new()
@@ -92,26 +123,35 @@ impl ConfigScreen {
 
         ConfigFormData {
             auth_method: config.azure_ad().auth_method.clone(),
-            tenant_id: std::env::var("AZURE_AD__TENANT_ID").unwrap_or_default(),
-            client_id: std::env::var("AZURE_AD__CLIENT_ID").unwrap_or_default(),
-            client_secret: std::env::var("AZURE_AD__CLIENT_SECRET").unwrap_or_default(),
-            subscription_id: std::env::var("AZURE_AD__SUBSCRIPTION_ID").unwrap_or_default(),
-            resource_group: std::env::var("AZURE_AD__RESOURCE_GROUP").unwrap_or_default(),
-            namespace: std::env::var("AZURE_AD__NAMESPACE").unwrap_or_default(),
+            tenant_id: std::env::var(AZURE_AD_TENANT_ID).unwrap_or_default(),
+            client_id: std::env::var(AZURE_AD_CLIENT_ID).unwrap_or_default(),
+            client_secret: if std::env::var(AZURE_AD_ENCRYPTED_CLIENT_SECRET).is_ok() {
+                PLACEHOLDER_ENCRYPTED_CLIENT_SECRET.to_string()
+            } else {
+                std::env::var(AZURE_AD_CLIENT_SECRET).unwrap_or_default()
+            },
+            subscription_id: std::env::var(AZURE_AD_SUBSCRIPTION_ID).unwrap_or_default(),
+            resource_group: std::env::var(AZURE_AD_RESOURCE_GROUP).unwrap_or_default(),
+            namespace: std::env::var(AZURE_AD_NAMESPACE).unwrap_or_default(),
             connection_string,
             master_password: String::new(), // Never pre-populate password for security
-            queue_name: std::env::var("SERVICEBUS__QUEUE_NAME").unwrap_or_default(),
+            queue_name: std::env::var(SERVICEBUS_QUEUE_NAME).unwrap_or_default(),
         }
     }
 
     /// Check if we're in "unlock" mode (encrypted data exists, just need password)
     /// vs "setup" mode (need to configure everything from scratch)
     fn is_unlock_mode(&self) -> bool {
-        self.form_data.auth_method == "connection_string"
+        (self.form_data.auth_method == "connection_string"
             && self
                 .form_data
                 .connection_string
-                .contains("<<encrypted-connection-string-present>>")
+                .contains(PLACEHOLDER_ENCRYPTED_CONNECTION_STRING))
+            || (self.form_data.auth_method == "client_secret"
+                && self
+                    .form_data
+                    .client_secret
+                    .contains(PLACEHOLDER_ENCRYPTED_CLIENT_SECRET))
     }
 
     fn get_auth_methods() -> Vec<(&'static str, &'static str)> {
@@ -150,6 +190,7 @@ impl ConfigScreen {
                 ("tenant_id", "Tenant ID", true),
                 ("client_id", "Client ID", true),
                 ("client_secret", "Client Secret", true),
+                ("master_password", "Master Password", true),
                 ("subscription_id", "Subscription ID", false),
                 ("resource_group", "Resource Group", false),
                 ("namespace", "Namespace", false),
@@ -268,6 +309,17 @@ impl ConfigScreen {
                 }
                 if self.form_data.client_secret.trim().is_empty() {
                     errors.push("Client Secret is required for client secret flow".to_string());
+                } else if !self
+                    .form_data
+                    .client_secret
+                    .contains(PLACEHOLDER_ENCRYPTED_CLIENT_SECRET)
+                {
+                    // New client secret provided - require master password for encryption
+                    if self.form_data.master_password.trim().is_empty() {
+                        errors.push(
+                            "Master password is required to encrypt the client secret".to_string(),
+                        );
+                    }
                 }
             }
             _ => {
@@ -312,7 +364,7 @@ impl ConfigScreen {
                         .find(|(method, _)| *method == self.form_data.auth_method)
                         .map(|(_, desc)| desc.to_string())
                         .unwrap_or_else(|| self.form_data.auth_method.clone());
-                    format!("{method_desc} (Enter to cycle)")
+                    format!("{method_desc}{UI_HINT_CYCLE}")
                 } else {
                     let value = self.get_field_value(field);
 
@@ -322,26 +374,29 @@ impl ConfigScreen {
                             || *field == "connection_string"
                             || *field == "master_password"
                         {
-                            format!("{}_", "*".repeat(self.current_input.len()))
+                            format!(
+                                "{}{UI_CURSOR_INDICATOR}",
+                                UI_PASSWORD_MASK.repeat(self.current_input.len())
+                            )
                         } else {
-                            format!("{}_", self.current_input)
+                            format!("{}{UI_CURSOR_INDICATOR}", self.current_input)
                         }
                     } else if *field == "client_secret" || *field == "master_password" {
                         if value.is_empty() {
-                            "<empty>".to_string()
+                            UI_EMPTY_FIELD.to_string()
                         } else {
-                            "*".repeat(value.len().min(20))
+                            UI_PASSWORD_MASK.repeat(value.len().min(PASSWORD_DISPLAY_LENGTH))
                         }
                     } else if *field == "connection_string" {
-                        if value.contains("<<encrypted-connection-string-present>>") {
-                            "****** (encrypted data present - enter new to replace)".to_string()
+                        if value.contains(PLACEHOLDER_ENCRYPTED_CONNECTION_STRING) {
+                            UI_ENCRYPTED_DATA_MESSAGE.to_string()
                         } else if value.is_empty() {
-                            "<empty>".to_string()
+                            UI_EMPTY_FIELD.to_string()
                         } else {
-                            "*".repeat(value.len().min(20))
+                            UI_PASSWORD_MASK.repeat(value.len().min(PASSWORD_DISPLAY_LENGTH))
                         }
                     } else if value.is_empty() {
-                        "<empty>".to_string()
+                        UI_EMPTY_FIELD.to_string()
                     } else {
                         value.to_string()
                     }
@@ -486,51 +541,259 @@ impl ConfigScreen {
     fn to_config_update_data(&self) -> ConfigUpdateData {
         ConfigUpdateData {
             auth_method: self.form_data.auth_method.clone(),
-            tenant_id: if self.form_data.tenant_id.trim().is_empty() {
-                None
+            tenant_id: Self::string_to_option(&self.form_data.tenant_id),
+            client_id: Self::string_to_option(&self.form_data.client_id),
+            client_secret: Self::string_to_option(&self.form_data.client_secret),
+            subscription_id: Self::string_to_option(&self.form_data.subscription_id),
+            resource_group: Self::string_to_option(&self.form_data.resource_group),
+            namespace: Self::string_to_option(&self.form_data.namespace),
+            connection_string: Self::string_to_option(&self.form_data.connection_string),
+            master_password: Self::string_to_option(&self.form_data.master_password),
+            queue_name: Self::string_to_option(&self.form_data.queue_name),
+        }
+    }
+
+    /// Handle keyboard events in a focused manner
+    fn handle_keyboard_event(&mut self, key_event: KeyEvent) -> Option<Msg> {
+        use tuirealm::event::Key;
+        use tuirealm::event::KeyModifiers;
+
+        match key_event {
+            KeyEvent { code: Key::Esc, .. } => self.handle_escape_key(),
+            KeyEvent {
+                code: Key::Char('s'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => self.handle_save_key(),
+            KeyEvent {
+                code: Key::Char('s'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => self.handle_save_and_proceed_key(),
+            KeyEvent { code: Key::Tab, .. } => None, // Tab no longer needed
+            KeyEvent { code: Key::Up, .. } => {
+                self.handle_navigation_key(tuirealm::command::Direction::Up)
+            }
+            KeyEvent {
+                code: Key::Down, ..
+            } => self.handle_navigation_key(tuirealm::command::Direction::Down),
+            KeyEvent {
+                code: Key::Left, ..
+            } => self.handle_navigation_key(tuirealm::command::Direction::Left),
+            KeyEvent {
+                code: Key::Right, ..
+            } => self.handle_navigation_key(tuirealm::command::Direction::Right),
+            KeyEvent {
+                code: Key::Enter, ..
+            } => self.handle_enter_key(),
+            KeyEvent {
+                code: Key::Backspace,
+                ..
+            } => self.handle_backspace_key(),
+            KeyEvent {
+                code: Key::Char('C'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => self.handle_reload_config_key(),
+            KeyEvent {
+                code: Key::Char(c), ..
+            } => self.handle_character_input(c),
+            _ => self.handle_other_keyboard_events(),
+        }
+    }
+
+    /// Handle Escape key press
+    fn handle_escape_key(&mut self) -> Option<Msg> {
+        if self.editing_mode {
+            // Cancel editing
+            self.editing_mode = false;
+            self.current_input.clear();
+            // Update global editing state to re-enable global key handling
+            Some(Msg::SetEditingMode(false))
+        } else {
+            Some(Msg::ConfigActivity(ConfigActivityMsg::Cancel))
+        }
+    }
+
+    /// Handle save key ('s') press
+    fn handle_save_key(&mut self) -> Option<Msg> {
+        if !self.editing_mode {
+            log::debug!("S pressed - validating config for save without login");
+            self.validation_errors = self.validate_config_for_save_only();
+            if self.validation_errors.is_empty() {
+                log::debug!("Validation passed - saving config for next startup");
+                Some(Msg::ConfigActivity(ConfigActivityMsg::Save(
+                    self.to_config_update_data(),
+                )))
             } else {
-                Some(self.form_data.tenant_id.clone())
-            },
-            client_id: if self.form_data.client_id.trim().is_empty() {
+                log::debug!("Validation failed - not saving");
                 None
+            }
+        } else {
+            // In editing mode, treat 's' as character input
+            self.handle_character_input('s')
+        }
+    }
+
+    /// Handle save and proceed key (Ctrl+S) press
+    fn handle_save_and_proceed_key(&mut self) -> Option<Msg> {
+        log::debug!("Ctrl+S pressed - validating config for save and proceed");
+        self.validation_errors = self.validate_config();
+        log::debug!("Validation errors: {:?}", self.validation_errors);
+        if self.validation_errors.is_empty() {
+            log::debug!("Validation passed - saving config and triggering login");
+            Some(Msg::ConfigActivity(ConfigActivityMsg::ConfirmAndProceed(
+                self.to_config_update_data(),
+            )))
+        } else {
+            log::debug!("Validation failed - not proceeding");
+            None
+        }
+    }
+
+    /// Handle navigation key press
+    fn handle_navigation_key(&mut self, direction: tuirealm::command::Direction) -> Option<Msg> {
+        if self.editing_mode {
+            None // Ignore navigation while editing
+        } else {
+            let result = self.perform(Cmd::Move(direction));
+            if matches!(result, CmdResult::Changed(_)) {
+                Some(Msg::ForceRedraw)
             } else {
-                Some(self.form_data.client_id.clone())
-            },
-            client_secret: if self.form_data.client_secret.trim().is_empty() {
                 None
+            }
+        }
+    }
+
+    /// Handle Enter key press
+    fn handle_enter_key(&mut self) -> Option<Msg> {
+        if self.editing_mode {
+            self.handle_enter_confirm_editing()
+        } else {
+            self.handle_enter_start_editing()
+        }
+    }
+
+    /// Handle Enter key when in editing mode (confirm editing)
+    fn handle_enter_confirm_editing(&mut self) -> Option<Msg> {
+        let mut all_items = vec![("auth_method", "Authentication Method", true)];
+        let fields = self.get_fields_for_auth_method();
+        all_items.extend(fields);
+
+        if let Some((field_name, _, _)) = all_items.get(self.selected_field) {
+            self.set_field_value(field_name, self.current_input.clone());
+        }
+
+        self.editing_mode = false;
+        self.current_input.clear();
+        // Update global editing state to re-enable global key handling
+        Some(Msg::SetEditingMode(false))
+    }
+
+    /// Handle Enter key when not in editing mode (start editing or toggle auth method)
+    fn handle_enter_start_editing(&mut self) -> Option<Msg> {
+        let mut all_items = vec![("auth_method", "Authentication Method", true)];
+        let fields = self.get_fields_for_auth_method();
+        all_items.extend(fields);
+
+        if let Some((field_name, _, _)) = all_items.get(self.selected_field) {
+            log::debug!("Enter pressed on field: {field_name}");
+
+            if *field_name == "auth_method" {
+                self.handle_auth_method_toggle()
             } else {
-                Some(self.form_data.client_secret.clone())
-            },
-            subscription_id: if self.form_data.subscription_id.trim().is_empty() {
-                None
+                self.start_field_editing(field_name)
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Handle auth method toggle
+    fn handle_auth_method_toggle(&mut self) -> Option<Msg> {
+        let auth_methods = Self::get_auth_methods();
+        let current_idx = auth_methods
+            .iter()
+            .position(|(method, _)| *method == self.form_data.auth_method)
+            .unwrap_or(0);
+        let next_idx = (current_idx + 1) % auth_methods.len();
+        let new_auth_method = auth_methods[next_idx].0.to_string();
+
+        log::debug!(
+            "Auth method toggled from '{}' to '{}' - display only (not applied yet)",
+            self.form_data.auth_method,
+            new_auth_method
+        );
+
+        self.form_data.auth_method = new_auth_method;
+        Some(Msg::ForceRedraw)
+    }
+
+    /// Start editing a field
+    fn start_field_editing(&mut self, field_name: &str) -> Option<Msg> {
+        self.editing_mode = true;
+        // For sensitive fields, always start with empty input for security
+        self.current_input = if field_name == "master_password" || field_name == "client_secret" {
+            String::new()
+        } else {
+            self.get_field_value(field_name).to_string()
+        };
+        // Update global editing state to disable global key handling
+        Some(Msg::SetEditingMode(true))
+    }
+
+    /// Handle Backspace key press
+    fn handle_backspace_key(&mut self) -> Option<Msg> {
+        if self.editing_mode {
+            self.current_input.pop();
+            Some(Msg::ForceRedraw)
+        } else {
+            None
+        }
+    }
+
+    /// Handle config reload key ('C') press
+    fn handle_reload_config_key(&mut self) -> Option<Msg> {
+        if !self.editing_mode {
+            // Reload config data from current state
+            log::debug!("ConfigScreen: Reloading configuration data");
+            let config = crate::config::get_config_or_panic();
+            self.form_data = Self::load_current_config(config);
+            Some(Msg::ForceRedraw)
+        } else {
+            // In editing mode, treat 'C' as character input
+            self.handle_character_input('C')
+        }
+    }
+
+    /// Handle character input
+    fn handle_character_input(&mut self, c: char) -> Option<Msg> {
+        if self.editing_mode {
+            log::debug!(
+                "ConfigScreen: Adding character '{c}' to input (current length: {})",
+                self.current_input.len()
+            );
+            // Add character to current input (limit length for practical reasons)
+            if self.current_input.len() < MAX_INPUT_LENGTH {
+                self.current_input.push(c);
+                log::debug!("ConfigScreen: Current input now: '{}'", self.current_input);
+                Some(Msg::ForceRedraw)
             } else {
-                Some(self.form_data.subscription_id.clone())
-            },
-            resource_group: if self.form_data.resource_group.trim().is_empty() {
-                None
-            } else {
-                Some(self.form_data.resource_group.clone())
-            },
-            namespace: if self.form_data.namespace.trim().is_empty() {
-                None
-            } else {
-                Some(self.form_data.namespace.clone())
-            },
-            connection_string: if self.form_data.connection_string.trim().is_empty() {
-                None
-            } else {
-                Some(self.form_data.connection_string.clone())
-            },
-            master_password: if self.form_data.master_password.trim().is_empty() {
-                None
-            } else {
-                Some(self.form_data.master_password.clone())
-            },
-            queue_name: if self.form_data.queue_name.trim().is_empty() {
-                None
-            } else {
-                Some(self.form_data.queue_name.clone())
-            },
+                Some(Msg::ForceRedraw) // Still consume the event and redraw
+            }
+        } else {
+            // When not editing, don't consume the event so global keys work
+            None
+        }
+    }
+
+    /// Handle other keyboard events
+    fn handle_other_keyboard_events(&mut self) -> Option<Msg> {
+        // When in editing mode, consume other keyboard events to prevent global key handling
+        if self.editing_mode {
+            Some(Msg::ForceRedraw)
+        } else {
+            None
         }
     }
 }
@@ -644,247 +907,7 @@ impl Component<Msg, NoUserEvent> for ConfigScreen {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Msg> {
         log::debug!("ConfigScreen received event: {ev:?}");
         match ev {
-            Event::Keyboard(KeyEvent { code: Key::Esc, .. }) => {
-                if self.editing_mode {
-                    // Cancel editing
-                    self.editing_mode = false;
-                    self.current_input.clear();
-                    // Update global editing state to re-enable global key handling
-                    Some(Msg::SetEditingMode(false))
-                } else {
-                    Some(Msg::ConfigActivity(ConfigActivityMsg::Cancel))
-                }
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('s'),
-                modifiers: KeyModifiers::NONE,
-                ..
-            }) => {
-                if !self.editing_mode {
-                    log::debug!("S pressed - validating config for save without login");
-                    self.validation_errors = self.validate_config_for_save_only();
-                    if self.validation_errors.is_empty() {
-                        log::debug!("Validation passed - saving config for next startup");
-                        Some(Msg::ConfigActivity(ConfigActivityMsg::Save(
-                            self.to_config_update_data(),
-                        )))
-                    } else {
-                        log::debug!("Validation failed - not saving");
-                        None
-                    }
-                } else {
-                    // In editing mode, let the general character handler process 's'
-                    if self.current_input.len() < 512 {
-                        self.current_input.push('s');
-                        Some(Msg::ForceRedraw)
-                    } else {
-                        Some(Msg::ForceRedraw)
-                    }
-                }
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('s'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            }) => {
-                log::debug!("Ctrl+S pressed - validating config for save and proceed");
-                self.validation_errors = self.validate_config();
-                log::debug!("Validation errors: {:?}", self.validation_errors);
-                if self.validation_errors.is_empty() {
-                    log::debug!("Validation passed - saving config and triggering login");
-                    Some(Msg::ConfigActivity(ConfigActivityMsg::ConfirmAndProceed(
-                        self.to_config_update_data(),
-                    )))
-                } else {
-                    log::debug!("Validation failed - not proceeding");
-                    None
-                }
-            }
-            Event::Keyboard(KeyEvent { code: Key::Tab, .. }) => {
-                // Tab no longer needed - could use for something else or ignore
-                None
-            }
-            Event::Keyboard(KeyEvent { code: Key::Up, .. }) => {
-                if self.editing_mode {
-                    None // Ignore navigation while editing
-                } else {
-                    let result = self.perform(Cmd::Move(tuirealm::command::Direction::Up));
-                    if matches!(result, CmdResult::Changed(_)) {
-                        Some(Msg::ForceRedraw)
-                    } else {
-                        None
-                    }
-                }
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Down, ..
-            }) => {
-                if self.editing_mode {
-                    None // Ignore navigation while editing
-                } else {
-                    let result = self.perform(Cmd::Move(tuirealm::command::Direction::Down));
-                    if matches!(result, CmdResult::Changed(_)) {
-                        Some(Msg::ForceRedraw)
-                    } else {
-                        None
-                    }
-                }
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Left, ..
-            }) => {
-                if self.editing_mode {
-                    None // Ignore navigation while editing
-                } else {
-                    let result = self.perform(Cmd::Move(tuirealm::command::Direction::Left));
-                    if matches!(result, CmdResult::Changed(_)) {
-                        Some(Msg::ForceRedraw)
-                    } else {
-                        None
-                    }
-                }
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Right, ..
-            }) => {
-                if self.editing_mode {
-                    None // Ignore navigation while editing
-                } else {
-                    let result = self.perform(Cmd::Move(tuirealm::command::Direction::Right));
-                    if matches!(result, CmdResult::Changed(_)) {
-                        Some(Msg::ForceRedraw)
-                    } else {
-                        None
-                    }
-                }
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Enter, ..
-            }) => {
-                if self.editing_mode {
-                    // Confirm current input
-                    let mut all_items = vec![("auth_method", "Authentication Method", true)];
-                    let fields = self.get_fields_for_auth_method();
-                    all_items.extend(fields);
-
-                    if let Some((field_name, _, _)) = all_items.get(self.selected_field) {
-                        self.set_field_value(field_name, self.current_input.clone());
-                    }
-
-                    self.editing_mode = false;
-                    self.current_input.clear();
-                    // Update global editing state to re-enable global key handling
-                    Some(Msg::SetEditingMode(false))
-                } else {
-                    // Get all items (auth method + fields)
-                    let mut all_items = vec![("auth_method", "Authentication Method", true)];
-                    let fields = self.get_fields_for_auth_method();
-                    all_items.extend(fields);
-
-                    if let Some((field_name, _, _)) = all_items.get(self.selected_field) {
-                        log::debug!("Enter pressed on field: {field_name}");
-
-                        if *field_name == "auth_method" {
-                            // Cycle through auth methods for display only (no immediate application)
-                            let auth_methods = Self::get_auth_methods();
-                            let current_idx = auth_methods
-                                .iter()
-                                .position(|(method, _)| *method == self.form_data.auth_method)
-                                .unwrap_or(0);
-                            let next_idx = (current_idx + 1) % auth_methods.len();
-                            let new_auth_method = auth_methods[next_idx].0.to_string();
-
-                            log::debug!(
-                                "Auth method toggled from '{}' to '{}' - display only (not applied yet)",
-                                self.form_data.auth_method,
-                                new_auth_method
-                            );
-
-                            self.form_data.auth_method = new_auth_method;
-
-                            // Only update the display, don't apply immediately
-                            Some(Msg::ForceRedraw)
-                        } else {
-                            // Start editing the field
-                            self.editing_mode = true;
-                            // For sensitive fields, always start with empty input for security
-                            self.current_input = if *field_name == "master_password"
-                                || *field_name == "client_secret"
-                            {
-                                String::new()
-                            } else {
-                                self.get_field_value(field_name).to_string()
-                            };
-                            // Update global editing state to disable global key handling
-                            Some(Msg::SetEditingMode(true))
-                        }
-                    } else {
-                        None
-                    }
-                }
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Backspace,
-                ..
-            }) => {
-                if self.editing_mode {
-                    self.current_input.pop();
-                    Some(Msg::ForceRedraw)
-                } else {
-                    None
-                }
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('C'),
-                modifiers: KeyModifiers::NONE,
-                ..
-            }) => {
-                if !self.editing_mode {
-                    // Reload config data from current state
-                    log::debug!("ConfigScreen: Reloading configuration data");
-                    let config = crate::config::get_config_or_panic();
-                    self.form_data = Self::load_current_config(config);
-                    Some(Msg::ForceRedraw)
-                } else {
-                    // In editing mode, let the general character handler process 'C'
-                    if self.current_input.len() < 512 {
-                        self.current_input.push('C');
-                        Some(Msg::ForceRedraw)
-                    } else {
-                        Some(Msg::ForceRedraw)
-                    }
-                }
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c), ..
-            }) => {
-                if self.editing_mode {
-                    log::debug!(
-                        "ConfigScreen: Adding character '{c}' to input (current length: {})",
-                        self.current_input.len()
-                    );
-                    // Add character to current input (limit length for practical reasons)
-                    if self.current_input.len() < 512 {
-                        self.current_input.push(c);
-                        log::debug!("ConfigScreen: Current input now: '{}'", self.current_input);
-                        // Return ForceRedraw but only after adding the character
-                        Some(Msg::ForceRedraw)
-                    } else {
-                        Some(Msg::ForceRedraw) // Still consume the event and redraw
-                    }
-                } else {
-                    // When not editing, don't consume the event so global keys work
-                    None
-                }
-            }
-            Event::Keyboard(_) => {
-                // When in editing mode, consume other keyboard events to prevent global key handling
-                if self.editing_mode {
-                    Some(Msg::ForceRedraw)
-                } else {
-                    None
-                }
-            }
+            Event::Keyboard(key_event) => self.handle_keyboard_event(key_event),
             _ => None,
         }
     }

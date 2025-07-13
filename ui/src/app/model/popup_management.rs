@@ -293,13 +293,30 @@ where
     }
 
     pub fn mount_password_popup(&mut self, error_message: Option<String>) -> AppResult<()> {
+        self.mount_password_popup_with_methods(error_message, None)
+    }
+
+    pub fn mount_password_popup_with_methods(
+        &mut self,
+        error_message: Option<String>,
+        encrypted_methods: Option<Vec<String>>,
+    ) -> AppResult<()> {
+        use crate::config;
+
         // Store the current state so we can return to it
         self.state_manager.previous_state = Some(self.state_manager.app_state.clone());
 
-        let popup = if let Some(error) = error_message {
-            PasswordPopup::with_error(error)
-        } else {
-            PasswordPopup::new()
+        // Get encrypted methods from config if not provided
+        let methods = encrypted_methods.unwrap_or_else(|| {
+            let config = config::get_config_or_panic();
+            config.get_encrypted_auth_methods()
+        });
+
+        let popup = match (error_message, methods.is_empty()) {
+            (Some(error), false) => PasswordPopup::with_error_and_methods(error, methods),
+            (Some(error), true) => PasswordPopup::with_error(error),
+            (None, false) => PasswordPopup::with_encrypted_methods(methods),
+            (None, true) => PasswordPopup::new(),
         };
 
         // Mount password popup with ComponentState pattern using extension trait

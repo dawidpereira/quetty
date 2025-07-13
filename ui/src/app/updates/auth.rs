@@ -10,6 +10,19 @@ impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
+    /// Handle authentication-related messages from the UI
+    ///
+    /// Processes login, logout, and token management operations.
+    /// This includes triggering authentication flows, handling authentication
+    /// state changes, and managing authentication service lifecycle.
+    ///
+    /// # Arguments
+    /// * `msg` - The authentication activity message to process
+    ///
+    /// # Returns
+    /// * `Ok(Some(Msg))` - Next UI action to take
+    /// * `Ok(None)` - No further action needed
+    /// * `Err(AppError)` - Authentication operation failed
     pub fn update_auth(&mut self, msg: AuthActivityMsg) -> AppResult<Option<Msg>> {
         match msg {
             AuthActivityMsg::Login => {

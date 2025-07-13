@@ -6,6 +6,18 @@ impl<T> Model<T>
 where
     T: TerminalAdapter,
 {
+    /// Central message handler for the application
+    ///
+    /// Routes incoming messages to appropriate handlers and manages application state.
+    /// This is the main event processing hub that coordinates between UI components,
+    /// authentication, configuration, queue management, and other subsystems.
+    ///
+    /// # Arguments
+    /// * `msg` - Optional message to process (None means no operation)
+    ///
+    /// # Returns
+    /// * `Some(Msg)` - Cascading message to process next
+    /// * `None` - No further action needed
     pub fn handle_update(&mut self, msg: Option<Msg>) -> Option<Msg> {
         if let Some(msg) = msg {
             // Log all messages during startup

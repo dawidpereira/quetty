@@ -112,7 +112,7 @@ use std::sync::mpsc::Sender;
 ///                 Err(e) => Err(AppError::Config(format!("Invalid configuration format: {}", e))),
 ///             }
 ///         }
-///         Err(e) => Err(AppError::Io(format!("Failed to read configuration file: {}", e))),
+///         Err(e) => Err(AppError::Config(format!("Failed to read configuration file: {}", e))),
 ///     }
 /// }
 /// ```
@@ -178,9 +178,6 @@ use std::sync::mpsc::Sender;
 ///         ErrorSeverity::Warning => {
 ///             log::warn!("{}", error);
 ///         }
-///         ErrorSeverity::Info => {
-///             log::info!("{}", error);
-///         }
 ///     }
 /// }
 /// ```
@@ -215,24 +212,9 @@ use std::sync::mpsc::Sender;
 /// [`Component`]: AppError::Component
 /// [`State`]: AppError::State
 /// [`Channel`]: AppError::Channel
-/// [`Io`]: AppError::Io
 /// [`Config`]: AppError::Config
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppError {
-    /// File system and I/O operation failures.
-    ///
-    /// This error occurs when file operations fail, including reading
-    /// configuration files, writing logs, or accessing theme files.
-    /// Common causes include permission issues, missing files, or
-    /// disk space problems.
-    ///
-    /// # Recovery
-    /// - Check file permissions and disk space
-    /// - Verify file paths are correct
-    /// - Consider fallback to default values for configuration
-    #[allow(dead_code)]
-    Io(String),
-
     /// Azure Service Bus operation failures.
     ///
     /// This error represents failures in Service Bus operations including
@@ -311,7 +293,6 @@ pub enum AppError {
 impl Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AppError::Io(msg) => write!(f, "IO Error: {msg}"),
             AppError::ServiceBus(msg) => write!(f, "Service Bus Error: {msg}"),
             AppError::Component(msg) => write!(f, "Component Error: {msg}"),
             AppError::State(msg) => write!(f, "State Error: {msg}"),
@@ -336,15 +317,11 @@ pub type AppResult<T> = Result<T, AppError>;
 /// Error severity levels for appropriate UI response
 #[derive(Debug, Clone)]
 pub enum ErrorSeverity {
-    /// Informational - log only, no UI popup
-    #[allow(dead_code)]
-    Info,
     /// Warning severity - show warning popup and log
     Warning,
     /// High severity - show error popup and log
     Error,
     /// Critical severity - show error popup, log, and potentially exit
-    #[allow(dead_code)]
     Critical,
 }
 
@@ -474,15 +451,6 @@ impl ErrorReporter {
 
         // Enhanced logging with full context
         match context.severity {
-            ErrorSeverity::Info => {
-                log::info!(
-                    "[{}:{}] {} {}",
-                    context.component,
-                    context.operation,
-                    contextual_error,
-                    self.format_additional_context(&context)
-                );
-            }
             ErrorSeverity::Warning => {
                 log::warn!(
                     "[{}:{}] {} {}",
@@ -514,9 +482,6 @@ impl ErrorReporter {
 
         // Send to UI based on severity
         match context.severity {
-            ErrorSeverity::Info => {
-                // Info messages don't show UI popups, only log
-            }
             ErrorSeverity::Warning => {
                 let popup_msg = Msg::PopupActivity(PopupActivityMsg::ShowWarning(
                     self.format_user_message(&context),
@@ -585,7 +550,6 @@ impl ErrorReporter {
             AppError::ServiceBus(_) => "🔗",
             AppError::Component(_) => "🎛️",
             AppError::State(_) => "📊",
-            AppError::Io(_) => "📁",
             AppError::Auth(_) => "🔐",
             AppError::Channel(_) => "📡",
         };
@@ -612,7 +576,6 @@ impl ErrorReporter {
             AppError::ServiceBus(_) => AppError::ServiceBus(formatted_message),
             AppError::Component(_) => AppError::Component(formatted_message),
             AppError::State(_) => AppError::State(formatted_message),
-            AppError::Io(_) => AppError::Io(formatted_message),
             AppError::Auth(_) => AppError::Auth(formatted_message),
             AppError::Channel(_) => AppError::Channel(formatted_message),
         }
@@ -625,7 +588,6 @@ impl ErrorReporter {
             AppError::ServiceBus(_) => "Service Bus Error".to_string(),
             AppError::Component(_) => "Component Error".to_string(),
             AppError::State(_) => "Application State Error".to_string(),
-            AppError::Io(_) => "File System Error".to_string(),
             AppError::Auth(_) => "Authentication Error".to_string(),
             AppError::Channel(_) => "Communication Error".to_string(),
         }
@@ -773,12 +735,6 @@ mod tests {
             contextual.context.user_message,
             "An error occurred in TestComponent. Please try again."
         );
-    }
-
-    #[test]
-    fn test_io_error_variant() {
-        let error = AppError::Io("File not found".to_string());
-        assert_eq!(error.to_string(), "IO Error: File not found");
     }
 
     #[test]
