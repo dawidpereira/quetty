@@ -165,11 +165,15 @@ impl AzureAdConfig {
     /// # Errors
     ///
     /// Returns [`ServiceBusError::ConfigurationError`] if the client secret is not set
-    pub fn client_secret(&self) -> Result<&str, ServiceBusError> {
-        self.client_secret.as_deref()
-            .ok_or_else(|| ServiceBusError::ConfigurationError(
-                "AZURE_AD__CLIENT_SECRET is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
-            ))
+    pub fn client_secret(&self) -> Result<String, ServiceBusError> {
+        if let Some(ref secret) = self.client_secret {
+            Ok(secret.clone())
+        } else {
+            EnvUtils::get_validated_var("AZURE_AD__CLIENT_SECRET")
+                .map_err(|_| ServiceBusError::ConfigurationError(
+                    "AZURE_AD__CLIENT_SECRET is required but not found in configuration or environment variables. Please set this value in .env file or environment.".to_string()
+                ))
+        }
     }
 
     /// Gets the Azure subscription ID from config or environment variables.
@@ -262,7 +266,7 @@ impl AzureAdConfig {
     ///
     /// `true` if client secret is set in the configuration
     pub fn has_client_secret(&self) -> bool {
-        self.client_secret.is_some()
+        self.client_secret.is_some() || EnvUtils::has_non_empty_var("AZURE_AD__CLIENT_SECRET")
     }
 
     /// Checks if subscription ID is available (config or environment).
@@ -335,9 +339,9 @@ impl AzureAdConfig {
             return Err("Azure AD token not available for connection string authentication".into());
         }
 
-        // Fallback to regular auth provider
+        // Fallback to regular auth provider with the actual auth method
         let auth_provider =
-            create_service_bus_auth_provider("azure_ad", None, self, http_client.clone())?;
+            create_service_bus_auth_provider(&self.auth_method, None, self, http_client.clone())?;
 
         let token = get_azure_ad_token_with_auth(&auth_provider).await?;
         Ok(token)

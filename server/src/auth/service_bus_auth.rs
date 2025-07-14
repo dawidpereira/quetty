@@ -71,8 +71,9 @@ pub fn create_auth_provider(
     http_client: reqwest::Client,
 ) -> Result<Arc<dyn AuthProvider>, ServiceBusError> {
     let auth_type = match primary_method {
-        "azure_ad" => AuthType::AzureAd,
-        _ => AuthType::ConnectionString,
+        "connection_string" => AuthType::ConnectionString,
+        "device_code" | "client_secret" | "azure_ad" => AuthType::AzureAd,
+        _ => AuthType::AzureAd, // Default to Azure AD for unknown methods
     };
 
     create_provider_for_type(&auth_type, connection_string, azure_ad_config, http_client)

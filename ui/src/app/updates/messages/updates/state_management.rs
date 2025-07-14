@@ -926,39 +926,41 @@ where
                     active_message_count,
                     dead_letter_message_count,
                     ..
-                } => {
-                    match (active_message_count, dead_letter_message_count) {
-                        (Some(active_count), Some(dlq_count)) => {
-                            log::info!(
-                                "Loaded stats for {queue_name}: active={active_count}, dlq={dlq_count}"
+                } => match (active_message_count, dead_letter_message_count) {
+                    (Some(active_count), Some(dlq_count)) => {
+                        log::info!(
+                            "Loaded stats for {queue_name}: active={active_count}, dlq={dlq_count}"
+                        );
+
+                        let stats_cache =
+                            crate::app::updates::messages::pagination::QueueStatsCache::new(
+                                queue_name,
+                                active_count,
+                                dlq_count,
                             );
 
-                            let stats_cache =
-                                crate::app::updates::messages::pagination::QueueStatsCache::new(
-                                    queue_name,
-                                    active_count,
-                                    dlq_count,
-                                );
-
-                            if let Err(e) =
-                                tx_to_main.send(crate::components::common::Msg::MessageActivity(
-                                    crate::components::common::MessageActivityMsg::QueueStatsUpdated(
-                                        stats_cache,
-                                    ),
-                                ))
-                            {
-                                log::error!("Failed to send queue stats update: {e}");
-                            }
-                        }
-                        _ => {
-                            log::info!("Queue statistics not available for {queue_name} - no cache update");
+                        if let Err(e) =
+                            tx_to_main.send(crate::components::common::Msg::MessageActivity(
+                                crate::components::common::MessageActivityMsg::QueueStatsUpdated(
+                                    stats_cache,
+                                ),
+                            ))
+                        {
+                            log::error!("Failed to send queue stats update: {e}");
                         }
                     }
-                }
+                    _ => {
+                        log::info!(
+                            "Queue statistics not available for {queue_name} - no cache update"
+                        );
+                    }
+                },
                 ServiceBusResponse::Error { error } => {
                     // Check if this is an auth method incompatibility error
-                    if error.to_string().contains("Unsupported auth method: connection_string") {
-                        log::info!("Queue statistics not available for connection string authentication method");
+                    if error.to_string().contains("Unsupported auth method") {
+                        log::info!(
+                            "Queue statistics not available for authentication method: {error}"
+                        );
                         // Don't update cache with 0 values for auth method incompatibility
                         return Ok(());
                     }
