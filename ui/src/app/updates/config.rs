@@ -521,6 +521,21 @@ where
                             )?;
                             safe_remove_env_var(AZURE_AD_CLIENT_SECRET)?;
                             log::info!("Client secret encrypted successfully");
+
+                            // Immediately decrypt the client secret for runtime use
+                            if let Some(master_password) = &config_data.master_password {
+                                match self.decrypt_and_set_client_secret(master_password) {
+                                    Ok(_) => log::info!(
+                                        "Client secret decrypted and set for runtime use"
+                                    ),
+                                    Err(e) => {
+                                        log::error!(
+                                            "Failed to decrypt newly encrypted client secret: {e}"
+                                        );
+                                        return Err(e);
+                                    }
+                                }
+                            }
                         }
                         Err(e) => {
                             log::error!("Failed to encrypt client secret: {e}");
@@ -536,11 +551,8 @@ where
         // Call the main config saving logic that handles file writing
         self.persist_configuration(config_data)?;
 
-        // After successful save, proceed with authentication
-        log::info!("Configuration saved successfully. Proceeding to authentication.");
-        Ok(Some(Msg::ShowSuccess(
-            "Configuration saved successfully.".to_string(),
-        )))
+        // Handle UI cleanup and determine next action (authentication)
+        self.cleanup_and_determine_next_action(config_data)
     }
 
     fn validate_master_password(&mut self, master_password: &str) -> AppResult<Option<Msg>> {
