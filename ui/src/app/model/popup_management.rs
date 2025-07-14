@@ -333,6 +333,12 @@ where
         self.state_manager.app_state = AppState::PasswordPopup;
         self.set_redraw(true);
 
+        // Disable global shortcuts while password popup is active
+        self.set_editing_message(true);
+        if let Err(e) = self.update_global_key_watcher_editing_state() {
+            self.error_reporter.report_key_watcher_error(e);
+        }
+
         Ok(())
     }
 
@@ -356,6 +362,13 @@ where
         // Return to appropriate component based on state
         self.activate_component_for_current_state()?;
         self.set_redraw(true);
+
+        // Re-enable global shortcuts after password popup is unmounted
+        self.set_editing_message(false);
+        if let Err(e) = self.update_global_key_watcher_editing_state() {
+            self.error_reporter.report_key_watcher_error(e);
+        }
+
         Ok(())
     }
 

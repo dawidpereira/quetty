@@ -201,7 +201,7 @@ impl MockComponent for PasswordPopup {
             (" submit ".to_string(), false),
             ("[Esc]".to_string(), true),
             (" config screen ".to_string(), false),
-            ("[C]".to_string(), true),
+            ("[Ctrl+C]".to_string(), true),
             (" config screen".to_string(), false),
         ];
 
@@ -319,15 +319,15 @@ impl Component<Msg, NoUserEvent> for PasswordPopup {
             }
             Event::Keyboard(KeyEvent {
                 code: Key::Char('c'),
-                modifiers: KeyModifiers::NONE,
+                modifiers: KeyModifiers::CONTROL,
                 ..
             })
             | Event::Keyboard(KeyEvent {
                 code: Key::Char('C'),
-                modifiers: KeyModifiers::NONE,
+                modifiers: KeyModifiers::CONTROL,
                 ..
             }) => {
-                // Open full config screen
+                // Open full config screen only with Ctrl modifier
                 Some(Msg::ToggleConfigScreen)
             }
             Event::Keyboard(KeyEvent {

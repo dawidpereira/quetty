@@ -592,7 +592,7 @@ impl ConfigScreen {
             } => self.handle_backspace_key(),
             KeyEvent {
                 code: Key::Char('C'),
-                modifiers: KeyModifiers::NONE,
+                modifiers: KeyModifiers::CONTROL,
                 ..
             } => self.handle_reload_config_key(),
             KeyEvent {
@@ -752,7 +752,7 @@ impl ConfigScreen {
         }
     }
 
-    /// Handle config reload key ('C') press
+    /// Handle config reload key (Ctrl+C) press
     fn handle_reload_config_key(&mut self) -> Option<Msg> {
         if !self.editing_mode {
             // Reload config data from current state
