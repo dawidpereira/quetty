@@ -203,6 +203,58 @@ where
         None
     }
 
+    /// Handle backfill messages being loaded (uses extend_current_page to not increment page count)
+    pub fn handle_backfill_messages_loaded(&mut self, messages: Vec<MessageModel>) -> Option<Msg> {
+        let message_count = messages.len();
+
+        // Clear loading state first
+        self.queue_state_mut().message_pagination.set_loading(false);
+
+        log::info!(
+            "Backfill loaded {message_count} messages, extending current page without incrementing page count"
+        );
+
+        // Use extend_current_page instead of append_messages to preserve page structure
+        self.queue_state_mut()
+            .message_pagination
+            .extend_current_page(messages);
+
+        // Update pagination state
+        let page_size_u32 = config::get_current_page_size();
+        self.queue_state_mut()
+            .message_pagination
+            .update(page_size_u32);
+
+        // Update current page view to show the correct messages for the current page
+        if let Err(e) = self.update_current_page_view() {
+            log::error!("Failed to update current page view after backfill: {e}");
+        }
+
+        // Focus the messages component if we have messages
+        if message_count > 0 {
+            if let Err(e) = self
+                .app
+                .active(&crate::components::common::ComponentId::Messages)
+            {
+                log::error!("Failed to activate messages component: {e}");
+            }
+
+            // Also remount message details for the first message
+            if let Err(e) = self.remount_message_details(0) {
+                log::error!("Failed to remount message details: {e}");
+            }
+        }
+
+        log::debug!(
+            "Backfill complete: current_page={}, total_messages={}, has_next={}",
+            self.queue_state().message_pagination.current_page,
+            self.queue_state().message_pagination.total_messages(),
+            self.queue_state().message_pagination.has_next_page
+        );
+
+        None
+    }
+
     /// Handle bulk removal of messages from state - now simplified and focused
     pub fn handle_bulk_remove_messages_from_state(
         &mut self,
@@ -354,7 +406,7 @@ where
             0
         } else if current_page >= total_possible_pages {
             // Current page is beyond available data, move to last page
-            total_possible_pages - 1
+            total_possible_pages.saturating_sub(1)
         } else {
             // Check if current page actually has messages
             let current_page_start = current_page * page_size;
@@ -664,7 +716,8 @@ where
             .current_page
             >= new_total_pages
         {
-            self.queue_state_mut().message_pagination.current_page = new_total_pages - 1;
+            self.queue_state_mut().message_pagination.current_page =
+                new_total_pages.saturating_sub(1);
         }
 
         // Update pagination controls based on current state
@@ -740,7 +793,8 @@ where
             .current_page
             >= new_total_pages
         {
-            self.queue_state_mut().message_pagination.current_page = new_total_pages - 1;
+            self.queue_state_mut().message_pagination.current_page =
+                new_total_pages.saturating_sub(1);
         }
 
         // Update pagination controls

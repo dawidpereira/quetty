@@ -69,9 +69,22 @@ impl BulkOperationPostProcessor {
             }
             BulkOperationType::Send { should_delete, .. } => {
                 if *should_delete && context.successful_count > 0 {
-                    // Always prefer local removal for send-with-delete to preserve messages in memory.
-                    // The pagination logic will auto-adjust pages and auto-fill if genuinely needed.
-                    ReloadStrategy::LocalRemoval
+                    // Check if this operation would leave the queue completely empty
+                    // This happens when we successfully process all remaining messages
+                    let queue_would_be_empty =
+                        context.successful_count >= context.current_message_count;
+
+                    if queue_would_be_empty {
+                        // Force reload to fetch fresh messages from server when queue becomes empty
+                        let reason = format!(
+                            "Queue emptied by send-with-delete operation ({} messages) - reloading fresh messages",
+                            context.successful_count
+                        );
+                        ReloadStrategy::ForceReload { reason }
+                    } else {
+                        // Use local removal with backfill for partial operations
+                        ReloadStrategy::LocalRemoval
+                    }
                 } else {
                     ReloadStrategy::CompletionOnly
                 }
@@ -517,13 +530,17 @@ mod tests {
             message_ids: vec![],
             should_remove_from_state: true,
             reload_threshold: 50,
-            current_message_count: 1000,
+            current_message_count: 1000, // Less than successful_count, so queue will be emptied
             selected_from_current_page: 1000,
         };
 
         match BulkOperationPostProcessor::determine_reload_strategy(&context) {
-            ReloadStrategy::LocalRemoval => {}
-            _ => panic!("Expected LocalRemoval strategy for large send operation with delete"),
+            ReloadStrategy::ForceReload { reason } => {
+                assert!(reason.contains("Queue emptied by send-with-delete operation"));
+            }
+            _ => {
+                panic!("Expected ForceReload strategy for large send operation that empties queue")
+            }
         }
     }
 
@@ -573,7 +590,36 @@ mod tests {
         match BulkOperationPostProcessor::determine_reload_strategy(&context) {
             ReloadStrategy::LocalRemoval => {}
             _ => panic!(
-                "Expected LocalRemoval strategy for large send operation that doesn't move entire current page"
+                "Expected LocalRemoval strategy for large send operation that doesn't empty the queue"
+            ),
+        }
+    }
+
+    #[test]
+    fn test_send_strategy_force_reload_when_queue_emptied() {
+        // Test the new logic: when send-with-delete empties the entire queue, force reload
+        let context = BulkOperationContext {
+            operation_type: BulkOperationType::Send {
+                from_queue_display: "Main".to_string(),
+                to_queue_display: "DLQ".to_string(),
+                should_delete: true,
+            },
+            successful_count: 100,
+            failed_count: 0,
+            total_count: 100,
+            message_ids: vec![],
+            should_remove_from_state: true,
+            reload_threshold: 50,
+            current_message_count: 100, // All messages would be processed
+            selected_from_current_page: 100,
+        };
+
+        match BulkOperationPostProcessor::determine_reload_strategy(&context) {
+            ReloadStrategy::ForceReload { reason } => {
+                assert!(reason.contains("Queue emptied by send-with-delete operation"));
+            }
+            _ => panic!(
+                "Expected ForceReload strategy when send-with-delete empties the entire queue"
             ),
         }
     }

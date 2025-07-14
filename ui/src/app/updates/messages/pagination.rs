@@ -247,6 +247,29 @@ impl MessagePaginationState {
         );
     }
 
+    /// Extend the current page with additional messages (for backfill functionality)
+    /// This method adds messages without incrementing the page count, used for filling incomplete pages
+    pub fn extend_current_page(&mut self, additional_messages: Vec<MessageModel>) {
+        if additional_messages.is_empty() {
+            // Empty result means we've reached the end of the queue
+            self.reached_end_of_queue = true;
+            return;
+        }
+
+        // Add messages to the existing page without incrementing page count
+        self.all_loaded_messages.extend(additional_messages.clone());
+        self.update_last_loaded_sequence(&additional_messages);
+
+        log::debug!(
+            "Extended current page with {} messages, total now: {}",
+            additional_messages.len(),
+            self.all_loaded_messages.len()
+        );
+
+        // Note: Do NOT increment total_pages_loaded since we're extending existing page
+        // Note: Do NOT add to page_start_indices since this isn't a new page
+    }
+
     /// Get total number of messages loaded
     pub fn total_messages(&self) -> usize {
         self.all_loaded_messages.len()
@@ -521,12 +544,11 @@ where
                 if let Err(e) = &result {
                     log::error!("Error in backfill task: {e}");
                     // Send empty message list to clear loading state
-                    let _ =
-                        tx_to_main.send(crate::components::common::Msg::MessageActivity(
-                            crate::components::common::MessageActivityMsg::NewMessagesLoaded(
-                                Vec::new(),
-                            ),
-                        ));
+                    let _ = tx_to_main.send(crate::components::common::Msg::MessageActivity(
+                        crate::components::common::MessageActivityMsg::BackfillMessagesLoaded(
+                            Vec::new(),
+                        ),
+                    ));
                 }
                 result
             });
@@ -585,9 +607,9 @@ where
             }
         };
 
-        // Send messages with NewMessagesLoaded to trigger append logic
+        // Send messages with BackfillMessagesLoaded to trigger extend_current_page logic
         if let Err(e) = tx_to_main.send(crate::components::common::Msg::MessageActivity(
-            crate::components::common::MessageActivityMsg::NewMessagesLoaded(messages),
+            crate::components::common::MessageActivityMsg::BackfillMessagesLoaded(messages),
         )) {
             log::error!("Failed to send backfill messages: {e}");
             return Err(crate::error::AppError::Component(e.to_string()));

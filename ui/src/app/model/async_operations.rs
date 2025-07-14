@@ -71,8 +71,8 @@ where
         }
 
         // Use force loading to bypass "already loading" checks and ensure fresh data load
-        if let Err(e) = self.load_messages_from_api_with_force_sequence(current_page_size, Some(0))
-        {
+        // Load from current position (None) instead of beginning (Some(0)) to get fresh messages
+        if let Err(e) = self.load_messages_from_api_with_force_sequence(current_page_size, None) {
             log::error!("Failed to reload messages: {e}");
         }
 

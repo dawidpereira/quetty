@@ -185,6 +185,9 @@ where
             MessageActivityMsg::NewMessagesLoaded(new_messages) => {
                 self.handle_new_messages_loaded(new_messages)
             }
+            MessageActivityMsg::BackfillMessagesLoaded(backfill_messages) => {
+                self.handle_backfill_messages_loaded(backfill_messages)
+            }
             MessageActivityMsg::QueueStatsUpdated(stats_cache) => {
                 self.handle_queue_stats_updated(stats_cache)
             }

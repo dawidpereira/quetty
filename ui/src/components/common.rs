@@ -379,6 +379,7 @@ pub enum MessageActivityMsg {
     PreviousPage,
 
     NewMessagesLoaded(Vec<MessageModel>),
+    BackfillMessagesLoaded(Vec<MessageModel>),
     QueueStatsUpdated(QueueStatsCache),
     ToggleMessageSelectionByIndex(usize),
     SelectAllCurrentPage,
