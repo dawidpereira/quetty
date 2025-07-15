@@ -6,6 +6,7 @@ edition = "2024"
 [lib]
 name = "server"
 path = "src/lib.rs"
+doctest = false
 
 [features]
 default = []

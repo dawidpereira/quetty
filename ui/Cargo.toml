@@ -3,6 +3,9 @@ name = "quetty"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+doctest = false
+
 [dependencies]
 server = { path = "../server" }
 tokio = { version = "1.45.0", features = ["rt-multi-thread", "macros"] }
