@@ -381,37 +381,68 @@ where
         );
 
         // Check if we have enough messages for the next page
+        let next_page_end = next_page_start + page_size;
         if next_page_start < total_messages {
-            // We have enough messages, just advance to next page
+            // We have messages for the next page, but check if the page is complete
+            let next_page_message_count = if next_page_end <= total_messages {
+                page_size // Full page
+            } else {
+                total_messages - next_page_start // Partial page
+            };
+
             log::debug!(
-                "Advancing to next page {} -> {} (have {} messages)",
-                current_page,
+                "Page {} has {} messages (need {} for full page)",
                 current_page + 1,
-                total_messages
-            );
-            self.queue_state_mut().message_pagination.current_page += 1;
-            self.queue_state_mut()
-                .message_pagination
-                .update(page_size as u32);
-
-            log::debug!(
-                "After next page: current={}, has_next={}, has_previous={}",
-                self.queue_state().message_pagination.current_page,
-                self.queue_state().message_pagination.has_next_page,
-                self.queue_state().message_pagination.has_previous_page
+                next_page_message_count,
+                page_size
             );
 
-            if let Err(e) = self.update_current_page_view() {
-                log::error!("Failed to update page view: {e}");
+            // If the next page has fewer messages than expected and we haven't reached end of queue,
+            // we should load more messages to fill it
+            if next_page_message_count < page_size
+                && !self.queue_state().message_pagination.reached_end_of_queue
+            {
+                let messages_needed = page_size - next_page_message_count;
+                log::debug!(
+                    "Next page incomplete, loading {messages_needed} more messages before advancing"
+                );
+                // Set flag to advance after loading
+                self.queue_state_mut().message_pagination.advance_after_load = true;
+                self.load_messages_from_api_with_count(messages_needed as u32)?;
+            } else {
+                // Page is complete or we're at end of queue, just advance
+                log::debug!(
+                    "Advancing to next page {} -> {} (have {} messages)",
+                    current_page,
+                    current_page + 1,
+                    total_messages
+                );
+                self.queue_state_mut().message_pagination.current_page += 1;
+                self.queue_state_mut()
+                    .message_pagination
+                    .update(page_size as u32);
+
+                log::debug!(
+                    "After next page: current={}, has_next={}, has_previous={}",
+                    self.queue_state().message_pagination.current_page,
+                    self.queue_state().message_pagination.has_next_page,
+                    self.queue_state().message_pagination.has_previous_page
+                );
+
+                if let Err(e) = self.update_current_page_view() {
+                    log::error!("Failed to update page view: {e}");
+                }
             }
         } else if !self.queue_state().message_pagination.reached_end_of_queue {
             // Need to load more messages first, then advance page
+            // Calculate how many messages we actually need for the next page
+            let messages_needed_for_next_page = next_page_start + page_size - total_messages;
             log::debug!(
-                "Loading more messages for next page (current: {current_page}, total: {total_messages})"
+                "Loading {messages_needed_for_next_page} messages for next page (current: {current_page}, total: {total_messages}, need: {messages_needed_for_next_page})"
             );
             // Set a flag to indicate we want to advance after loading
             self.queue_state_mut().message_pagination.advance_after_load = true;
-            self.load_messages_from_api_with_count(config::get_current_page_size())?;
+            self.load_messages_from_api_with_count(messages_needed_for_next_page as u32)?;
         } else {
             log::debug!("Already at end of queue, cannot go to next page");
         }
@@ -556,7 +587,7 @@ where
         Ok(())
     }
 
-    /// Execute backfill loading task
+    /// Execute backfill loading task with batching for large requests
     async fn execute_backfill_task(
         tx_to_main: std::sync::mpsc::Sender<crate::components::common::Msg>,
         service_bus_manager: std::sync::Arc<
@@ -567,49 +598,111 @@ where
     ) -> Result<(), crate::error::AppError> {
         use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 
-        let command = ServiceBusCommand::PeekMessages {
-            max_count: message_count,
-            from_sequence,
-        };
+        // Azure Service Bus may have internal limits on peek operations (typically ~250-300 messages)
+        // So we implement batching to ensure we get the full requested amount
+        const MAX_BATCH_SIZE: u32 = 500; // Conservative batch size to avoid API limits
 
-        let response = service_bus_manager
-            .lock()
-            .await
-            .execute_command(command)
-            .await;
+        let mut all_messages = Vec::new();
+        let mut current_sequence = from_sequence;
+        let mut remaining_count = message_count;
 
-        let messages = match response {
-            ServiceBusResponse::MessagesReceived { messages } => {
-                log::info!("Loaded {} messages for backfill", messages.len());
+        log::info!(
+            "Starting backfill for {message_count} messages, starting from sequence: {from_sequence:?}"
+        );
 
-                // Debug: log sequence range of received messages
-                if !messages.is_empty() {
-                    let first_seq = messages.first().map(|m| m.sequence).unwrap_or(-1);
-                    let last_seq = messages.last().map(|m| m.sequence).unwrap_or(-1);
-                    log::debug!(
-                        "Backfill messages with sequences: {} to {} (count: {})",
-                        first_seq,
-                        last_seq,
-                        messages.len()
-                    );
+        while remaining_count > 0 {
+            let batch_size = std::cmp::min(remaining_count, MAX_BATCH_SIZE);
+
+            log::debug!(
+                "Requesting batch of {batch_size} messages (remaining: {remaining_count}, from_sequence: {current_sequence:?})"
+            );
+
+            let command = ServiceBusCommand::PeekMessages {
+                max_count: batch_size,
+                from_sequence: current_sequence,
+            };
+
+            let response = service_bus_manager
+                .lock()
+                .await
+                .execute_command(command)
+                .await;
+
+            let batch_messages = match response {
+                ServiceBusResponse::MessagesReceived { messages } => {
+                    log::debug!("Received {} messages in batch", messages.len());
+
+                    // Debug: log sequence range of received messages
+                    if !messages.is_empty() {
+                        let first_seq = messages.first().map(|m| m.sequence).unwrap_or(-1);
+                        let last_seq = messages.last().map(|m| m.sequence).unwrap_or(-1);
+                        log::debug!(
+                            "Batch messages with sequences: {} to {} (count: {})",
+                            first_seq,
+                            last_seq,
+                            messages.len()
+                        );
+
+                        // Update sequence for next batch
+                        current_sequence = Some(last_seq + 1);
+                    }
+
+                    messages
                 }
+                ServiceBusResponse::Error { error } => {
+                    log::error!("Failed to load messages for backfill: {error}");
+                    return Err(crate::error::AppError::ServiceBus(error.to_string()));
+                }
+                _ => {
+                    return Err(crate::error::AppError::ServiceBus(
+                        "Unexpected response for backfill peek messages".to_string(),
+                    ));
+                }
+            };
 
-                messages
+            // If we received no messages, we've reached the end of the queue
+            if batch_messages.is_empty() {
+                log::info!(
+                    "Reached end of queue during backfill. Loaded {} of {} requested messages.",
+                    all_messages.len(),
+                    message_count
+                );
+                break;
             }
-            ServiceBusResponse::Error { error } => {
-                log::error!("Failed to load messages for backfill: {error}");
-                return Err(crate::error::AppError::ServiceBus(error.to_string()));
-            }
-            _ => {
-                return Err(crate::error::AppError::ServiceBus(
-                    "Unexpected response for backfill peek messages".to_string(),
-                ));
-            }
-        };
 
-        // Send messages with BackfillMessagesLoaded to trigger extend_current_page logic
+            // Add messages to our collection
+            let batch_count = batch_messages.len() as u32;
+            all_messages.extend(batch_messages);
+            remaining_count = remaining_count.saturating_sub(batch_count);
+
+            // Only stop if we got significantly fewer messages or none at all
+            // Azure Service Bus may return fewer than requested due to internal limitations,
+            // but we should continue unless we get a very small number or zero
+            if batch_count == 0 {
+                log::info!("Received 0 messages. Reached end of queue.");
+                break;
+            } else if batch_count < batch_size && batch_count < 100 {
+                log::info!(
+                    "Received {batch_count} messages, significantly less than requested batch size of {batch_size}. Likely reached end of queue."
+                );
+                break;
+            } else if batch_count < batch_size {
+                log::debug!(
+                    "Received {batch_count} messages, less than requested batch size of {batch_size} but continuing as this may be Azure's internal batching."
+                );
+                // Continue the loop - don't break here as Azure may have more messages
+            }
+        }
+
+        log::info!(
+            "Backfill complete: loaded {} of {} requested messages",
+            all_messages.len(),
+            message_count
+        );
+
+        // Send all collected messages with BackfillMessagesLoaded to trigger extend_current_page logic
         if let Err(e) = tx_to_main.send(crate::components::common::Msg::MessageActivity(
-            crate::components::common::MessageActivityMsg::BackfillMessagesLoaded(messages),
+            crate::components::common::MessageActivityMsg::BackfillMessagesLoaded(all_messages),
         )) {
             log::error!("Failed to send backfill messages: {e}");
             return Err(crate::error::AppError::Component(e.to_string()));
