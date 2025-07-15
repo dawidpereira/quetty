@@ -239,9 +239,41 @@ where
                     log::error!("Failed to update page view after page size change: {e}");
                 }
             }
+        } else if current_loaded_count > 0 {
+            // Page size decreased but we have messages loaded - use them intelligently
+            log::debug!(
+                "Page size decreased from {current_page_size} to {new_page_size} with {current_loaded_count} messages loaded, using existing messages"
+            );
+
+            // Check if we have enough loaded messages for at least one page
+            if current_loaded_count >= new_page_size as usize {
+                // We have enough messages, just update pagination bounds
+                log::debug!(
+                    "Have sufficient messages ({current_loaded_count} >= {new_page_size}), updating pagination bounds only"
+                );
+
+                // Reset to page 0 but keep loaded messages
+                self.queue_state_mut().message_pagination.current_page = 0;
+                self.queue_state_mut()
+                    .message_pagination
+                    .update(new_page_size);
+
+                // Update the view to show first page with new page size
+                if let Err(e) = self.update_current_page_view() {
+                    log::error!("Failed to update page view after page size decrease: {e}");
+                }
+            } else {
+                // We don't have enough messages for even one page, need to reload
+                log::debug!(
+                    "Insufficient messages ({current_loaded_count} < {new_page_size}), reloading from API"
+                );
+                self.queue_state_mut().message_pagination.reset();
+                self.queue_state_mut().messages = None;
+                let _ = self.load_messages_from_api_with_count(new_page_size);
+            }
         } else {
-            // Page size decreased or we have no messages - reset and reload
-            log::info!("Page size decreased or no messages loaded, resetting pagination state");
+            // No messages loaded - reset and reload
+            log::debug!("No messages loaded, resetting pagination state and loading from API");
             self.queue_state_mut().message_pagination.reset();
             self.queue_state_mut().messages = None;
 
