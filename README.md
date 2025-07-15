@@ -43,6 +43,17 @@ Experience Azure Service Bus management through Quetty's intuitive terminal inte
   <p><em>Quetty's clean and efficient terminal user interface</em></p>
 </div>
 
+### 🎥 Live Demo
+
+See Quetty in action with this interactive demo showcasing core features:
+
+https://github.com/user-attachments/assets/cd714f56-6b90-4c01-ae30-d915cd959bd4
+<div align="center">
+  <a href="https://github.com/user-attachments/assets/cd714f56-6b90-4c01-ae30-d915cd959bd4">
+  </a>
+  <p><em>Click to watch Quetty's key features in action: authentication, queue management, and message operations</em></p>
+</div>
+
 ## Key Features
 
 ### 🔍 **Message Management**
