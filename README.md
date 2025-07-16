@@ -34,6 +34,30 @@ A powerful terminal-based Azure Service Bus queue manager that provides an intui
 ## Overview
 Quetty combines the power of Azure Service Bus with a sleek terminal interface, making queue management accessible and efficient. Whether you're debugging message flows, managing dead letter queues, or performing bulk operations, Quetty provides the tools you need in a fast, keyboard-driven environment.
 
+## 🚧 Development Phase
+
+**Quetty is currently in Alpha**
+
+We are actively developing and testing Quetty to ensure it meets production standards. During this phase, we're focusing on:
+
+- **Performance & UI Testing**: Verifying optimal performance across different environments and platforms
+- **Binary Releases**: Creating pre-built binaries for easier installation across major platforms
+- **Installation Methods**: Developing multiple installation options beyond source compilation
+- **Configuration System**: Implementing a fully working configuration system with easy setup for binary installations
+- **Action Verification**: Adding deep verification for destructive operations (like delete actions) to prevent accidental data loss
+
+While Quetty is functional and actively used in development environments, please exercise caution when using it in production scenarios. We recommend thorough testing in your specific environment before deploying to production systems.
+
+### 🧪 Alpha/Beta Participation
+
+Want to participate in alpha/beta testing? We'd love your feedback! Contact us via:
+
+- **GitHub Issues**: [Open an issue](https://github.com/yourusername/quetty/issues) for bug reports and feature requests
+- **Email**: pereiradawid@outlook.com
+- **LinkedIn**: [www.linkedin.com/in/pereiradawid](https://www.linkedin.com/in/pereiradawid)
+
+Your testing and feedback help us build a better tool for the entire Azure Service Bus community.
+
 ## Interface Preview
 
 Experience Azure Service Bus management through Quetty's intuitive terminal interface.
