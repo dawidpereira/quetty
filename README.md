@@ -40,11 +40,11 @@ Quetty combines the power of Azure Service Bus with a sleek terminal interface, 
 
 We are actively developing and testing Quetty to ensure it meets production standards. During this phase, we're focusing on:
 
-- **Performance & UI Testing**: Verifying optimal performance across different environments and platforms
-- **Binary Releases**: Creating pre-built binaries for easier installation across major platforms
-- **Installation Methods**: Developing multiple installation options beyond source compilation
-- **Configuration System**: Implementing a fully working configuration system with easy setup for binary installations
-- **Action Verification**: Adding deep verification for destructive operations (like delete actions) to prevent accidental data loss
+- ✅ **Performance & UI Testing**: Verifying optimal performance across different environments and platforms. | Tested on most common terminal emulators (Ghostty *recomended*, WezTerm, ITerm2, Warp, macOS defaul Terminal *not recomended*).
+- ⏳ **Binary Releases**: Creating pre-built binaries for easier installation across major platforms
+- ⏳ **Installation Methods**: Developing multiple installation options beyond source compilation
+- ⏳ **Configuration System**: Implementing a fully working configuration system with easy setup for binary installations
+- ⏳ **Action Verification**: Adding deep verification for destructive operations (like delete actions) to prevent accidental data loss
 
 While Quetty is functional and actively used in development environments, please exercise caution when using it in production scenarios. We recommend thorough testing in your specific environment before deploying to production systems.
 
