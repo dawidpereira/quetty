@@ -90,7 +90,12 @@ where
         None
     }
 
-    /// Handle new messages being loaded
+    /// Handles the loading of new messages into the pagination state, updating the current page, and triggering auto-fill if the page is incomplete.
+    ///
+    /// This method appends newly loaded messages, manages pagination advancement, checks for sequence gaps to determine if auto-fill is needed, updates the application state to display the messages, and ensures the messages component and message details are focused if messages are present.
+    ///
+    /// # Returns
+    /// Returns `None`.
     pub fn handle_new_messages_loaded(&mut self, messages: Vec<MessageModel>) -> Option<Msg> {
         let message_count = messages.len();
 
