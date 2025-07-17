@@ -163,8 +163,6 @@ where
                             log::error!("Failed to execute auto-fill: {e}");
                         } else {
                             log::debug!("Auto-fill initiated for incomplete page");
-                            // Auto-fill will trigger another message load, so return early
-                            return None;
                         }
                     }
                     Ok(false) => {
