@@ -24,6 +24,10 @@ This guide covers the complete installation and setup process for Quetty, from s
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    source ~/.cargo/env
    ```
+   On MacOS (including Apple Silicon) you can use Homebrew:
+   ```bash
+   brew install rust
+   ```
 
 2. **Clone the repository**:
    ```bash
