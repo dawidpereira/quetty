@@ -110,7 +110,7 @@ Best for automated scenarios, service accounts, and CI/CD pipelines.
 3. **Configure Quetty**:
    ```toml
    [azure_ad]
-   auth_method = "client_credentials"
+   auth_method = "client_secret"
    tenant_id = "your-tenant-id"
    client_id = "your-app-client-id"
    client_secret = "your-client-secret"
@@ -176,7 +176,7 @@ client_id = "87654321-4321-4321-4321-210987654321"
 
 # Method 2: Client Credentials (Automated)
 # [azure_ad]
-# auth_method = "client_credentials"
+# auth_method = "client_secret"
 # tenant_id = "12345678-1234-1234-1234-123456789012"
 # client_id = "87654321-4321-4321-4321-210987654321"
 # client_secret = "your-client-secret"
@@ -212,7 +212,7 @@ AZURE_AD__SCOPE="..."
 SERVICEBUS__CONNECTION_STRING="..."
 
 # Authentication method selection
-AZURE_AD__AUTH_METHOD="device_code"  # or "client_credentials"
+AZURE_AD__AUTH_METHOD="device_code"  # or "client_secret"
 ```
 
 ## Authentication Best Practices

@@ -115,7 +115,7 @@ impl AzureAdProvider {
     ///
     /// # Returns
     ///
-    /// The authentication method string ("device_code" or "client_credentials")
+    /// The authentication method string ("device_code" or "client_secret")
     pub fn flow_type(&self) -> &str {
         &self.config.auth_method
     }
@@ -477,7 +477,7 @@ impl AuthProvider for AzureAdProvider {
     /// Authenticates using the configured Azure AD authentication flow.
     ///
     /// Automatically selects the appropriate authentication method based on the
-    /// configuration (device_code or client_credentials) and handles the complete
+    /// configuration (device_code or client_secret) and handles the complete
     /// OAuth 2.0 flow including error handling and token retrieval.
     ///
     /// # Returns

@@ -299,7 +299,7 @@ method = "azure_ad"  # or "connection_string"
 
 #### `auth_method`
 - **Type**: String
-- **Options**: `"device_code"`, `"client_credentials"`
+- **Options**: `"device_code"`, `"client_secret"`
 - **Description**: Azure AD authentication flow to use.
 
 #### Device Code Authentication
@@ -313,7 +313,7 @@ client_id = "your-client-id"
 #### Client Credentials Authentication
 ```toml
 [azure_ad]
-auth_method = "client_credentials"
+auth_method = "client_secret"
 tenant_id = "your-tenant-id"
 client_id = "your-client-id"
 client_secret = "your-client-secret"
@@ -571,7 +571,7 @@ queue_stats_cache_ttl_seconds = 120
 method = "azure_ad"
 
 [azure_ad]
-auth_method = "client_credentials"
+auth_method = "client_secret"
 
 [logging]
 level = "info"

@@ -165,7 +165,7 @@ impl ConnectionStringConfig {
 ///
 /// # Required Fields
 ///
-/// - `auth_method` - Must be "device_code" or "client_credentials"
+/// - `auth_method` - Must be "device_code" or "client_secret"
 ///
 /// # Required for Device Code Flow
 ///
@@ -210,7 +210,7 @@ impl ConnectionStringConfig {
 /// use server::auth::types::AzureAdAuthConfig;
 ///
 /// let config = AzureAdAuthConfig {
-///     auth_method: "client_credentials".to_string(),
+///     auth_method: "client_secret".to_string(),
 ///     tenant_id: Some("your-tenant-id".to_string()),
 ///     client_id: Some("your-client-id".to_string()),
 ///     client_secret: Some("your-client-secret".to_string()), // Required
@@ -223,14 +223,14 @@ impl ConnectionStringConfig {
 /// ```
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct AzureAdAuthConfig {
-    /// Authentication method: "device_code" or "client_credentials" (REQUIRED)
+    /// Authentication method: "device_code" or "client_secret" (REQUIRED)
     #[serde(default = "default_auth_method")]
     pub auth_method: String,
     /// Azure AD tenant ID (REQUIRED for all flows)
     pub tenant_id: Option<String>,
     /// Azure AD application (client) ID (REQUIRED for all flows)
     pub client_id: Option<String>,
-    /// Azure AD application client secret (REQUIRED for client_credentials flow)
+    /// Azure AD application client secret (REQUIRED for client_secret flow)
     pub client_secret: Option<String>,
     /// Encrypted client secret (alternative to client_secret)
     pub encrypted_client_secret: Option<String>,

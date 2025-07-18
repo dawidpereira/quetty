@@ -86,7 +86,7 @@ connection_string = "Endpoint=sb://namespace.servicebus.windows.net/;SharedAcces
 #### Option C: Client Credentials (Service Principal)
 ```toml
 [azure_ad]
-auth_method = "client_credentials"
+auth_method = "client_secret"
 tenant_id = "your-tenant-id"
 client_id = "your-client-id"
 client_secret = "your-client-secret"
