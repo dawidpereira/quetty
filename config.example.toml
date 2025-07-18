@@ -114,13 +114,13 @@ method = "azure_ad"
 [azure_ad]
 # Authentication method:
 # - "device_code": Interactive device code flow (recommended for CLI)
-# - "client_credentials": Service principal with client secret (for automation)
+# - "client_secret": Service principal with client secret (for automation)
 auth_method = "device_code"
 
 # Azure AD Configuration (use environment variables for security)
 # tenant_id = ""       # Set via AZURE_AD__TENANT_ID environment variable
 # client_id = ""       # Set via AZURE_AD__CLIENT_ID environment variable
-# client_secret = ""   # Set via AZURE_AD__CLIENT_SECRET (client_credentials only)
+# client_secret = ""   # Set via AZURE_AD__CLIENT_SECRET (client_secret only)
 #                      # Or use encrypted: AZURE_AD__ENCRYPTED_CLIENT_SECRET + AZURE_AD__ENCRYPTION_SALT
 
 # Azure Resource Information (optional - auto-discovered if not specified)

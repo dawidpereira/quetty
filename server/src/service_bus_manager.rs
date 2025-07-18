@@ -80,7 +80,7 @@ use crate::utils::env::EnvUtils;
 /// # Authentication Methods
 ///
 /// - `device_code` - Interactive device code flow (default for CLI usage)
-/// - `client_credentials` - Service principal authentication
+/// - `client_secret` - Service principal authentication
 /// - `connection_string` - Direct connection string authentication
 ///
 /// # Examples
@@ -100,14 +100,14 @@ use crate::utils::env::EnvUtils;
 /// ```
 #[derive(Clone, Debug, serde::Deserialize, Default)]
 pub struct AzureAdConfig {
-    /// Authentication method: "device_code", "client_credentials", or "connection_string"
+    /// Authentication method: "device_code", "client_secret", or "connection_string"
     #[serde(default = "default_auth_method")]
     pub auth_method: String,
     /// Azure AD tenant ID
     pub tenant_id: Option<String>,
     /// Azure AD application (client) ID
     pub client_id: Option<String>,
-    /// Azure AD application client secret (required for client_credentials)
+    /// Azure AD application client secret (required for client_secret)
     pub client_secret: Option<String>,
     /// Azure subscription ID for resource discovery
     pub subscription_id: Option<String>,
