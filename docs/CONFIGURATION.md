@@ -2,11 +2,101 @@
 
 This document provides a complete reference for all Quetty configuration options, including explanations, examples, and best practices.
 
-## Configuration File Location
+## Profile-Based Configuration System
 
-Quetty looks for configuration in these locations (in order):
-1. `config.toml` (project root)
-2. Default values (built-in)
+Quetty uses a **profile-based configuration system** that allows you to manage multiple environments (development, staging, production) with separate, isolated settings and credentials.
+
+### Configuration Resolution Priority
+
+#### For Profile-Based Configuration (Recommended)
+1. `--config <path>` (CLI argument - overrides profile system)
+2. `~/.config/quetty/profiles/<profile-name>/config.toml` (profile-specific overrides)
+3. `~/.config/quetty/profiles/<profile-name>/keys.toml` (profile-specific key bindings)
+4. Embedded defaults (built into binary)
+
+#### For Legacy Configuration (Compatibility)
+5. `QUETTY_CONFIG_PATH` (environment variable)
+6. `./config.toml` (current directory)
+7. `../config.toml` (parent directory - for source builds)
+8. `~/.config/quetty/config.toml` (Linux/macOS)
+9. `%APPDATA%/quetty/config.toml` (Windows)
+
+> 💻 **CLI Usage**: See [CLI_REFERENCE.md](CLI_REFERENCE.md) for complete command-line options.
+
+### Profile Directory Structure
+
+```
+~/.config/quetty/                    # Main configuration directory
+├── profiles/                        # Profile-specific configurations
+│   ├── default/                     # Default profile
+│   │   ├── .env                     # Environment variables and secrets
+│   │   ├── config.toml              # Optional: profile-specific settings
+│   │   └── keys.toml                # Optional: custom key bindings
+│   ├── dev/                         # Development profile
+│   │   ├── .env                     # Dev environment credentials
+│   │   └── config.toml              # Dev-specific settings (optional)
+│   ├── staging/                     # Staging profile
+│   │   └── .env                     # Staging environment credentials
+│   └── prod/                        # Production profile
+│       ├── .env                     # Production credentials
+│       └── config.toml              # Production-specific settings
+└── quetty.log                       # Application logs (if enabled)
+```
+
+## Profile System Overview
+
+> 🛠️ **Profile Setup**: See [INSTALLATION.md](INSTALLATION.md) for creating and setting up profiles.
+
+### Profile Security Features
+
+- **Credential Isolation**: Each profile has its own `.env` file with separate credentials
+- **Configuration Isolation**: Optional profile-specific `config.toml` for different settings
+- **Secure Storage**: `.env` files are created with restrictive permissions (600)
+- **Path Security**: Profile names are validated to prevent directory traversal attacks
+
+## Authentication Configuration
+
+Authentication credentials are stored in profile-specific `.env` files for security.
+
+### Azure AD Device Code Authentication
+```bash
+# In ~/.config/quetty/profiles/<profile>/.env
+AZURE_AD__AUTH_METHOD=device_code
+AZURE_AD__TENANT_ID=your-tenant-id
+AZURE_AD__CLIENT_ID=your-client-id
+```
+
+### Azure AD Client Credentials
+```bash
+# In ~/.config/quetty/profiles/<profile>/.env
+AZURE_AD__AUTH_METHOD=client_secret
+AZURE_AD__TENANT_ID=your-tenant-id
+AZURE_AD__CLIENT_ID=your-client-id
+AZURE_AD__CLIENT_SECRET=your-client-secret
+```
+
+### Service Bus Connection String
+```bash
+# In ~/.config/quetty/profiles/<profile>/.env
+SERVICEBUS__CONNECTION_STRING=Endpoint=sb://namespace.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=your-key
+```
+
+### Mixed Authentication by Environment
+```bash
+# Development profile - Connection string (fastest setup)
+SERVICEBUS__CONNECTION_STRING=Endpoint=sb://dev-namespace.servicebus.windows.net/;...
+
+# Staging profile - Device code (interactive testing)
+AZURE_AD__AUTH_METHOD=device_code
+AZURE_AD__TENANT_ID=staging-tenant-id
+AZURE_AD__CLIENT_ID=staging-client-id
+
+# Production profile - Client credentials (automated)
+AZURE_AD__AUTH_METHOD=client_secret
+AZURE_AD__TENANT_ID=prod-tenant-id
+AZURE_AD__CLIENT_ID=prod-client-id
+AZURE_AD__CLIENT_SECRET=prod-client-secret
+```
 
 ## Configuration Format
 
@@ -629,6 +719,105 @@ queue_stats_cache_ttl_seconds = 300 # Cache stats longer
 [logging]
 level = "warn"              # Only warnings and errors
 file = "/var/log/quetty.log"
+```
+
+## Profile-Specific Configuration Examples
+
+### Development Profile (Fast Iteration)
+```toml
+# ~/.config/quetty/profiles/dev/config.toml
+page_size = 25              # Smaller pages for quick browsing
+poll_timeout_ms = 5         # Fast polling for responsive UI
+peek_interval = 0.5         # Quick message updates
+
+[theme]
+theme_name = "quetty"       # Built-in theme for development
+flavor_name = "dark"
+
+[logging]
+level = "debug"             # Detailed logging for development
+file = "dev-quetty.log"
+```
+
+### Staging Profile (Testing Environment)
+```toml
+# ~/.config/quetty/profiles/staging/config.toml
+page_size = 50              # Medium page size for testing
+operation_timeout_secs = 120 # Moderate timeouts for testing
+
+[theme]
+theme_name = "catppuccin"   # Different theme to distinguish environment
+flavor_name = "mocha"
+
+[logging]
+level = "info"              # Standard logging for staging
+```
+
+### Production Profile (Performance Optimized)
+```toml
+# ~/.config/quetty/profiles/prod/config.toml
+page_size = 200             # Large pages for efficiency
+operation_timeout_secs = 600 # Long timeouts for reliability
+max_batch_size = 500        # Large batches for bulk operations
+queue_stats_cache_ttl_seconds = 300 # Cache for performance
+
+[theme]
+theme_name = "nightfox"     # Production theme for distinction
+flavor_name = "carbonfox"
+
+[logging]
+level = "warn"              # Minimal logging for production
+file = "/var/log/quetty-prod.log"
+max_file_size_mb = 50       # Larger log files for production
+max_backup_files = 10       # More backup files for production
+```
+
+### Profile-Specific Key Bindings
+```toml
+# ~/.config/quetty/profiles/dev/keys.toml
+[keys]
+# Development-specific shortcuts
+key_refresh = "F5"          # F5 for refresh (familiar to developers)
+key_help = "F1"             # F1 for help (standard)
+
+# ~/.config/quetty/profiles/prod/keys.toml
+[keys]
+# Production safety - longer key sequences
+key_delete = "ctrl+shift+d" # Require modifier keys for destructive operations
+key_dlq = "ctrl+shift+q"    # Require confirmation for DLQ operations
+```
+
+## Environment Variable Precedence
+
+Environment variables in profile `.env` files take precedence over TOML configuration:
+
+```bash
+# In ~/.config/quetty/profiles/dev/.env
+THEME__THEME_NAME=catppuccin     # Overrides theme.theme_name in config.toml
+QUETTY_PAGE_SIZE=100             # Overrides page_size in config.toml
+LOGGING__LEVEL=debug             # Overrides logging.level in config.toml
+```
+
+## Configuration Validation
+
+Quetty validates profile names to ensure security:
+- ✅ Valid: `dev`, `staging`, `prod`, `test-env`, `my_profile`
+- ❌ Invalid: `../etc/passwd`, `test/../prod`, `/absolute/path`
+
+## Troubleshooting Profiles
+
+```bash
+# Check current configuration directory
+quetty --config-dir
+
+# Verify profile exists
+ls ~/.config/quetty/profiles/
+
+# Test profile configuration
+quetty --profile dev --version
+
+# Debug configuration loading
+RUST_LOG=debug quetty --profile dev
 ```
 
 For troubleshooting configuration issues, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).

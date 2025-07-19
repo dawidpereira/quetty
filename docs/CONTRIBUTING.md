@@ -56,7 +56,7 @@ Thank you for your interest in contributing to Quetty! This guide will help you 
 
 1. **Create development config**:
    ```bash
-   cp config.example.toml config.dev.toml
+   cp config.default.toml config.dev.toml
    # Edit config.dev.toml with your Azure credentials
    ```
 
@@ -105,7 +105,7 @@ quetty/
 │   │   ├── theme/              # Theme system
 │   │   └── main.rs            # Entry point
 │   └── Cargo.toml
-├── config.example.toml     # Example configuration
+├── config.default.toml     # Example configuration
 ├── server/                     # Core Service Bus library
 │   ├── src/
 │   │   ├── auth/               # Authentication providers
