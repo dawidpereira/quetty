@@ -2,6 +2,8 @@
 
 This guide helps you diagnose and resolve common issues with Quetty. Issues are organized by category with step-by-step solutions.
 
+> **📁 Directory Context**: Unless otherwise specified, run commands from the project root directory (`quetty/`).
+
 ## Quick Diagnostic Steps
 
 Before diving into specific issues, try these general diagnostic steps:
@@ -19,6 +21,20 @@ Add this to your `config.toml`:
 level = "debug"
 file = "quetty-debug.log"
 ```
+
+### Log File Locations
+
+Quetty uses different log locations based on how it's built:
+
+**Development builds** (debug):
+- Default: `logs/quetty.log` (in project directory)
+- Easy access: `tail -f logs/quetty.log`
+
+**Production builds** (release):
+- **macOS/Linux**: `~/.cache/quetty/logs/quetty.log`
+- **Windows**: `%LOCALAPPDATA%/quetty/logs/quetty.log`
+
+**Custom location**: Set `file = "path/to/your.log"` in config
 
 Then check the log file for detailed error information.
 
@@ -610,9 +626,8 @@ If Quetty is completely broken:
 
 #### Reset Configuration
 ```bash
-# For legacy configuration files
+# For legacy configuration files (deprecated - use profiles instead)
 cp config.toml config.toml.backup
-cd ui
 cp config.default.toml config.toml
 
 # For profile-based configuration

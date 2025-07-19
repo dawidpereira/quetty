@@ -2,6 +2,8 @@
 
 This document provides a complete reference for all Quetty command-line interface options, including detailed explanations, examples, and common usage patterns.
 
+> **📁 Directory Context**: Unless otherwise specified, run commands from the project root directory (`quetty/`).
+
 ## Overview
 
 Quetty provides a rich command-line interface that supports profile-based configuration, flexible authentication methods, and various utility commands for managing your Azure Service Bus environments.

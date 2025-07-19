@@ -15,8 +15,8 @@ pub fn setup_logger() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let log_file = config.logging().file();
-    let default_log_path = "../quetty.log";
-    let file_path = log_file.unwrap_or(default_log_path);
+    let default_log_path = get_default_log_path();
+    let file_path = log_file.unwrap_or(&default_log_path);
 
     // Parse the file path to get directory and filename
     let path = Path::new(file_path);
@@ -269,6 +269,40 @@ impl Write for SizeAwareWriter {
             file.flush()
         } else {
             Ok(())
+        }
+    }
+}
+
+/// Get the default log path based on context (development vs production)
+fn get_default_log_path() -> String {
+    // In debug builds (development), use local logs directory for easy access
+    if cfg!(debug_assertions) {
+        // Always use project root for development logs, regardless of current directory
+        let project_root = std::env::current_dir()
+            .ok()
+            .and_then(|path| {
+                // If we're in ui directory, go up one level
+                if path.file_name().and_then(|n| n.to_str()) == Some("ui") {
+                    path.parent().map(|p| p.to_path_buf())
+                } else {
+                    Some(path)
+                }
+            })
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+        project_root
+            .join("logs")
+            .join("quetty.log")
+            .to_string_lossy()
+            .to_string()
+    } else {
+        // In release builds (production), use OS cache directory
+        if let Some(cache_dir) = dirs::cache_dir() {
+            let log_dir = cache_dir.join("quetty").join("logs");
+            log_dir.join("quetty.log").to_string_lossy().to_string()
+        } else {
+            // Fallback if cache directory detection fails
+            "logs/quetty.log".to_string()
         }
     }
 }

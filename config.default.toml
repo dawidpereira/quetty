@@ -139,8 +139,10 @@ auth_method = "device_code"
 # Log level: "trace", "debug", "info", "warn", "error"
 level = "info"
 
-# Log file path (optional - if not specified, logs go to stdout)
-# file = "quetty.log"
+# Log file path (optional - if not specified, uses smart defaults)
+# Development builds: logs/quetty.log (for easy access)
+# Production builds: ~/.cache/quetty/logs/quetty.log (OS standard)
+# file = "custom-path/quetty.log"
 
 # Maximum log file size in MB before rotation (default: 10)
 # max_file_size_mb = 10
