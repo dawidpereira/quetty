@@ -239,11 +239,37 @@ fn load_config_with_custom_path(custom_config_path: Option<&str>) -> ConfigLoadR
             log::info!("Loading configuration from: {path}");
             let file_source = File::with_name(&path);
 
-            match Config::builder()
-                .add_source(file_source)
-                .add_source(env_source) // environment entries override file values
-                .build()
-            {
+            // Try to load separate keys.toml file from the profile directory
+            let keys_source = if let Ok(config_dir) = setup::get_config_dir() {
+                let profile_keys_path = config_dir
+                    .join("profiles")
+                    .join("default")
+                    .join("keys.toml");
+                if profile_keys_path.exists() {
+                    log::info!("Loading keys from: {}", profile_keys_path.display());
+                    Some(File::with_name(&profile_keys_path.to_string_lossy()))
+                } else {
+                    log::debug!(
+                        "No keys.toml found at: {}, using embedded defaults",
+                        profile_keys_path.display()
+                    );
+                    None
+                }
+            } else {
+                None
+            };
+
+            let mut config_builder = Config::builder().add_source(file_source);
+
+            // Add keys file if it exists
+            if let Some(keys_file) = keys_source {
+                config_builder = config_builder.add_source(keys_file);
+            }
+
+            // Environment variables override everything
+            config_builder = config_builder.add_source(env_source);
+
+            match config_builder.build() {
                 Ok(config) => config,
                 Err(e) => {
                     return ConfigLoadResult::LoadError(format!(
@@ -263,11 +289,38 @@ fn load_config_with_custom_path(custom_config_path: Option<&str>) -> ConfigLoadR
                     // Try loading the newly created config
                     if let Some(new_config_path) = find_config_file() {
                         let file_source = File::with_name(&new_config_path.to_string_lossy());
-                        match Config::builder()
-                            .add_source(file_source)
-                            .add_source(env_source)
-                            .build()
-                        {
+
+                        // Try to load separate keys.toml file from the profile directory
+                        let keys_source = if let Ok(config_dir) = setup::get_config_dir() {
+                            let profile_keys_path = config_dir
+                                .join("profiles")
+                                .join("default")
+                                .join("keys.toml");
+                            if profile_keys_path.exists() {
+                                log::info!("Loading keys from: {}", profile_keys_path.display());
+                                Some(File::with_name(&profile_keys_path.to_string_lossy()))
+                            } else {
+                                log::debug!(
+                                    "No keys.toml found at: {}, using embedded defaults",
+                                    profile_keys_path.display()
+                                );
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        let mut config_builder = Config::builder().add_source(file_source);
+
+                        // Add keys file if it exists
+                        if let Some(keys_file) = keys_source {
+                            config_builder = config_builder.add_source(keys_file);
+                        }
+
+                        // Environment variables override everything
+                        config_builder = config_builder.add_source(env_source);
+
+                        match config_builder.build() {
                             Ok(config) => config,
                             Err(e) => {
                                 return ConfigLoadResult::LoadError(format!(
