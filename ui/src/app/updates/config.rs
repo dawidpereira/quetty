@@ -46,8 +46,8 @@ const ERROR_MASTER_PASSWORD_REQUIRED: &str =
     "Master password required for connection string authentication";
 const ERROR_MASTER_PASSWORD_REQUIRED_CLIENT_SECRET: &str =
     "Master password required for client secret authentication";
-const DEFAULT_ENV_FILE_PATH: &str = "../.env";
-const DEFAULT_CONFIG_FILE_PATH: &str = "../config.toml";
+// Profile names - using default profile for now
+const DEFAULT_PROFILE_NAME: &str = "default";
 
 impl<T> Model<T>
 where
@@ -278,6 +278,26 @@ where
 
         self.log_config_data(&config_data);
 
+        // Global change detection - check if anything actually changed before proceeding
+        let current_config = crate::config::get_config_or_panic();
+        let config_changed = self.has_config_changed(current_config, &config_data);
+
+        if !config_changed {
+            log::info!(
+                "No configuration changes detected for any auth method - skipping all operations"
+            );
+            // Just close the config screen and return success message
+            if let Err(e) = self.unmount_config_screen() {
+                self.error_reporter
+                    .report_mount_error("ConfigScreen", "unmount", e);
+            }
+            return Ok(Some(Msg::ShowSuccess(
+                "Configuration unchanged - no update needed.".to_string(),
+            )));
+        }
+
+        log::info!("Configuration changes detected - proceeding with update flow");
+
         // Handle password validation and encryption
         if let Some(master_password) = &config_data.master_password {
             if let Some(msg) = self.handle_password_and_encryption(&config_data, master_password)? {
@@ -406,6 +426,13 @@ where
                     }
                 };
             }
+
+            // Merge auth method (always use pending data if available)
+            config_data.auth_method = pending_data.auth_method.clone();
+            log::info!(
+                "Merged auth method from pending config data: '{}'",
+                config_data.auth_method
+            );
 
             // Merge all configuration fields
             merge_field!(tenant_id);
@@ -822,6 +849,20 @@ where
     }
 
     fn persist_configuration(&mut self, config_data: &ConfigUpdateData) -> AppResult<()> {
+        // Get current configuration before changes to detect what actually changed
+        let current_config = crate::config::get_config_or_panic();
+        let previous_auth_method = current_config.azure_ad().auth_method.clone();
+
+        // Check if configuration actually changed by comparing key values
+        let config_changed = self.has_config_changed(current_config, config_data);
+
+        if !config_changed {
+            log::info!("No configuration changes detected - skipping reload and file operations");
+            return Ok(());
+        }
+
+        log::info!("Configuration changes detected - proceeding with update");
+
         // Set environment variables
         self.set_environment_variables(config_data)?;
 
@@ -844,13 +885,130 @@ where
             )));
         }
 
-        // Recreate auth service
-        if let Err(e) = self.create_auth_service() {
-            log::error!("Failed to create auth service: {e}");
-            return Err(e);
+        // Invalidate profile cache to ensure fresh data after config changes
+        crate::config::invalidate_profile_cache();
+        log::debug!("Profile cache invalidated after config update");
+
+        // Only recreate auth service if auth method actually changed
+        if previous_auth_method != config_data.auth_method {
+            log::info!(
+                "Auth method changed from '{}' to '{}' - recreating auth service",
+                previous_auth_method,
+                config_data.auth_method
+            );
+            if let Err(e) = self.create_auth_service() {
+                log::error!("Failed to create auth service: {e}");
+                return Err(e);
+            }
+        } else {
+            log::debug!(
+                "Auth method unchanged ('{}') - skipping auth service recreation",
+                config_data.auth_method
+            );
         }
 
         Ok(())
+    }
+
+    /// Check if the configuration has actually changed compared to current values
+    fn has_config_changed(
+        &self,
+        current_config: &crate::config::AppConfig,
+        config_data: &ConfigUpdateData,
+    ) -> bool {
+        // Check auth method change
+        if current_config.azure_ad().auth_method != config_data.auth_method {
+            log::debug!(
+                "Auth method changed: '{}' -> '{}'",
+                current_config.azure_ad().auth_method,
+                config_data.auth_method
+            );
+            return true;
+        }
+
+        // Get current environment values
+        let current_tenant_id = std::env::var(AZURE_AD_TENANT_ID).ok();
+        let current_client_id = std::env::var(AZURE_AD_CLIENT_ID).ok();
+        let current_subscription_id = std::env::var(AZURE_AD_SUBSCRIPTION_ID).ok();
+        let current_resource_group = std::env::var(AZURE_AD_RESOURCE_GROUP).ok();
+        let current_namespace = std::env::var(AZURE_AD_NAMESPACE).ok();
+        let current_queue_name = std::env::var(SERVICEBUS_QUEUE_NAME).ok();
+
+        // Helper function to compare optional values (treating empty strings as None)
+        let normalize_value = |value: &Option<String>| -> Option<String> {
+            value.as_ref().and_then(|v| {
+                if v.trim().is_empty() {
+                    None
+                } else {
+                    Some(v.clone())
+                }
+            })
+        };
+
+        // Check each field for changes
+        if normalize_value(&current_tenant_id) != normalize_value(&config_data.tenant_id) {
+            log::debug!("Tenant ID changed");
+            return true;
+        }
+
+        if normalize_value(&current_client_id) != normalize_value(&config_data.client_id) {
+            log::debug!("Client ID changed");
+            return true;
+        }
+
+        if normalize_value(&current_subscription_id)
+            != normalize_value(&config_data.subscription_id)
+        {
+            log::debug!("Subscription ID changed");
+            return true;
+        }
+
+        if normalize_value(&current_resource_group) != normalize_value(&config_data.resource_group)
+        {
+            log::debug!("Resource group changed");
+            return true;
+        }
+
+        if normalize_value(&current_namespace) != normalize_value(&config_data.namespace) {
+            log::debug!("Namespace changed");
+            return true;
+        }
+
+        // Check queue name change only for connection string auth
+        if config_data.auth_method == crate::utils::auth::AUTH_METHOD_CONNECTION_STRING
+            && normalize_value(&current_queue_name) != normalize_value(&config_data.queue_name)
+        {
+            log::debug!("Queue name changed");
+            return true;
+        }
+
+        // Check for new secrets being provided (existing encrypted secrets don't count as changes)
+        if let Some(connection_string) = &config_data.connection_string {
+            if !connection_string.trim().is_empty()
+                && !connection_string.contains(PLACEHOLDER_ENCRYPTED_CONNECTION_STRING)
+            {
+                log::debug!("New connection string provided");
+                return true;
+            }
+        }
+
+        if let Some(client_secret) = &config_data.client_secret {
+            if !client_secret.trim().is_empty()
+                && !client_secret.contains(PLACEHOLDER_ENCRYPTED_CLIENT_SECRET)
+            {
+                log::debug!("New client secret provided");
+                return true;
+            }
+        }
+
+        // If master password is provided, it means user wants to update/verify encryption
+        if config_data.master_password.is_some() {
+            log::debug!("Master password provided - treating as potential configuration change");
+            return true;
+        }
+
+        log::debug!("No configuration changes detected");
+        false
     }
 
     fn set_environment_variables(&self, config_data: &ConfigUpdateData) -> AppResult<()> {
@@ -945,16 +1103,17 @@ where
     /// * `Ok(())` - .env file updated successfully
     /// * `Err(AppError)` - File I/O or parsing error occurred
     pub fn write_env_file(&self, config_data: &ConfigUpdateData) -> AppResult<()> {
-        let env_path = DEFAULT_ENV_FILE_PATH;
+        // Use profile-based path resolution instead of hardcoded relative path
+        let env_path = self.get_profile_env_path()?;
 
         // Parse existing .env file
-        let (mut env_content, existing_values) = self.parse_existing_env_file(env_path)?;
+        let (mut env_content, existing_values) = self.parse_existing_env_file(&env_path)?;
 
         // Update environment variables with new and existing values
         self.update_env_variables(&mut env_content, &existing_values, config_data);
 
         // Write the updated content to file
-        self.write_env_content_to_file(env_path, &env_content)
+        self.write_env_content_to_file(&env_path, &env_content)
     }
 
     /// Parse existing .env file and extract managed environment variables
@@ -1094,6 +1253,35 @@ where
         }
     }
 
+    /// Get the profile-specific .env file path
+    fn get_profile_env_path(&self) -> AppResult<String> {
+        use crate::config::setup::get_config_dir;
+
+        let config_dir = get_config_dir().map_err(|e| {
+            crate::error::AppError::Config(format!("Failed to get config directory: {e}"))
+        })?;
+
+        let profile_dir = config_dir.join("profiles").join(DEFAULT_PROFILE_NAME);
+        let env_path = profile_dir.join(".env");
+
+        Ok(env_path.to_string_lossy().to_string())
+    }
+
+    /// Get the profile-specific config.toml file path
+    fn get_profile_config_path(&self) -> AppResult<String> {
+        use crate::config::setup::get_config_dir;
+
+        // Always use profile-specific path for consistency
+        let config_dir = get_config_dir().map_err(|e| {
+            crate::error::AppError::Config(format!("Failed to get config directory: {e}"))
+        })?;
+
+        let profile_dir = config_dir.join("profiles").join(DEFAULT_PROFILE_NAME);
+        let config_path = profile_dir.join("config.toml");
+
+        Ok(config_path.to_string_lossy().to_string())
+    }
+
     /// Write environment content to file
     fn write_env_content_to_file(&self, env_path: &str, env_content: &str) -> AppResult<()> {
         fs::write(env_path, env_content).map_err(|e| {
@@ -1105,7 +1293,8 @@ where
     }
 
     fn update_config_toml(&self, config_data: &ConfigUpdateData) -> AppResult<()> {
-        let config_path = DEFAULT_CONFIG_FILE_PATH;
+        // Use profile-based path resolution instead of hardcoded relative path
+        let config_path = self.get_profile_config_path()?;
 
         log::info!(
             "Updating config.toml with auth_method: {}",
@@ -1113,7 +1302,7 @@ where
         );
 
         // Read existing config.toml if it exists
-        let mut config_content = if let Ok(content) = fs::read_to_string(config_path) {
+        let mut config_content = if let Ok(content) = fs::read_to_string(&config_path) {
             log::debug!("Read existing config.toml file ({} chars)", content.len());
             content
         } else {
@@ -1185,7 +1374,7 @@ where
 
         log::debug!("Writing updated config.toml to disk");
         // Write the updated config.toml
-        fs::write(config_path, config_content).map_err(|e| {
+        fs::write(&config_path, config_content).map_err(|e| {
             crate::error::AppError::Config(format!("Failed to write config.toml: {e}"))
         })?;
 

@@ -175,10 +175,15 @@ static CURRENT_PAGE_SIZE: std::sync::OnceLock<std::sync::Mutex<Option<u32>>> =
 
 /// Load configuration with optional custom config file path
 fn load_config_with_custom_path(custom_config_path: Option<&str>) -> ConfigLoadResult {
-    // Load .env file from the project root directory (for backward compatibility)
-    dotenv::from_path("../.env").ok();
+    // Load .env file from the default profile directory
+    if let Ok(config_dir) = setup::get_config_dir() {
+        let profile_env_path = config_dir.join("profiles").join("default").join(".env");
+        if profile_env_path.exists() {
+            dotenv::from_path(profile_env_path).ok();
+        }
+    }
 
-    // Also try loading .env from current directory
+    // Also try loading .env from current directory (for backward compatibility)
     dotenv::from_path(".env").ok();
 
     let env_source = Environment::default().separator("__");
@@ -187,7 +192,22 @@ fn load_config_with_custom_path(custom_config_path: Option<&str>) -> ConfigLoadR
     let config_path = if let Some(custom_path) = custom_config_path {
         Some(custom_path.to_string())
     } else {
-        find_config_file().map(|p| p.to_string_lossy().to_string())
+        // Look for config file in profile directory first, then fall back to general config
+        if let Ok(config_dir) = setup::get_config_dir() {
+            let profile_config_path = config_dir
+                .join("profiles")
+                .join("default")
+                .join("config.toml");
+            if profile_config_path.exists() {
+                Some(profile_config_path.to_string_lossy().to_string())
+            } else {
+                // Fall back to general config discovery
+                find_config_file().map(|p| p.to_string_lossy().to_string())
+            }
+        } else {
+            // If we can't get config dir, try general discovery
+            find_config_file().map(|p| p.to_string_lossy().to_string())
+        }
     };
 
     let config = match config_path {
@@ -280,14 +300,29 @@ fn load_config_with_custom_path(custom_config_path: Option<&str>) -> ConfigLoadR
 /// Gets the current configuration using the unified profile-based system.
 ///
 /// This function provides access to the application configuration with support
-/// for runtime reloading. It uses the "default" profile when no specific profile
-/// is requested, ensuring consistent behavior across all code paths.
+/// for runtime reloading. It first checks for reloaded configuration, then falls
+/// back to the initial configuration if no reload has occurred.
 ///
 /// # Returns
 ///
 /// A reference to the [`ConfigLoadResult`] with static lifetime
 pub fn get_config() -> &'static ConfigLoadResult {
-    // Use the same profile-based loading as explicit profile requests
+    // Check if we have reloaded configuration first
+    if let Some(reloadable_lock) = RELOADABLE_CONFIG.get() {
+        if let Ok(guard) = reloadable_lock.read() {
+            if let Some(ref reloaded_config) = *guard {
+                log::debug!("Using reloaded configuration instead of cached config");
+                // We have reloaded configuration - convert it to a static reference
+                // This is safe because we're returning a reference to data that lives
+                // as long as the static RELOADABLE_CONFIG
+                return unsafe {
+                    std::mem::transmute::<&ConfigLoadResult, &ConfigLoadResult>(reloaded_config)
+                };
+            }
+        }
+    }
+
+    // Fall back to initial configuration loading
     get_config_for_profile("default")
 }
 
