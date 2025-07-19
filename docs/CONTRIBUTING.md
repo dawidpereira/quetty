@@ -68,22 +68,23 @@ Thank you for your interest in contributing to Quetty! This guide will help you 
 
 ### Building and Running
 
+> **📁 Directory Context**: Unless otherwise specified, run commands from the project root directory (`quetty/`).
+
 ```bash
 # Build all components
 cargo build
 
-# Run UI component
-cd ui
-cargo run
+# Run the application
+./target/release/quetty
 
-# Run with file watching (auto-reload on changes)
-cargo watch -x run
+# Run with file watching (auto-reload on changes) from ui directory
+cd ui && cargo watch -x run
 
 # Run tests
 cargo test
 
 # Run with specific config
-cargo run -- --config config.dev.toml
+./target/release/quetty --config config.dev.toml
 
 # Run traffic simulator for testing
 make test-server QUEUE=test-queue-name
@@ -683,11 +684,11 @@ pub async fn process_message(message: &Message) -> Result<()> {
 
 #### Debugging Tools
 ```bash
-# Run with debugging
-RUST_LOG=debug cargo run
+# Run with debugging (from ui directory for development)
+cd ui && RUST_LOG=debug cargo run
 
-# Profile performance
-cargo run --release --features profiling
+# Profile performance (from ui directory for development)
+cd ui && cargo run --release --features profiling
 
 # Memory debugging
 valgrind target/release/quetty

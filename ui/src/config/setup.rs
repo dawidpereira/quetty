@@ -61,10 +61,17 @@ pub fn get_themes_dir() -> Result<PathBuf, SetupError> {
     Ok(config_dir)
 }
 
-/// Check if config directory exists and has basic files
+/// Check if config directory exists and has basic files (profile-based structure)
 pub fn is_config_initialized() -> bool {
-    match get_config_file_path() {
-        Ok(config_path) => config_path.exists(),
+    match get_config_dir() {
+        Ok(config_dir) => {
+            let profiles_dir = config_dir.join("profiles");
+            let default_profile_dir = profiles_dir.join("default");
+            let default_env = default_profile_dir.join(".env");
+
+            // Check if the new profile-based structure exists
+            profiles_dir.exists() && default_profile_dir.exists() && default_env.exists()
+        }
         Err(_) => false,
     }
 }
@@ -141,22 +148,9 @@ fn write_file_with_permissions(path: &Path, content: &str) -> Result<(), SetupEr
     Ok(())
 }
 
-/// Find config file using discovery priority
+/// Find config file using standard OS config directory
 pub fn find_config_file() -> Option<PathBuf> {
-    // Priority order:
-    // 1. ./config.toml (current directory - for backward compatibility)
-    // 2. Standard OS config directory
-
-    let current_dir_config = PathBuf::from("config.toml");
-    if current_dir_config.exists() {
-        return Some(current_dir_config);
-    }
-
-    let legacy_config = PathBuf::from("../config.toml");
-    if legacy_config.exists() {
-        return Some(legacy_config);
-    }
-
+    // Use only standard OS config directory for security
     match get_config_file_path() {
         Ok(standard_config) if standard_config.exists() => Some(standard_config),
         _ => None,
@@ -176,9 +170,8 @@ mod tests {
     }
 
     #[test]
-    fn test_find_config_file_priority() {
-        // This test would need a more complex setup to properly test
-        // the priority order, but we can at least test that it doesn't panic
+    fn test_find_config_file_standard_location() {
+        // Test that the function doesn't panic and returns valid results
         let result = find_config_file();
         // Result depends on the actual file system state
         assert!(result.is_some() || result.is_none());

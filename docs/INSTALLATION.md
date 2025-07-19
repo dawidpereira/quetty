@@ -19,6 +19,8 @@ This guide covers the complete installation and setup process for Quetty, from s
 
 ### Option 1: Build from Source (Current)
 
+> **📁 Directory Context**: All commands in this guide should be run from the project root directory (`quetty/`) unless otherwise specified.
+
 1. **Install Rust** (if not already installed):
    ```bash
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -42,17 +44,16 @@ This guide covers the complete installation and setup process for Quetty, from s
 
 4. **Run Quetty**:
    ```bash
-   cd ui
-   cargo run --release
+   ./target/release/quetty
    ```
 
 5. **Add to PATH (Recommended)**:
    ```bash
    # Copy binary to local bin directory
-   cp ../target/release/quetty ~/.local/bin/
+   cp target/release/quetty ~/.local/bin/
 
    # Or add to current session PATH
-   export PATH="$PWD/../target/release:$PATH"
+   export PATH="$PWD/target/release:$PATH"
 
    # Make permanent (add to ~/.bashrc, ~/.zshrc, etc.)
    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
@@ -140,9 +141,8 @@ quetty --profile myproject --setup
 # If added to PATH
 quetty --version
 
-# From source directory
-cd ui
-cargo run --release -- --version
+# Or run the built binary directly
+./target/release/quetty --version
 ```
 
 ### 2. Test Profile System

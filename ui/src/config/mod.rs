@@ -173,20 +173,6 @@ fn get_profile_cache() -> &'static ProfileCache {
 static CURRENT_PAGE_SIZE: std::sync::OnceLock<std::sync::Mutex<Option<u32>>> =
     std::sync::OnceLock::new();
 
-/// Loads configuration from config.toml and environment variables.
-///
-/// This function loads configuration using a layered approach:
-/// 1. Loads base configuration from config.toml
-/// 2. Overlays environment variables (with `__` separator)
-/// 3. Deserializes and validates the final configuration
-///
-/// # Returns
-///
-/// [`ConfigLoadResult`] indicating success or specific failure type
-fn load_config() -> ConfigLoadResult {
-    load_config_with_custom_path(None)
-}
-
 /// Load configuration with optional custom config file path
 fn load_config_with_custom_path(custom_config_path: Option<&str>) -> ConfigLoadResult {
     // Load .env file from the project root directory (for backward compatibility)
@@ -291,34 +277,18 @@ fn load_config_with_custom_path(custom_config_path: Option<&str>) -> ConfigLoadR
     }
 }
 
-/// Gets the current configuration, preferring reloaded config over initial config.
+/// Gets the current configuration using the unified profile-based system.
 ///
 /// This function provides access to the application configuration with support
-/// for runtime reloading. It first checks for a reloaded configuration, then
-/// falls back to the initial configuration loaded at startup.
+/// for runtime reloading. It uses the "default" profile when no specific profile
+/// is requested, ensuring consistent behavior across all code paths.
 ///
 /// # Returns
 ///
 /// A reference to the [`ConfigLoadResult`] with static lifetime
-///
-/// # Note
-///
-/// The static lifetime is achieved through intentional memory leaking for
-/// reloaded configurations. This is acceptable since configuration instances
-/// are meant to live for the application lifetime.
 pub fn get_config() -> &'static ConfigLoadResult {
-    // First check if we have a reloaded config
-    let reloadable_lock = RELOADABLE_CONFIG.get_or_init(|| std::sync::RwLock::new(None));
-    if let Ok(guard) = reloadable_lock.read() {
-        if let Some(reloaded_config) = guard.as_ref() {
-            // We have a reloaded config, return it by leaking it
-            // This is intentional for the static lifetime requirement
-            return Box::leak(Box::new(reloaded_config.clone()));
-        }
-    }
-
-    // Fall back to the original config
-    CONFIG.get_or_init(load_config)
+    // Use the same profile-based loading as explicit profile requests
+    get_config_for_profile("default")
 }
 
 /// Gets the application configuration, panicking if loading failed.

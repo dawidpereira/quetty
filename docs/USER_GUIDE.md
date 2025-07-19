@@ -2,6 +2,8 @@
 
 This comprehensive guide covers all aspects of using Quetty, from basic navigation to advanced features like bulk operations and message editing.
 
+> **📁 Directory Context**: Unless otherwise specified, run commands from the project root directory (`quetty/`).
+
 ## Getting Started
 
 ### First Launch
