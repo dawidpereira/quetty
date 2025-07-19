@@ -1,0 +1,64 @@
+# Quetty Key Bindings Configuration
+# Default key bindings for all application actions
+# For detailed configuration reference, see: docs/CONFIGURATION.md
+
+# =============================================================================
+# KEY BINDINGS CONFIGURATION
+# =============================================================================
+[keys]
+# Global keys
+key_quit = "q"    # Key to quit the application
+key_help = "h"    # Key to show help screen
+key_theme = "t"   # Key to toggle theme
+key_refresh = "r" # Key to refresh messages (reload from beginning)
+
+# Navigation keys
+key_down = "j"          # Key to move down (vim-style)
+key_up = "k"            # Key to move up (vim-style)
+key_next_page = "n"     # Key to go to next page
+key_prev_page = "p"     # Key to go to previous page
+key_alt_next_page = "]" # Alternative key for next page
+key_alt_prev_page = "[" # Alternative key for previous page
+
+# Message actions
+key_send_to_dlq = "s"                # Key to send message to DLQ
+key_resend_from_dlq = "s"            # Key to resend message from DLQ
+key_resend_and_delete_from_dlq = "S" # Key to resend and delete from DLQ
+key_delete_message = "x"             # Key to delete message
+key_alt_delete_message = "x"         # Alternative key to delete message
+
+# Message details actions (when viewing message content)
+key_copy_message = "c"           # Key for Ctrl+key copy operation
+key_yank_message = "y"           # Key for yank/copy operation
+key_send_edited_message = "s"    # Key for Ctrl+key send edited message
+key_replace_edited_message = "s" # Key for Ctrl+key replace message
+
+# Bulk selection keys
+key_toggle_selection = " " # Key to toggle message selection (space)
+key_select_all_page = "a"  # Key to select all messages on current page
+
+# Queue/Namespace selection
+key_queue_select = "o"     # Key to open queue selection
+key_namespace_select = "o" # Key to open namespace selection
+
+# Message composition keys (in messages view)
+key_toggle_dlq = "d"       # Key to toggle between main queue and dead letter queue
+key_compose_multiple = "m" # Key to compose multiple messages with repeat count
+key_compose_single = "n"   # Key for Ctrl+key to compose single message
+
+# Confirmation keys
+key_confirm_yes = "y" # Key to confirm yes in prompts
+key_confirm_no = "n"  # Key to confirm no in prompts
+
+# =============================================================================
+# ENVIRONMENT VARIABLE REFERENCE
+# =============================================================================
+# You can override any key binding using environment variables:
+# Format: KEYS__KEY_NAME (double underscore)
+#
+# Examples:
+# export KEYS__KEY_QUIT="q"
+# export KEYS__KEY_HELP="?"
+# export KEYS__KEY_THEME="t"
+#
+# For detailed configuration documentation, see: docs/CONFIGURATION.md

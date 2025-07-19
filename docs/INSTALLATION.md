@@ -46,6 +46,18 @@ This guide covers the complete installation and setup process for Quetty, from s
    cargo run --release
    ```
 
+5. **Add to PATH (Recommended)**:
+   ```bash
+   # Copy binary to local bin directory
+   cp ../target/release/quetty ~/.local/bin/
+
+   # Or add to current session PATH
+   export PATH="$PWD/../target/release:$PATH"
+
+   # Make permanent (add to ~/.bashrc, ~/.zshrc, etc.)
+   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+   ```
+
 ### Option 2: Binary Releases (Coming Soon)
 
 Pre-built binaries will be available for:
@@ -59,117 +71,163 @@ Pre-built binaries will be available for:
 
 ### 1. Configuration Initialization
 
-On first launch, Quetty will create a configuration file at `config.toml`. You can also copy the example configuration:
+Quetty uses a **profile-based configuration system** that allows you to manage multiple environments (development, staging, production) with separate, isolated settings.
 
+#### Option A: Interactive Setup Wizard (Recommended)
 ```bash
-cp config.example.toml config.toml
+# Setup default profile
+quetty --setup
+
+# Setup specific profiles for different environments
+quetty --profile dev --setup       # Development environment
+quetty --profile staging --setup   # Staging environment
+quetty --profile prod --setup      # Production environment
 ```
+This will guide you through creating your configuration with helpful prompts.
+
+#### Option B: Quick Setup
+```bash
+quetty --config-dir  # Show where config will be stored
+quetty              # Will auto-create default profile on first run
+```
+
+#### Option C: Manual Profile Setup
+Create profiles manually for different environments:
+```bash
+# Create profile directories
+mkdir -p ~/.config/quetty/profiles/dev
+mkdir -p ~/.config/quetty/profiles/staging
+mkdir -p ~/.config/quetty/profiles/prod
+
+# Create environment-specific .env files with credentials
+echo "# Development environment" > ~/.config/quetty/profiles/dev/.env
+echo "# Staging environment" > ~/.config/quetty/profiles/staging/.env
+echo "# Production environment" > ~/.config/quetty/profiles/prod/.env
+```
+
+> 📁 **Configuration Location**: Quetty stores profiles in `~/.config/quetty/profiles/`. See [CONFIGURATION.md](CONFIGURATION.md) for complete directory structure and configuration options.
 
 ### 2. Authentication Setup
 
-Choose one of the following authentication methods:
+The setup wizard will guide you through authentication configuration. You can choose from:
+- **Connection String** (simplest - get from Azure Portal)
+- **Azure AD Device Code** (interactive - good for development)
+- **Client Credentials** (automated - good for production)
 
-#### Option A: Azure AD Device Code (Recommended)
-```toml
-[azure_ad]
-auth_method = "device_code"
-tenant_id = "your-tenant-id"
-client_id = "your-client-id"
-```
+> 🔐 **Authentication Details**: See [CONFIGURATION.md](CONFIGURATION.md) for complete authentication configuration and examples.
 
-#### Option B: Connection String
-```toml
-[servicebus]
-connection_string = "Endpoint=sb://namespace.servicebus.windows.net/;SharedAccessKeyName=..."
-```
-
-#### Option C: Client Credentials (Service Principal)
-```toml
-[azure_ad]
-auth_method = "client_secret"
-tenant_id = "your-tenant-id"
-client_id = "your-client-id"
-client_secret = "your-client-secret"
-```
-
-For detailed authentication setup, see [AUTHENTICATION.md](AUTHENTICATION.md).
-
-### 3. Environment Variables (Optional)
-
-You can set configuration via environment variables instead of the config file:
+### 3. Using Profiles
 
 ```bash
-# Azure AD Configuration
-export AZURE_AD__TENANT_ID="your-tenant-id"
-export AZURE_AD__CLIENT_ID="your-client-id"
-export AZURE_AD__CLIENT_SECRET="your-client-secret"  # For client credentials only
+# Use default profile
+quetty
 
-# Service Bus Configuration
-export SERVICEBUS__CONNECTION_STRING="your-connection-string"
+# Use specific profiles
+quetty --profile dev
+quetty --profile staging
+quetty --profile prod
 
-# Application Configuration
-export QUETTY_PAGE_SIZE=100
-export QUETTY_THEME_NAME="nightfox"
-export QUETTY_THEME_FLAVOR="duskfox"
+# Create new profile
+quetty --profile myproject --setup
 ```
+
+> 📖 **Command Reference**: See [CLI_REFERENCE.md](CLI_REFERENCE.md) for all available commands and options.
 
 ## Verification
 
 ### 1. Test Installation
 ```bash
+# If added to PATH
+quetty --version
+
+# From source directory
 cd ui
 cargo run --release -- --version
 ```
 
-### 2. Test Configuration
-Launch Quetty and verify:
-- Authentication works correctly
+### 2. Test Profile System
+```bash
+# Check configuration directory
+quetty --config-dir
+
+# Create and test a profile
+quetty --profile test --setup
+quetty --profile test --version  # Should work if setup completed
+```
+
+### 3. Test Configuration
+Launch Quetty with different profiles and verify:
+- Authentication works correctly for each environment
 - You can select your namespace
 - You can view queues in your namespace
+- Profile isolation works (different credentials per environment)
 
-### 3. Test Basic Operations
+### 4. Test Basic Operations
 - Navigate through queues
 - View messages (if any exist)
 - Open help with `h` key
+- Switch between profiles during development
 
-## Directory Structure
 
-After installation, your Quetty directory will look like:
+## Shell Integration
 
+### Adding Quetty to PATH
+
+#### Method 1: Copy to User Bin Directory
+```bash
+# Create local bin directory if it doesn't exist
+mkdir -p ~/.local/bin
+
+# Copy quetty binary
+cp target/release/quetty ~/.local/bin/
+
+# Add to PATH (if not already there)
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # For Bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc   # For Zsh
 ```
-quetty/
-├── config.toml          # Main configuration file
-├── config.example.toml  # Configuration template
-├── quetty.log          # Application logs (if file logging enabled)
-├── ui/                     # UI source code
-├── server/                 # Core library
-├── themes/                 # Built-in themes
-│   ├── catppuccin/
-│   ├── nightfox/
-│   └── quetty/
-└── README.md
+
+#### Method 2: Add Build Directory to PATH
+```bash
+# Add project's target directory to PATH
+echo 'export PATH="/path/to/quetty/target/release:$PATH"' >> ~/.bashrc
 ```
+
+#### Method 3: System-Wide Installation (Linux/macOS)
+```bash
+# Copy to system bin directory (requires sudo)
+sudo cp target/release/quetty /usr/local/bin/
+```
+
+### Shell Aliases and Functions
+
+Add useful aliases to your shell configuration:
+
+```bash
+# Basic aliases
+alias q='quetty'
+alias qdev='quetty --profile dev'
+alias qstaging='quetty --profile staging'
+alias qprod='quetty --profile prod'
+
+# Setup aliases
+alias qsetup='quetty --setup'
+alias qsetup-dev='quetty --profile dev --setup'
+alias qsetup-prod='quetty --profile prod --setup'
+
+# Utility aliases
+alias qconfig='quetty --config-dir'
+alias qhelp='quetty --help'
+```
+
 
 ## Performance Optimization
 
-### Build Optimizations
 For best performance, always use release builds:
 ```bash
 cargo build --release
 ```
 
-### Configuration Tuning
-Edit `config.toml` for optimal performance:
-```toml
-# Adjust page size based on your queue volume
-page_size = 100
-
-# Reduce polling frequency for large queues
-poll_timeout_ms = 100
-
-# Optimize for your network conditions
-dlq_receive_timeout_secs = 30
-```
+> ⚡ **Performance Tuning**: See [CONFIGURATION.md](CONFIGURATION.md) for performance configuration options.
 
 ## Troubleshooting Installation
 
@@ -220,43 +278,14 @@ If you encounter issues:
 
 3. **Check configuration**: Use the built-in configuration screen (`Ctrl+C` in the app)
 
-4. **Consult documentation**: See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions
-
-5. **Report issues**: Create an issue on GitHub with:
-   - Operating system and version
-   - Rust version (`rustc --version`)
-   - Error messages and logs
-   - Configuration (with sensitive data removed)
+4. **Get Help**: See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions or create a GitHub issue
 
 ## Next Steps
 
-Once installation is complete:
+1. **Learn the interface**: See [USER_GUIDE.md](USER_GUIDE.md) for usage instructions
+2. **Configure settings**: See [CONFIGURATION.md](CONFIGURATION.md) for all options
+3. **Get help**: See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues
 
-1. **Configure authentication**: Follow [AUTHENTICATION.md](AUTHENTICATION.md) for detailed auth setup
-2. **Learn the interface**: Read [USER_GUIDE.md](USER_GUIDE.md) for complete usage instructions
-3. **Customize appearance**: See [THEMING.md](THEMING.md) to customize themes and colors
-4. **Optimize configuration**: Reference [CONFIGURATION.md](CONFIGURATION.md) for all available options
+## Development Setup
 
-## Development Installation
-
-For contributors and developers, additional setup steps are required:
-
-1. **Install development tools**:
-   ```bash
-   # Install pre-commit hooks
-   pip install pre-commit
-   pre-commit install
-   ```
-
-2. **Run tests**:
-   ```bash
-   cargo test
-   ```
-
-3. **Check code quality**:
-   ```bash
-   cargo fmt
-   cargo clippy
-   ```
-
-For complete development setup, see [CONTRIBUTING.md](CONTRIBUTING.md).
+For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md) for development setup instructions.
