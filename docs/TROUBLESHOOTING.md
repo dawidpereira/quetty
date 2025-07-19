@@ -245,6 +245,136 @@ Error: The messaging entity 'queue-name' could not be found.
 3. **Custom Theme**: Create or modify theme for better contrast
 4. **Lighting**: Consider room lighting conditions
 
+## Profile Management Issues
+
+### Profile Not Found
+
+#### Issue: Profile doesn't exist
+```
+Error: Profile 'myprofile' does not exist.
+Available profiles: default, dev, staging
+```
+
+**Solutions:**
+1. **Check Available Profiles**: List existing profiles
+   ```bash
+   ls ~/.config/quetty/profiles/
+   ```
+2. **Create Profile**: Use interactive setup to create the profile
+   ```bash
+   quetty --profile myprofile --setup
+   ```
+3. **Check Profile Name**: Verify the profile name spelling
+4. **Verify Configuration Directory**:
+   ```bash
+   quetty --config-dir
+   ```
+
+### Invalid Profile Names
+
+#### Issue: Security validation error
+```
+Error: Invalid profile name '../etc/passwd': Profile name cannot contain path separators or traversal sequences
+```
+
+**Solutions:**
+1. **Use Valid Characters**: Only use letters, numbers, hyphens, and underscores
+2. **No Path Separators**: Avoid `/`, `\`, `..`, `.`
+3. **Examples of Valid Names**: `dev`, `staging`, `prod`, `test-env`, `my_profile`
+4. **Examples of Invalid Names**: `../config`, `/absolute/path`, `test/../prod`
+
+### Profile Permission Issues
+
+#### Issue: Cannot read profile configuration
+```
+Error: Permission denied reading profile configuration
+```
+
+**Solutions:**
+1. **Fix Directory Permissions**:
+   ```bash
+   chmod 700 ~/.config/quetty/profiles/*/
+   ```
+2. **Fix .env File Permissions**:
+   ```bash
+   chmod 600 ~/.config/quetty/profiles/*/.env
+   ```
+3. **Check Ownership**:
+   ```bash
+   ls -la ~/.config/quetty/profiles/
+   ```
+4. **Recreate Profile**: If permissions are severely broken, recreate the profile
+
+### Profile Authentication Issues
+
+#### Issue: Profile authentication fails
+```
+Error: Authentication failed for profile 'prod'
+```
+
+**Solutions:**
+1. **Verify Credentials**: Check the `.env` file in the profile directory
+   ```bash
+   cat ~/.config/quetty/profiles/prod/.env
+   ```
+2. **Update Expired Credentials**: Client secrets and tokens can expire
+3. **Check Authentication Method**: Verify the auth method is correctly set
+4. **Test Interactively**: Try device code authentication to test connectivity
+5. **Recreate Profile**: Use `--setup` to reconfigure authentication
+
+### Profile Configuration Conflicts
+
+#### Issue: Configuration not loading from profile
+```
+Profile settings not being applied
+```
+
+**Solutions:**
+1. **Check Configuration Priority**: Profile configs override global configs
+2. **Verify TOML Syntax**:
+   ```bash
+   # Test TOML syntax (if python3 available)
+   python3 -c "import toml; print(toml.load('~/.config/quetty/profiles/dev/config.toml'))"
+   ```
+3. **Debug Configuration Loading**:
+   ```bash
+   RUST_LOG=debug quetty --profile dev
+   ```
+4. **Clear Configuration Cache**: Restart Quetty to reload configuration
+
+### Profile Environment Variables
+
+#### Issue: Environment variables not working in profiles
+```
+Environment variables in .env file not being loaded
+```
+
+**Solutions:**
+1. **Check .env File Format**: Ensure proper format without spaces around `=`
+   ```bash
+   # Correct format
+   AZURE_AD__TENANT_ID=your-tenant-id
+
+   # Incorrect format
+   AZURE_AD__TENANT_ID = your-tenant-id
+   ```
+2. **Verify File Permissions**: Ensure .env file is readable
+3. **No Comments on Same Line**: Put comments on separate lines
+4. **Check for Special Characters**: Quote values with special characters
+
+### Profile Switching Issues
+
+#### Issue: Cannot switch between profiles
+```
+Error switching to profile or authentication fails
+```
+
+**Solutions:**
+1. **Clear Authentication Cache**: Authentication tokens may be cached
+2. **Wait for Timeout**: Previous authentication may need to timeout
+3. **Restart Application**: Fresh start can resolve token conflicts
+4. **Check Profile Isolation**: Ensure each profile has separate credentials
+
 ## Configuration Issues
 
 ### Invalid Configuration
@@ -255,7 +385,7 @@ Warning: Configuration file not found, using defaults.
 ```
 
 **Solutions:**
-1. **Create Config**: Copy `config.example.toml` to `config.toml`
+1. **Create Config**: Copy `config.default.toml` to `config.toml`
 2. **Check Location**: Ensure config file is in correct directory (`config.toml`)
 3. **Permissions**: Verify file is readable
 
@@ -480,12 +610,23 @@ If Quetty is completely broken:
 
 #### Reset Configuration
 ```bash
-# Backup current config
+# For legacy configuration files
 cp config.toml config.toml.backup
-
-# Start with example config (from ui directory)
 cd ui
-cp config.example.toml config.toml
+cp config.default.toml config.toml
+
+# For profile-based configuration
+# Backup entire profile
+cp -r ~/.config/quetty/profiles/myprofile ~/.config/quetty/profiles/myprofile.backup
+
+# Reset specific profile
+rm -rf ~/.config/quetty/profiles/myprofile
+quetty --profile myprofile --setup
+
+# Reset all profiles (nuclear option)
+mv ~/.config/quetty/profiles ~/.config/quetty/profiles.backup
+mkdir ~/.config/quetty/profiles
+quetty --setup  # Recreate default profile
 ```
 
 #### Clear Cache

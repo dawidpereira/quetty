@@ -96,6 +96,12 @@ https://github.com/user-attachments/assets/cd714f56-6b90-4c01-ae30-d915cd959bd4
 - **Azure Discovery**: Automatically discover subscriptions, resource groups, and namespaces
 - **Queue Statistics**: Real-time queue metrics and health monitoring
 
+### 📁 **Profile Management**
+- **Multi-Environment Support**: Separate profiles for dev, staging, production
+- **Profile Switching**: Quick environment switching with `--profile` flag
+- **Secure Isolation**: Each profile has isolated configuration and credentials
+- **Easy Setup**: Interactive setup wizard for each environment
+
 ### 🎨 **User Experience**
 - **Intuitive Interface**: Keyboard-driven navigation with vim-like shortcuts
 - **Customizable Themes**: Built-in themes (Catppuccin, Nightfox, Quetty) with custom theme support
@@ -109,16 +115,44 @@ https://github.com/user-attachments/assets/cd714f56-6b90-4c01-ae30-d915cd959bd4
 - Azure Service Bus namespace with appropriate permissions
 
 ### Installation
+
+#### Option 1: Build from Source
 ```bash
 git clone https://github.com/yourusername/quetty.git
 cd quetty
 cargo build --release
 ```
 
-### First Run
+#### Option 2: Add to Shell PATH (Recommended)
+After building, add quetty to your system PATH:
 ```bash
-cd ui
-cargo run
+# Copy binary to local bin directory
+cp target/release/quetty ~/.local/bin/
+# Or add to system PATH
+export PATH="$PWD/target/release:$PATH"
+```
+
+### First Run
+
+#### Interactive Setup (Recommended)
+```bash
+# Run the setup wizard
+quetty --setup
+
+# For specific environments, use profiles
+quetty --profile dev --setup      # Development environment
+quetty --profile prod --setup     # Production environment
+```
+
+#### Quick Start
+```bash
+# Default profile
+quetty
+
+# Specific profile
+quetty --profile dev
+quetty --profile staging
+quetty --profile prod
 ```
 
 On first launch, Quetty will guide you through the configuration process. For detailed setup instructions, see [INSTALLATION.md](docs/INSTALLATION.md).
@@ -131,6 +165,27 @@ On first launch, Quetty will guide you through the configuration process. For de
 
 > 💡 **Tip**: Press `h` at any time to see available keyboard shortcuts and help.
 
+### Profile Management
+Quetty supports multiple profiles for different environments:
+
+```bash
+# Create profiles for different environments
+quetty --profile dev --setup       # Development environment
+quetty --profile staging --setup   # Staging environment
+quetty --profile prod --setup      # Production environment
+
+# Switch between environments
+quetty --profile dev              # Use development profile
+quetty --profile prod             # Use production profile
+quetty                           # Use default profile
+
+# Show configuration directory
+quetty --config-dir              # Shows ~/.config/quetty
+
+# Use custom config file
+quetty --config ./my-config.toml # Custom configuration
+```
+
 ## Development
 
 For development setup and contribution guidelines, see [CONTRIBUTING.md](docs/CONTRIBUTING.md).
@@ -142,12 +197,15 @@ For development setup and contribution guidelines, see [CONTRIBUTING.md](docs/CO
 
 ## Documentation
 
-- **[Installation Guide](docs/INSTALLATION.md)** - Detailed setup and configuration
-- **[Authentication Guide](docs/AUTHENTICATION.md)** - Azure AD and connection string setup
-- **[User Guide](docs/USER_GUIDE.md)** - Complete feature walkthrough and usage
-- **[Configuration Reference](docs/CONFIGURATION.md)** - Complete config.toml documentation
-- **[Theming Guide](docs/THEMING.md)** - Create and customize themes
-- **[Traffic Simulator](docs/TRAFFIC_SIMULATOR.md)** - Standalone testing tool for queue load simulation
+### Getting Started
+- **[Installation Guide](docs/INSTALLATION.md)** - Setup, profiles, and first-time configuration
+- **[User Guide](docs/USER_GUIDE.md)** - Interface usage and message management
+
+### Reference
+- **[CLI Reference](docs/CLI_REFERENCE.md)** - Complete command-line options
+- **[Configuration Reference](docs/CONFIGURATION.md)** - All configuration and authentication options
+
+### Additional Resources
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 - **[Contributing](docs/CONTRIBUTING.md)** - Development and contribution guidelines
 
@@ -161,6 +219,9 @@ For development setup and contribution guidelines, see [CONTRIBUTING.md](docs/CO
 - **Advanced Filtering**: Search and filter messages by content, properties, and metadata
 
 ### Recent Additions
+- ✅ **Profile-Based Configuration**: Multi-environment support with isolated settings
+- ✅ **Enhanced Security**: Path traversal protection and input validation
+- ✅ **Performance Optimization**: Intelligent caching and reduced filesystem operations
 - ✅ **Complete Authentication Suite**: Device code, client credentials, connection strings
 - ✅ **Bulk Operations**: Multi-message delete, DLQ, and resend operations
 - ✅ **Theme System**: Customizable themes with built-in theme packs

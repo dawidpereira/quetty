@@ -129,11 +129,14 @@ impl ConfigErrorDisplay {
 pub struct ApplicationLifecycle;
 
 impl ApplicationLifecycle {
-    /// Initialize the application and return the configured model
-    pub async fn initialize() -> Result<Model<CrosstermTerminalAdapter>, Box<dyn StdError>> {
+    pub async fn initialize_with_config_and_profile(
+        custom_config_path: Option<&str>,
+        profile_name: &str,
+    ) -> Result<Model<CrosstermTerminalAdapter>, Box<dyn StdError>> {
         info!("Starting Quetty application");
 
-        let config = Self::load_configuration()?;
+        let config =
+            Self::load_configuration_with_path_and_profile(custom_config_path, profile_name)?;
         let theme_init_result = Self::initialize_theme(&config.theme())?;
         Self::validate_configuration(config).await?;
 
@@ -145,9 +148,22 @@ impl ApplicationLifecycle {
         Ok(model)
     }
 
-    /// Load and validate the application configuration
-    fn load_configuration() -> Result<&'static AppConfig, Box<dyn StdError>> {
-        match config::get_config() {
+    fn load_configuration_with_path_and_profile(
+        custom_config_path: Option<&str>,
+        profile_name: &str,
+    ) -> Result<&'static AppConfig, Box<dyn StdError>> {
+        let config_result = match custom_config_path {
+            Some(path) => {
+                info!("Loading configuration from custom path: {path}");
+                config::init_config_from_path(path)
+            }
+            None => {
+                info!("Loading configuration for profile: {profile_name}");
+                config::get_config_for_profile(profile_name)
+            }
+        };
+
+        match config_result {
             config::ConfigLoadResult::Success(config) => Ok(config.as_ref()),
             config::ConfigLoadResult::LoadError(error) => {
                 Self::report_critical_error(

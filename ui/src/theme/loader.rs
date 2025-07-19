@@ -1,8 +1,7 @@
+use crate::config::defaults::default_themes;
 use crate::error::{AppError, AppResult};
 use crate::theme::types::{Theme, ThemeConfig};
-use crate::theme::validation::{
-    FlavorNameValidator, ThemeNameValidator, ThemePathValidator, ThemeValidator,
-};
+use crate::theme::validation::{FlavorNameValidator, ThemeNameValidator, ThemeValidator};
 use crate::validation::Validator;
 use std::{fs, path::PathBuf};
 
@@ -11,7 +10,6 @@ pub struct ThemeLoader {
     themes_dir: PathBuf,
     theme_name_validator: ThemeNameValidator,
     flavor_name_validator: FlavorNameValidator,
-    path_validator: ThemePathValidator,
     theme_validator: ThemeValidator,
 }
 
@@ -24,7 +22,6 @@ impl ThemeLoader {
             themes_dir,
             theme_name_validator: ThemeNameValidator,
             flavor_name_validator: FlavorNameValidator,
-            path_validator: ThemePathValidator,
             theme_validator: ThemeValidator,
         }
     }
@@ -53,17 +50,46 @@ impl ThemeLoader {
             .join(theme_name)
             .join(format!("{flavor_name}.toml"));
 
-        // Validate path
-        self.path_validator.validate(&theme_path)?;
+        // Try to load from filesystem first, then fallback to embedded themes
+        // Note: We skip path validation here to allow fallback to embedded themes
+        let theme_content = match fs::read_to_string(&theme_path) {
+            Ok(content) => {
+                log::debug!("Loaded theme from filesystem: {}", theme_path.display());
+                content
+            }
+            Err(fs_error) => {
+                log::debug!(
+                    "Failed to load theme from filesystem: {fs_error}, trying embedded themes"
+                );
 
-        // Load and parse the theme file
-        let theme_content = fs::read_to_string(&theme_path).map_err(|e| {
-            AppError::Config(format!(
-                "Failed to read theme file '{}': {}",
-                theme_path.display(),
-                e
-            ))
-        })?;
+                // Try to load from embedded themes
+                let embedded_theme_key = format!("{theme_name}/{flavor_name}.toml");
+                let embedded_themes = default_themes();
+
+                match embedded_themes.get(embedded_theme_key.as_str()) {
+                    Some(embedded_content) => {
+                        log::info!("Using embedded theme: {embedded_theme_key}");
+                        embedded_content.to_string()
+                    }
+                    None => {
+                        return Err(AppError::Config(format!(
+                            "Theme not found in filesystem or embedded themes.\n\
+                            Filesystem error: Failed to read theme file '{}': {}\n\
+                            Embedded themes: Theme '{}' not found in embedded collection.\n\
+                            Available embedded themes: {}",
+                            theme_path.display(),
+                            fs_error,
+                            embedded_theme_key,
+                            embedded_themes
+                                .keys()
+                                .cloned()
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )));
+                    }
+                }
+            }
+        };
 
         let mut theme: Theme = toml::from_str(&theme_content).map_err(|e| {
             AppError::Config(format!(

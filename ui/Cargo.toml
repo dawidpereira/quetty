@@ -40,6 +40,8 @@ base64 = "0.22"
 rand = "0.8"
 zeroize = { version = "1.7", features = ["derive"] }
 sha2 = "0.10"
+dirs = "5"
+clap = { version = "4.0", features = ["derive"] }
 
 [dev-dependencies]
 claims = "0.8"

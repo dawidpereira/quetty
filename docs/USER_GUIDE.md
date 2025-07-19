@@ -8,10 +8,11 @@ This comprehensive guide covers all aspects of using Quetty, from basic navigati
 
 When you start Quetty for the first time:
 
-1. **Authentication**: You'll be prompted to authenticate with Azure
-2. **Resource Selection**: Choose your subscription, resource group, and namespace
-3. **Queue Selection**: Select the queue you want to manage
-4. **Main Interface**: You'll see the message list interface
+1. **Profile Setup**: Choose or create a profile for your environment
+2. **Authentication**: Configure authentication (device code, client credentials, or connection string)
+3. **Resource Selection**: Choose your subscription, resource group, and namespace
+4. **Queue Selection**: Select the queue you want to manage
+5. **Main Interface**: You'll see the message list interface
 
 ### Interface Overview
 
@@ -40,6 +41,19 @@ When you start Quetty for the first time:
 2. **Message List**: Tabular view of messages with key properties
 3. **Preview Pane**: Shows content of the selected message
 4. **Help Bar**: Quick reference for keyboard shortcuts
+
+## Profile Quick Reference
+
+Quetty uses profiles to manage multiple environments (dev, staging, prod) with separate credentials.
+
+```bash
+# Switch between profiles
+quetty --profile dev        # Development
+quetty --profile staging    # Staging
+quetty --profile prod       # Production
+```
+
+> 🛠️ **Profile Setup**: See [INSTALLATION.md](INSTALLATION.md) for creating profiles and [CONFIGURATION.md](CONFIGURATION.md) for configuration options.
 
 ## Navigation
 
