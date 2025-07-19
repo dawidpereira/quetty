@@ -77,14 +77,7 @@ pub fn setup_logger() -> Result<(), Box<dyn std::error::Error>> {
         return setup_fallback_logger(log_level);
     }
 
-    // Print initialization message (will show before TUI starts)
-    if log_file.is_some() {
-        println!("Logging to file: {file_path} (with rotation)");
-    } else {
-        println!(
-            "No log file configured. Logging to default file: {default_log_path} (with rotation)"
-        );
-    }
+    // Log initialization message instead of printing to stdout to avoid TUI interference
 
     log::info!(
         "Logger initialized with level: {}, max_size: {}MB, max_backups: {}",
