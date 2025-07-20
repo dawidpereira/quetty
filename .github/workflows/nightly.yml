@@ -24,7 +24,7 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: quetty-nightly-linux-x64
-          - os: ubuntu-latest
+          - os: ubuntu-22.04-arm64
             target: aarch64-unknown-linux-gnu
             artifact_name: quetty-nightly-linux-arm64
           - os: windows-latest
