@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -15,11 +15,14 @@ if [ -z "$VERSION" ]; then
   echo "  ./scripts/release.sh 1.2.0"
   echo "  ./scripts/release.sh 1.2.0-beta.1"
   echo "  ./scripts/release.sh 1.2.0-rc.1"
+  echo ""
+  echo -e "${BLUE}💡 Tip:${NC} Install cargo-edit for better cross-platform support:"
+  echo "  cargo install cargo-edit"
   exit 1
 fi
 
-# Validate version format (semantic versioning)
-if ! [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-.*)?$ ]]; then
+# Validate version format (stricter semantic versioning)
+if ! [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
   echo -e "${RED}❌ Invalid version format${NC}"
   echo -e "${BLUE}Use semantic versioning:${NC} 1.2.0 or 1.2.0-beta.1"
   exit 1
@@ -54,11 +57,19 @@ fi
 
 # Update Cargo.toml files
 echo -e "${BLUE}📝 Updating Cargo.toml files...${NC}"
-sed -i.bak "3s/^version = \".*\"/version = \"$VERSION\"/" ui/Cargo.toml
-sed -i.bak "3s/^version = \".*\"/version = \"$VERSION\"/" server/Cargo.toml
 
-# Remove backup files
-rm -f ui/Cargo.toml.bak server/Cargo.toml.bak
+# Check if cargo-edit is available for portable version management
+if command -v cargo-set-version >/dev/null 2>&1; then
+  echo -e "${BLUE}Using cargo set-version for cross-platform compatibility${NC}"
+  cargo set-version --workspace "$VERSION"
+else
+  echo -e "${YELLOW}cargo-edit not found, using sed (less portable)${NC}"
+  # Fallback to awk for better cross-platform compatibility
+  tmp=$(mktemp)
+  awk -v version="$VERSION" 'NR==3{sub(/^version = ".*"/, "version = \"" version "\"")} 1' ui/Cargo.toml > "$tmp" && mv "$tmp" ui/Cargo.toml
+  tmp=$(mktemp)
+  awk -v version="$VERSION" 'NR==3{sub(/^version = ".*"/, "version = \"" version "\"")} 1' server/Cargo.toml > "$tmp" && mv "$tmp" server/Cargo.toml
+fi
 
 # Verify changes
 echo -e "${BLUE}🔍 Verifying version updates...${NC}"
