@@ -82,8 +82,18 @@ jobs:
         shell: bash
         run: |
           # Update version in both workspace packages using tag version
-          sed -i '3s/^version = ".*"/version = "${{ env.VERSION }}"/' ui/Cargo.toml
-          sed -i '3s/^version = ".*"/version = "${{ env.VERSION }}"/' server/Cargo.toml
+          # Use portable approach that works across different platforms
+
+          # Check if cargo-edit is available for best compatibility
+          if command -v cargo-set-version >/dev/null 2>&1; then
+            echo "Using cargo set-version for cross-platform compatibility"
+            cargo set-version --workspace "${{ env.VERSION }}"
+          else
+            echo "Using awk for cross-platform sed replacement"
+            # Use awk for better cross-platform compatibility than sed -i
+            awk -v version="${{ env.VERSION }}" 'NR==3{sub(/^version = ".*"/, "version = \"" version "\"")} 1' ui/Cargo.toml > ui/Cargo.toml.tmp && mv ui/Cargo.toml.tmp ui/Cargo.toml
+            awk -v version="${{ env.VERSION }}" 'NR==3{sub(/^version = ".*"/, "version = \"" version "\"")} 1' server/Cargo.toml > server/Cargo.toml.tmp && mv server/Cargo.toml.tmp server/Cargo.toml
+          fi
 
           echo "Updated versions to: ${{ env.VERSION }}"
           echo "UI version: $(grep '^version' ui/Cargo.toml)"
