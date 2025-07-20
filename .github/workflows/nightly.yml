@@ -77,8 +77,17 @@ jobs:
       - name: Update version in Cargo.toml
         shell: bash
         run: |
+          # Get current version from Cargo.toml with fallback
+          CURRENT_VERSION=$(grep '^version = ' ui/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/' | tr -d '\n')
+          if [ -z "$CURRENT_VERSION" ]; then
+            CURRENT_VERSION="0.1.0"
+            echo "Warning: Could not find version in Cargo.toml, using fallback: $CURRENT_VERSION"
+          else
+            echo "Current version: $CURRENT_VERSION"
+          fi
+
           # Update version in ui/Cargo.toml to include nightly identifier
-          sed -i.bak 's/version = "0.1.0"/version = "0.1.0-nightly.${{ steps.version.outputs.version }}"/' ui/Cargo.toml
+          sed -i.bak "s/version = \"$CURRENT_VERSION\"/version = \"$CURRENT_VERSION-nightly.${{ steps.version.outputs.version }}\"/" ui/Cargo.toml
           echo "Updated version in ui/Cargo.toml:"
           grep "version =" ui/Cargo.toml
 
@@ -94,10 +103,16 @@ jobs:
           cp target/${{ matrix.target }}/release/quetty dist/${{ matrix.artifact_name }}
           chmod +x dist/${{ matrix.artifact_name }}
 
+          # Get current version from Cargo.toml with fallback
+          CURRENT_VERSION=$(grep '^version = ' ui/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/' | tr -d '\n')
+          if [ -z "$CURRENT_VERSION" ]; then
+            CURRENT_VERSION="0.1.0-nightly.${{ steps.version.outputs.version }}"
+          fi
+
           # Create a build info file
           cat > dist/build-info.txt << EOF
           Quetty Nightly Build
-          Version: 0.1.0-nightly.${{ steps.version.outputs.version }}
+          Version: $CURRENT_VERSION
           Date: ${{ steps.version.outputs.date }}
           Commit: ${{ steps.version.outputs.sha }}
           Target: ${{ matrix.target }}
@@ -110,9 +125,14 @@ jobs:
           mkdir dist
           copy "target\${{ matrix.target }}\release\quetty.exe" "dist\${{ matrix.artifact_name }}"
 
+          # Get current version from Cargo.toml with fallback
+          for /f "tokens=3 delims= " %%i in ('findstr /r "^version" ui\Cargo.toml') do set CURRENT_VERSION=%%i
+          set CURRENT_VERSION=%CURRENT_VERSION:"=%
+          if "%CURRENT_VERSION%"=="" set CURRENT_VERSION=0.1.0-nightly.${{ steps.version.outputs.version }}
+
           # Create a build info file
           echo "Quetty Nightly Build" > dist\build-info.txt
-          echo "Version: 0.1.0-nightly.${{ steps.version.outputs.version }}" >> dist\build-info.txt
+          echo "Version: %CURRENT_VERSION%" >> dist\build-info.txt
           echo "Date: ${{ steps.version.outputs.date }}" >> dist\build-info.txt
           echo "Commit: ${{ steps.version.outputs.sha }}" >> dist\build-info.txt
           echo "Target: ${{ matrix.target }}" >> dist\build-info.txt
