@@ -3,11 +3,11 @@ use crate::error::{AppError, AppResult};
 use crate::theme::types::{Theme, ThemeConfig};
 use crate::theme::validation::{FlavorNameValidator, ThemeNameValidator, ThemeValidator};
 use crate::validation::Validator;
-use std::{fs, path::PathBuf};
+use std::{collections::HashMap, fs, path::PathBuf};
 
-/// Theme loader responsible for loading themes from the filesystem
+/// Theme loader responsible for loading themes from embedded assets and filesystem
 pub struct ThemeLoader {
-    themes_dir: PathBuf,
+    profile_name: String,
     theme_name_validator: ThemeNameValidator,
     flavor_name_validator: FlavorNameValidator,
     theme_validator: ThemeValidator,
@@ -15,29 +15,53 @@ pub struct ThemeLoader {
 
 impl ThemeLoader {
     pub fn new() -> Self {
-        // Try to find themes directory in several possible locations
-        let themes_dir = Self::find_themes_directory();
+        Self::new_for_profile("default")
+    }
 
+    pub fn new_for_profile(profile_name: &str) -> Self {
         Self {
-            themes_dir,
+            profile_name: profile_name.to_string(),
             theme_name_validator: ThemeNameValidator,
             flavor_name_validator: FlavorNameValidator,
             theme_validator: ThemeValidator,
         }
     }
 
-    fn find_themes_directory() -> PathBuf {
-        // Themes directory is always in the project root
-        let themes_path = PathBuf::from("../themes");
+    /// Get profile-specific themes directory if it exists
+    fn get_profile_themes_dir(&self) -> Option<PathBuf> {
+        use crate::config::setup::get_config_dir;
 
-        if themes_path.exists() && themes_path.is_dir() {
-            log::info!("Found themes directory at: {}", themes_path.display());
-            return themes_path;
+        if let Ok(config_dir) = get_config_dir() {
+            let profile_themes_dir = config_dir
+                .join("profiles")
+                .join(&self.profile_name)
+                .join("themes");
+
+            if profile_themes_dir.exists() && profile_themes_dir.is_dir() {
+                log::info!(
+                    "Found profile themes directory: {}",
+                    profile_themes_dir.display()
+                );
+                return Some(profile_themes_dir);
+            }
         }
+        None
+    }
 
-        // Default fallback - this will likely fail but at least give a clear error
-        log::warn!("Could not find themes directory at '../themes', using fallback");
-        PathBuf::from("themes")
+    /// Get global themes directory if it exists
+    fn get_global_themes_dir(&self) -> Option<PathBuf> {
+        use crate::config::setup::get_themes_dir;
+
+        if let Ok(global_themes_dir) = get_themes_dir() {
+            if global_themes_dir.exists() && global_themes_dir.is_dir() {
+                log::info!(
+                    "Found global themes directory: {}",
+                    global_themes_dir.display()
+                );
+                return Some(global_themes_dir);
+            }
+        }
+        None
     }
 
     pub fn load_theme(&self, theme_name: &str, flavor_name: &str) -> AppResult<Theme> {
@@ -45,58 +69,44 @@ impl ThemeLoader {
         self.theme_name_validator.validate(theme_name)?;
         self.flavor_name_validator.validate(flavor_name)?;
 
-        let theme_path = self
-            .themes_dir
-            .join(theme_name)
-            .join(format!("{flavor_name}.toml"));
+        // Try embedded themes FIRST (primary path for cargo install)
+        let embedded_theme_key = format!("{theme_name}/{flavor_name}.toml");
+        let embedded_themes = default_themes();
 
-        // Try to load from filesystem first, then fallback to embedded themes
-        // Note: We skip path validation here to allow fallback to embedded themes
-        let theme_content = match fs::read_to_string(&theme_path) {
-            Ok(content) => {
-                log::debug!("Loaded theme from filesystem: {}", theme_path.display());
-                content
-            }
-            Err(fs_error) => {
-                log::debug!(
-                    "Failed to load theme from filesystem: {fs_error}, trying embedded themes"
-                );
+        let theme_content = if let Some(embedded_content) =
+            embedded_themes.get(embedded_theme_key.as_str())
+        {
+            log::debug!("Using embedded theme: {embedded_theme_key}");
+            embedded_content.to_string()
+        } else {
+            // Try profile-specific themes first, then global themes
+            let profile_theme_result = self.try_load_from_profile_themes(theme_name, flavor_name);
 
-                // Try to load from embedded themes
-                let embedded_theme_key = format!("{theme_name}/{flavor_name}.toml");
-                let embedded_themes = default_themes();
-
-                match embedded_themes.get(embedded_theme_key.as_str()) {
-                    Some(embedded_content) => {
-                        log::info!("Using embedded theme: {embedded_theme_key}");
-                        embedded_content.to_string()
-                    }
-                    None => {
-                        return Err(AppError::Config(format!(
-                            "Theme not found in filesystem or embedded themes.\n\
-                            Filesystem error: Failed to read theme file '{}': {}\n\
-                            Embedded themes: Theme '{}' not found in embedded collection.\n\
-                            Available embedded themes: {}",
-                            theme_path.display(),
-                            fs_error,
-                            embedded_theme_key,
-                            embedded_themes
-                                .keys()
-                                .cloned()
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        )));
+            match profile_theme_result {
+                Ok(content) => content,
+                Err(_) => {
+                    // Try global themes as fallback
+                    match self.try_load_from_global_themes(theme_name, flavor_name) {
+                        Ok(content) => content,
+                        Err(_) => {
+                            return Err(AppError::Config(format!(
+                                "Theme '{}' not found in embedded themes, profile themes, or global themes.\n\
+                                Available embedded themes: {}",
+                                embedded_theme_key,
+                                embedded_themes
+                                    .keys()
+                                    .cloned()
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            )));
+                        }
                     }
                 }
             }
         };
 
         let mut theme: Theme = toml::from_str(&theme_content).map_err(|e| {
-            AppError::Config(format!(
-                "Failed to parse theme file '{}': {}",
-                theme_path.display(),
-                e
-            ))
+            AppError::Config(format!("Failed to parse theme '{embedded_theme_key}': {e}"))
         })?;
 
         // Set metadata if not present
@@ -118,15 +128,123 @@ impl ThemeLoader {
     }
 
     pub fn discover_themes(&self) -> AppResult<Vec<(String, Vec<String>)>> {
-        if !self.themes_dir.exists() {
-            return Ok(vec![]);
+        let mut themes = Vec::new();
+
+        // Discover embedded themes first
+        let embedded_themes = default_themes();
+        let mut embedded_theme_map: HashMap<String, Vec<String>> = HashMap::new();
+
+        for theme_key in embedded_themes.keys() {
+            if let Some((theme_name, flavor_file)) = theme_key.split_once('/') {
+                if let Some(flavor_name) = flavor_file.strip_suffix(".toml") {
+                    embedded_theme_map
+                        .entry(theme_name.to_string())
+                        .or_default()
+                        .push(flavor_name.to_string());
+                }
+            }
         }
 
-        let mut themes = Vec::new();
-        let entries = fs::read_dir(&self.themes_dir).map_err(|e| {
+        // Add embedded themes to the result
+        for (theme_name, mut flavors) in embedded_theme_map {
+            flavors.sort();
+            themes.push((theme_name, flavors));
+        }
+
+        // Discover profile themes if directory exists
+        if let Some(profile_themes_dir) = self.get_profile_themes_dir() {
+            self.discover_themes_from_directory(&profile_themes_dir, &mut themes, "profile")?;
+        }
+
+        // Discover global themes if directory exists
+        if let Some(global_themes_dir) = self.get_global_themes_dir() {
+            self.discover_themes_from_directory(&global_themes_dir, &mut themes, "global")?;
+        }
+
+        themes.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(themes)
+    }
+
+    /// Try to load theme from profile-specific themes directory
+    fn try_load_from_profile_themes(
+        &self,
+        theme_name: &str,
+        flavor_name: &str,
+    ) -> AppResult<String> {
+        if let Some(profile_themes_dir) = self.get_profile_themes_dir() {
+            let theme_path = profile_themes_dir
+                .join(theme_name)
+                .join(format!("{flavor_name}.toml"));
+
+            match fs::read_to_string(&theme_path) {
+                Ok(content) => {
+                    log::info!(
+                        "Loaded theme from profile directory: {}",
+                        theme_path.display()
+                    );
+                    return Ok(content);
+                }
+                Err(e) => {
+                    log::debug!(
+                        "Failed to load theme from profile directory {}: {}",
+                        theme_path.display(),
+                        e
+                    );
+                }
+            }
+        }
+
+        Err(AppError::Config(
+            "Theme not found in profile directory".to_string(),
+        ))
+    }
+
+    /// Try to load theme from global themes directory
+    fn try_load_from_global_themes(
+        &self,
+        theme_name: &str,
+        flavor_name: &str,
+    ) -> AppResult<String> {
+        if let Some(global_themes_dir) = self.get_global_themes_dir() {
+            let theme_path = global_themes_dir
+                .join(theme_name)
+                .join(format!("{flavor_name}.toml"));
+
+            match fs::read_to_string(&theme_path) {
+                Ok(content) => {
+                    log::info!(
+                        "Loaded theme from global directory: {}",
+                        theme_path.display()
+                    );
+                    return Ok(content);
+                }
+                Err(e) => {
+                    log::debug!(
+                        "Failed to load theme from global directory {}: {}",
+                        theme_path.display(),
+                        e
+                    );
+                }
+            }
+        }
+
+        Err(AppError::Config(
+            "Theme not found in global directory".to_string(),
+        ))
+    }
+
+    /// Discover themes from a specific directory and merge them into the themes list
+    fn discover_themes_from_directory(
+        &self,
+        themes_dir: &PathBuf,
+        themes: &mut Vec<(String, Vec<String>)>,
+        dir_type: &str,
+    ) -> AppResult<()> {
+        let entries = fs::read_dir(themes_dir).map_err(|e| {
             AppError::Config(format!(
-                "Failed to read themes directory '{}': {}",
-                self.themes_dir.display(),
+                "Failed to read {} themes directory '{}': {}",
+                dir_type,
+                themes_dir.display(),
                 e
             ))
         })?;
@@ -142,14 +260,30 @@ impl ThemeLoader {
                     if self.theme_name_validator.validate(theme_name).is_ok() {
                         let flavors = self.discover_flavors(&path)?;
                         if !flavors.is_empty() {
-                            themes.push((theme_name.to_string(), flavors));
+                            // Check if we already have this theme from embedded or other sources
+                            if let Some(existing_theme) =
+                                themes.iter_mut().find(|(name, _)| name == theme_name)
+                            {
+                                // Merge filesystem flavors with existing ones
+                                for flavor in flavors {
+                                    if !existing_theme.1.contains(&flavor) {
+                                        existing_theme.1.push(flavor);
+                                    }
+                                }
+                                existing_theme.1.sort();
+                                log::debug!("Merged {dir_type} flavors for theme '{theme_name}'");
+                            } else {
+                                // Add new filesystem theme
+                                themes.push((theme_name.to_string(), flavors));
+                                log::debug!("Added new {dir_type} theme '{theme_name}'");
+                            }
                         }
                     }
                 }
             }
         }
 
-        Ok(themes)
+        Ok(())
     }
 
     fn discover_flavors(&self, theme_dir: &PathBuf) -> AppResult<Vec<String>> {
