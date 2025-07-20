@@ -24,7 +24,7 @@ A powerful terminal-based Azure Service Bus queue manager that provides an intui
 - [Overview](#overview)
 - [Interface Preview](#interface-preview)
 - [Key Features](#key-features)
-- [Quick Start](#quick-start)
+- [Installation](#installation)
 - [Development](#development)
 - [Documentation](#documentation)
 - [Roadmap](#roadmap)
@@ -128,12 +128,33 @@ For the latest development features and fastest access:
 - **macOS x64**: `quetty-nightly-macos-x64-{version}.tar.gz`
 - **macOS ARM64**: `quetty-nightly-macos-arm64-{version}.tar.gz`
 
+**Linux/macOS:**
 ```bash
-# Example for Linux/macOS
+# Download and extract
 wget https://github.com/dawidpereira/quetty/releases/download/nightly-latest/quetty-nightly-linux-x64-{version}.tar.gz
 tar -xzf quetty-nightly-linux-x64-{version}.tar.gz
 chmod +x quetty-nightly-linux-x64
 ./quetty-nightly-linux-x64
+```
+
+**macOS Security (first run only):**
+```bash
+# Remove quarantine attribute to bypass Gatekeeper
+xattr -d com.apple.quarantine quetty-nightly-macos-arm64
+```
+*Or right-click → "Open" → "Open" when prompted*
+
+**Windows:**
+```cmd
+# Extract ZIP file, then run
+quetty-nightly-windows-x64.exe
+```
+
+**Add to PATH (optional):**
+```bash
+# Linux/macOS
+mv quetty-nightly-* ~/.local/bin/quetty
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 ```
 
 ⚠️ **Warning**: Nightly builds may be unstable and are not recommended for production use.
