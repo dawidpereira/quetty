@@ -139,8 +139,13 @@ jobs:
           cd dist
           tar -czf "${{ matrix.artifact_name }}-${{ env.VERSION }}.tar.gz" "${{ matrix.artifact_name }}" build-info.txt
 
-          # Generate checksum
-          sha256sum "${{ matrix.artifact_name }}-${{ env.VERSION }}.tar.gz" > "${{ matrix.artifact_name }}-${{ env.VERSION }}.tar.gz.sha256"
+          # Generate checksum (cross-platform)
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${{ matrix.artifact_name }}-${{ env.VERSION }}.tar.gz" > "${{ matrix.artifact_name }}-${{ env.VERSION }}.tar.gz.sha256"
+          else
+            # macOS fallback
+            shasum -a 256 "${{ matrix.artifact_name }}-${{ env.VERSION }}.tar.gz" > "${{ matrix.artifact_name }}-${{ env.VERSION }}.tar.gz.sha256"
+          fi
 
       - name: Create archive (Windows)
         if: matrix.os == 'windows-latest'
@@ -219,7 +224,12 @@ jobs:
 
           for file in *.tar.gz *.zip; do
             if [ -f "$file" ]; then
-              sha256sum "$file" >> checksums.txt
+              if command -v sha256sum >/dev/null 2>&1; then
+                sha256sum "$file" >> checksums.txt
+              else
+                # macOS fallback
+                shasum -a 256 "$file" >> checksums.txt
+              fi
             fi
           done
 
