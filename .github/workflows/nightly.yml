@@ -11,7 +11,6 @@ env:
 
 permissions:
   contents: write
-  releases: write
   actions: write
 
 jobs:
@@ -212,9 +211,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Create new nightly tag
-          git tag nightly-latest
-          git push origin nightly-latest
+          # Create new nightly tag (force update if exists)
+          git tag -f nightly-latest
+          git push origin nightly-latest --force
 
           # Create GitHub release
           gh release create nightly-latest \
