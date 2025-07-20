@@ -123,8 +123,11 @@ echo -e "${BLUE}📝 Updating UI crate to use published server crate...${NC}"
 # Create backup
 cp ui/Cargo.toml ui/Cargo.toml.bak
 
-# Replace path dependency with published version
-sed -i.tmp 's|quetty_server = { path = "../server", package = "quetty-server", version = ".*" }|quetty_server = { package = "quetty-server", version = "'$VERSION'" }|' ui/Cargo.toml
+# Replace path dependency with published version (robust, no tmp artifacts)
+sed -Ei 's#^quetty_server[[:space:]]*=.*#quetty_server = { package = "quetty-server", version = "'"$VERSION"'" }#' ui/Cargo.toml
+
+# Clean up any possible tmp files from previous runs
+rm -f ui/Cargo.toml.tmp
 
 echo -e "${BLUE}Updated UI Cargo.toml dependency:${NC}"
 grep "quetty_server" ui/Cargo.toml
