@@ -22,9 +22,15 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: quetty-nightly-linux-x64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact_name: quetty-nightly-linux-arm64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: quetty-nightly-windows-x64.exe
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            artifact_name: quetty-nightly-windows-arm64.exe
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact_name: quetty-nightly-macos-x64
@@ -44,8 +50,8 @@ jobs:
           # Get the base version from Cargo.toml
           BASE_VERSION=$(grep '^version' ui/Cargo.toml | sed 's/.*"\(.*\)".*/\1/' | cut -d'-' -f1)
 
-          # Create nightly version with both pre-release and build metadata
-          NIGHTLY_VERSION="${BASE_VERSION}-nightly+$(date +%Y%m%d).$(git rev-parse --short HEAD)"
+          # Create nightly version with build metadata only
+          NIGHTLY_VERSION="${BASE_VERSION}+$(date +%Y%m%d).$(git rev-parse --short HEAD)"
 
           echo "VERSION=$NIGHTLY_VERSION" >> $GITHUB_ENV
           echo "DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
@@ -144,8 +150,8 @@ jobs:
           # Get the base version from Cargo.toml
           BASE_VERSION=$(grep '^version' ui/Cargo.toml | sed 's/.*"\(.*\)".*/\1/' | cut -d'-' -f1)
 
-          # Create nightly version with both pre-release and build metadata
-          NIGHTLY_VERSION="${BASE_VERSION}-nightly+$(date +%Y%m%d).$(git rev-parse --short HEAD)"
+          # Create nightly version with build metadata only
+          NIGHTLY_VERSION="${BASE_VERSION}+$(date +%Y%m%d).$(git rev-parse --short HEAD)"
 
           echo "VERSION=$NIGHTLY_VERSION" >> $GITHUB_ENV
           echo "DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
@@ -206,7 +212,9 @@ jobs:
           echo "" >> NIGHTLY_CHANGELOG.md
           echo "Download the appropriate binary for your platform:" >> NIGHTLY_CHANGELOG.md
           echo "- **Linux x64**: \`quetty-nightly-linux-x64-${{ env.VERSION }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
+          echo "- **Linux ARM64**: \`quetty-nightly-linux-arm64-${{ env.VERSION }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
           echo "- **Windows x64**: \`quetty-nightly-windows-x64-${{ env.VERSION }}.zip\`" >> NIGHTLY_CHANGELOG.md
+          echo "- **Windows ARM64**: \`quetty-nightly-windows-arm64-${{ env.VERSION }}.zip\`" >> NIGHTLY_CHANGELOG.md
           echo "- **macOS x64**: \`quetty-nightly-macos-x64-${{ env.VERSION }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
           echo "- **macOS ARM64**: \`quetty-nightly-macos-arm64-${{ env.VERSION }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
           echo "" >> NIGHTLY_CHANGELOG.md

@@ -122,7 +122,9 @@ For the latest development features and fastest access:
 **Download:** https://github.com/dawidpereira/quetty/releases/tag/nightly-latest
 
 - **Linux x64**: `quetty-nightly-linux-x64-{version}.tar.gz`
+- **Linux ARM64**: `quetty-nightly-linux-arm64-{version}.tar.gz`
 - **Windows x64**: `quetty-nightly-windows-x64-{version}.zip`
+- **Windows ARM64**: `quetty-nightly-windows-arm64-{version}.zip`
 - **macOS x64**: `quetty-nightly-macos-x64-{version}.tar.gz`
 - **macOS ARM64**: `quetty-nightly-macos-arm64-{version}.tar.gz`
 
