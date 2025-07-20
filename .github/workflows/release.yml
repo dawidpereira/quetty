@@ -81,7 +81,7 @@ jobs:
       - name: Update version in Cargo.toml files
         shell: bash
         run: |
-          # Update version in both workspace packages using tag version
+          # Update version in workspace using tag version
           # Use portable approach that works across different platforms
 
           # Check if cargo-edit is available for best compatibility
@@ -89,15 +89,13 @@ jobs:
             echo "Using cargo set-version for cross-platform compatibility"
             cargo set-version --workspace "${{ env.VERSION }}"
           else
-            echo "Using awk for cross-platform sed replacement"
+            echo "Using awk for workspace version update"
             # Use awk for better cross-platform compatibility than sed -i
-            awk -v version="${{ env.VERSION }}" 'NR==3{sub(/^version = ".*"/, "version = \"" version "\"")} 1' ui/Cargo.toml > ui/Cargo.toml.tmp && mv ui/Cargo.toml.tmp ui/Cargo.toml
-            awk -v version="${{ env.VERSION }}" 'NR==3{sub(/^version = ".*"/, "version = \"" version "\"")} 1' server/Cargo.toml > server/Cargo.toml.tmp && mv server/Cargo.toml.tmp server/Cargo.toml
+            awk -v version="${{ env.VERSION }}" '/^\[workspace\.package\]/{flag=1; print; next} flag && /^version = /{sub(/version = ".*"/, "version = \"" version "\""); flag=0} 1' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
           fi
 
-          echo "Updated versions to: ${{ env.VERSION }}"
-          echo "UI version: $(grep '^version' ui/Cargo.toml)"
-          echo "Server version: $(grep '^version' server/Cargo.toml)"
+          echo "Updated workspace version to: ${{ env.VERSION }}"
+          echo "Workspace version: $(grep -A 10 '^\[workspace\.package\]' Cargo.toml | grep '^version' | cut -d'\"' -f2)"
 
       - name: Build release binary
         run: |
@@ -163,8 +161,121 @@ jobs:
           path: dist/*.${{ matrix.archive_ext }}*
           retention-days: 90
 
-  create-release:
+  publish-to-crates-io:
     needs: build
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag' && !contains(github.ref_name, 'rc') && !contains(github.ref_name, 'beta') && !contains(github.ref_name, 'alpha')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Publishing release version: $VERSION"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ubuntu-latest-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ubuntu-latest-cargo-
+
+      - name: Update version in Cargo.toml files
+        run: |
+          # Update version in workspace using tag version
+          if command -v cargo-set-version >/dev/null 2>&1; then
+            echo "Using cargo set-version for cross-platform compatibility"
+            cargo set-version --workspace "${{ env.VERSION }}"
+          else
+            echo "Using awk for workspace version update"
+            awk -v version="${{ env.VERSION }}" '/^\[workspace\.package\]/{flag=1; print; next} flag && /^version = /{sub(/version = ".*"/, "version = \"" version "\""); flag=0} 1' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
+          fi
+
+          echo "Updated workspace version to: ${{ env.VERSION }}"
+          echo "Workspace version: $(grep -A 10 '^\[workspace\.package\]' Cargo.toml | grep '^version' | cut -d'\"' -f2)"
+
+      - name: Validate crates before publishing
+        run: |
+          echo "Validating server crate..."
+          cargo check -p quetty-server
+
+          echo "Validating UI crate..."
+          cargo check -p quetty
+
+      - name: Dry run publish server crate
+        run: |
+          echo "Dry-run publishing server crate..."
+          cargo publish --dry-run -p quetty-server
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish server crate to crates.io
+        run: |
+          echo "Publishing server crate to crates.io..."
+          cargo publish -p quetty-server
+          echo "Server crate published successfully!"
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for server crate to be available
+        run: |
+          echo "Waiting for server crate to become available on crates.io..."
+          sleep 30
+
+          # Poll crates.io API to ensure the crate is available
+          for i in {1..10}; do
+            if curl -f "https://crates.io/api/v1/crates/quetty-server/${{ env.VERSION }}" > /dev/null 2>&1; then
+              echo "Server crate is now available on crates.io!"
+              break
+            fi
+            echo "Attempt $i: Server crate not yet available, waiting..."
+            sleep 30
+          done
+
+      - name: Update UI crate dependency to use published version
+        run: |
+          echo "Updating UI crate to use published server crate..."
+          # Replace path dependency with published version
+          sed -i 's|quetty_server = { path = "../server", package = "quetty-server", version = ".*" }|quetty_server = { package = "quetty-server", version = "${{ env.VERSION }}" }|' ui/Cargo.toml
+
+          echo "Updated UI Cargo.toml:"
+          grep "quetty_server" ui/Cargo.toml
+
+      - name: Dry run publish UI crate
+        run: |
+          echo "Dry-run publishing UI crate..."
+          cargo check -p quetty
+          cargo publish --dry-run -p quetty
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish UI crate to crates.io
+        run: |
+          echo "Publishing UI crate to crates.io..."
+          cargo publish -p quetty
+          echo "UI crate published successfully!"
+          echo ""
+          echo "🎉 Both crates published to crates.io!"
+          echo "Install with: cargo install quetty"
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  create-release:
+    needs: [build, publish-to-crates-io]
     runs-on: ubuntu-latest
     if: github.ref_type == 'tag'
 
@@ -263,7 +374,16 @@ jobs:
           echo "" >> RELEASE_CHANGELOG.md
           echo "## Installation" >> RELEASE_CHANGELOG.md
           echo "" >> RELEASE_CHANGELOG.md
-          echo "Download the appropriate binary for your platform:" >> RELEASE_CHANGELOG.md
+          echo "### Using Cargo (Recommended)" >> RELEASE_CHANGELOG.md
+          echo "" >> RELEASE_CHANGELOG.md
+          echo "Install directly from crates.io:" >> RELEASE_CHANGELOG.md
+          echo "\`\`\`bash" >> RELEASE_CHANGELOG.md
+          echo "cargo install quetty" >> RELEASE_CHANGELOG.md
+          echo "\`\`\`" >> RELEASE_CHANGELOG.md
+          echo "" >> RELEASE_CHANGELOG.md
+          echo "### Binary Downloads" >> RELEASE_CHANGELOG.md
+          echo "" >> RELEASE_CHANGELOG.md
+          echo "Alternatively, download the appropriate binary for your platform:" >> RELEASE_CHANGELOG.md
           echo "" >> RELEASE_CHANGELOG.md
           echo "### Linux x64" >> RELEASE_CHANGELOG.md
           echo "\`\`\`bash" >> RELEASE_CHANGELOG.md
