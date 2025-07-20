@@ -102,19 +102,25 @@ else
   git commit -m "chore: bump version to $VERSION"
 fi
 
-# Create and push tag
+# Create tag (but don't push yet)
 echo -e "${BLUE}🏷️  Creating tag v$VERSION...${NC}"
 git tag -a "v$VERSION" -m "Release version $VERSION"
 
-# Push changes and tag
-echo -e "${BLUE}🚀 Pushing to repository...${NC}"
-git push origin main
-git push origin "v$VERSION"
-
 echo ""
-echo -e "${GREEN}✅ Successfully released version $VERSION!${NC}"
+echo -e "${GREEN}✅ Successfully prepared release $VERSION!${NC}"
 echo ""
-echo -e "${BLUE}Next steps:${NC}"
+echo -e "${BLUE}📋 Review your changes:${NC}"
+echo "  git log --oneline -3"
+echo "  git show v$VERSION"
+echo ""
+echo -e "${BLUE}🚀 To publish the release, run:${NC}"
+echo "  git push origin main"
+echo "  git push origin v$VERSION"
+echo ""
+echo -e "${BLUE}⚡ Or push both at once:${NC}"
+echo "  git push origin main v$VERSION"
+echo ""
+echo -e "${BLUE}After pushing:${NC}"
 echo "  • GitHub Actions will build release artifacts"
 echo "  • Check the release at: https://github.com/dawidpereira/quetty/releases"
 echo "  • Monitor the build: https://github.com/dawidpereira/quetty/actions"
