@@ -8,6 +8,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  OPENSSL_STATIC: 1
+  OPENSSL_VENDOR: 1
 
 permissions:
   contents: write
