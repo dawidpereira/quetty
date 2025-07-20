@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
 
 jobs:
   build:
@@ -21,19 +22,30 @@ jobs:
         toolchain: stable
         components: rustfmt, clippy
 
-    - name: Cache Cargo dependencies
-      uses: actions/cache@v4
+    - name: Free Disk Space (Ubuntu)
+      uses: jlumbroso/free-disk-space@main
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-
+        tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: true
+        docker-images: true
+        swap-storage: true
+
+    - name: Check disk space before build
+      run: df -h
+
+    - name: Cache Cargo dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "ci-cache"
 
     - name: Build
       run: cargo build --verbose
+
+    - name: Check disk space after build
+      run: df -h
 
     - name: Copy default config files for tests
       run: |
@@ -43,11 +55,20 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
 
+    - name: Check disk space after tests
+      run: df -h
+
     - name: Check formatting
       run: cargo fmt --check
 
+    - name: Clean build artifacts before clippy
+      run: cargo clean
+
     - name: Run Clippy
       run: cargo clippy --workspace --all-features -- -D warnings
+
+    - name: Check final disk space
+      run: df -h
 
   call-notion-notification:
     needs: build
