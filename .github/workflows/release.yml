@@ -249,8 +249,8 @@ jobs:
       - name: Update UI crate dependency to use published version
         run: |
           echo "Updating UI crate to use published server crate..."
-          # Replace path dependency with published version
-          sed -i 's|quetty_server = { path = "../server", package = "quetty-server", version = ".*" }|quetty_server = { package = "quetty-server", version = "${{ env.VERSION }}" }|' ui/Cargo.toml
+          # Replace path dependency with published version (robust pattern)
+          sed -Ei 's#^quetty_server[[:space:]]*=.*#quetty_server = { package = "quetty-server", version = "${{ env.VERSION }}" }#' ui/Cargo.toml
 
           echo "Updated UI Cargo.toml:"
           grep "quetty_server" ui/Cargo.toml
