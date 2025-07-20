@@ -41,8 +41,8 @@ Quetty combines the power of Azure Service Bus with a sleek terminal interface, 
 We are actively developing and testing Quetty to ensure it meets production standards. During this phase, we're focusing on:
 
 - ✅ **Performance & UI Testing**: Verifying optimal performance across different environments and platforms. | Tested on most common terminal emulators (Ghostty *recomended*, WezTerm, ITerm2, Warp, macOS defaul Terminal *not recomended*).
-- ⏳ **Binary Releases**: Creating pre-built binaries for easier installation across major platforms
-- ⏳ **Installation Methods**: Developing multiple installation options beyond source compilation
+- ✅ **Nightly Builds**: Automated nightly builds available for all major platforms (Linux, Windows, macOS)
+- ✅ **Installation Methods**: Multiple installation options including nightly builds and source compilation
 - ⏳ **Configuration System**: Implementing a fully working configuration system with easy setup for binary installations
 - ⏳ **Action Verification**: Adding deep verification for destructive operations (like delete actions) to prevent accidental data loss
 
@@ -116,15 +116,35 @@ https://github.com/user-attachments/assets/cd714f56-6b90-4c01-ae30-d915cd959bd4
 
 ### Installation
 
-#### Option 1: Build from Source
+#### Option 1: Nightly Builds 🌙 (Recommended for Testing)
+For the latest development features and fastest access:
+
+**Download:** https://github.com/dawidpereira/quetty/releases/tag/nightly-latest
+
+- **Linux x64**: `quetty-nightly-linux-x64-{version}.tar.gz`
+- **Windows x64**: `quetty-nightly-windows-x64-{version}.zip`
+- **macOS x64**: `quetty-nightly-macos-x64-{version}.tar.gz`
+- **macOS ARM64**: `quetty-nightly-macos-arm64-{version}.tar.gz`
+
 ```bash
-git clone https://github.com/yourusername/quetty.git
+# Example for Linux/macOS
+wget https://github.com/dawidpereira/quetty/releases/download/nightly-latest/quetty-nightly-linux-x64-{version}.tar.gz
+tar -xzf quetty-nightly-linux-x64-{version}.tar.gz
+chmod +x quetty-nightly-linux-x64
+./quetty-nightly-linux-x64
+```
+
+⚠️ **Warning**: Nightly builds may be unstable and are not recommended for production use.
+
+#### Option 2: Build from Source
+```bash
+git clone https://github.com/dawidpereira/quetty.git
 cd quetty
 cargo build --release
 ```
 
-#### Option 2: Add to Shell PATH (Recommended)
-After building, add quetty to your system PATH:
+#### Option 3: Add to Shell PATH (Recommended)
+After building or downloading, add quetty to your system PATH:
 ```bash
 # Copy binary to local bin directory
 cp target/release/quetty ~/.local/bin/
