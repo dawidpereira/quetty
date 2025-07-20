@@ -183,9 +183,6 @@ fn load_config_with_custom_path(custom_config_path: Option<&str>) -> ConfigLoadR
         }
     }
 
-    // Also try loading .env from current directory (for backward compatibility)
-    dotenv::from_path(".env").ok();
-
     let env_source = Environment::default().separator("__");
 
     // Determine config file path using discovery or custom path
