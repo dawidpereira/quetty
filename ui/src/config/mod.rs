@@ -686,16 +686,43 @@ fn load_config_for_profile(profile_name: &str) -> ConfigLoadResult {
 
     // Check if profile exists first
     if !profile_exists(profile_name) {
+        log::warn!("Profile '{profile_name}' does not exist, falling back to embedded defaults");
         let available_profiles = list_available_profiles();
-        let profile_list = if available_profiles.is_empty() {
-            "No profiles found. Run 'quetty --setup' to create your first profile.".to_string()
-        } else {
-            format!("Available profiles: {}", available_profiles.join(", "))
+        if !available_profiles.is_empty() {
+            log::info!("Available profiles: {}", available_profiles.join(", "));
+        }
+
+        // Load embedded defaults directly without file I/O
+        use crate::config::defaults::{DEFAULT_CONFIG, DEFAULT_KEYS};
+        let env_source = Environment::default().separator("__");
+
+        // Create config from embedded defaults
+        let config_builder = Config::builder()
+            .add_source(config::File::from_str(
+                DEFAULT_CONFIG,
+                config::FileFormat::Toml,
+            ))
+            .add_source(config::File::from_str(
+                DEFAULT_KEYS,
+                config::FileFormat::Toml,
+            ))
+            .add_source(env_source);
+
+        let config = match config_builder.build() {
+            Ok(config) => config,
+            Err(e) => {
+                return ConfigLoadResult::LoadError(format!(
+                    "Failed to load embedded defaults: {e}"
+                ));
+            }
         };
 
-        return ConfigLoadResult::LoadError(format!(
-            "Profile '{profile_name}' does not exist.\n\n{profile_list}\n\nTo create a new profile, run: quetty -p {profile_name} --setup"
-        ));
+        return match config.try_deserialize::<AppConfig>() {
+            Ok(app_config) => ConfigLoadResult::Success(Box::new(app_config)),
+            Err(e) => ConfigLoadResult::DeserializeError(format!(
+                "Failed to deserialize embedded config: {e}"
+            )),
+        };
     }
 
     // Load .env file from profile
