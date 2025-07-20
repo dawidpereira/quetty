@@ -38,7 +38,7 @@ use tokio::sync::Mutex;
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::{ServiceBusManager, ServiceBusCommand};
+/// use quetty_server::service_bus_manager::{ServiceBusManager, ServiceBusCommand};
 ///
 /// let manager = ServiceBusManager::new(/* configuration */);
 ///
@@ -163,7 +163,7 @@ impl ServiceBusManager {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::service_bus_manager::{ServiceBusManager, ServiceBusCommand};
+    /// use quetty_server::service_bus_manager::{ServiceBusManager, ServiceBusCommand};
     ///
     /// let manager = ServiceBusManager::new(/* args */);
     ///

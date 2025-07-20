@@ -21,7 +21,7 @@ use crate::bulk_operations::MessageIdentifier;
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::{ServiceBusCommand, QueueType};
+/// use quetty_server::service_bus_manager::{ServiceBusCommand, QueueType};
 ///
 /// // Switch to a queue
 /// let command = ServiceBusCommand::SwitchQueue {

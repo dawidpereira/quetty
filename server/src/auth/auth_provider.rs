@@ -28,7 +28,7 @@ use std::sync::Arc;
 /// # Authentication Flow
 ///
 /// ```no_run
-/// use server::auth::{AuthProvider, AuthStateManager};
+/// use quetty_server::auth::{AuthProvider, AuthStateManager};
 /// use std::sync::Arc;
 ///
 /// // Create with UI authentication state integration
@@ -61,7 +61,7 @@ use std::sync::Arc;
 /// For more details on fallback providers, see [`ConnectionStringProvider`].
 ///
 /// ```no_run
-/// use server::auth::{AuthProvider, AuthStateManager, ConnectionStringProvider};
+/// use quetty_server::auth::{AuthProvider, AuthStateManager, ConnectionStringProvider};
 /// use std::sync::Arc;
 ///
 /// // Create fallback provider for automated scenarios
@@ -115,7 +115,7 @@ impl AuthProvider {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::{AuthProvider, AuthStateManager};
+    /// use quetty_server::auth::{AuthProvider, AuthStateManager};
     /// use std::sync::Arc;
     ///
     /// // Basic provider with UI state only

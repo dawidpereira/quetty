@@ -24,7 +24,7 @@ use thiserror::Error;
 ///
 /// ## Basic Error Handling
 /// ```no_run
-/// use server::common::errors::HttpError;
+/// use quetty_server::common::errors::HttpError;
 ///
 /// async fn handle_http_error(error: HttpError) {
 ///     match error {
@@ -54,7 +54,7 @@ use thiserror::Error;
 ///
 /// ## Retry Logic Implementation
 /// ```no_run
-/// use server::common::errors::HttpError;
+/// use quetty_server::common::errors::HttpError;
 /// use std::time::Duration;
 /// use tokio::time::sleep;
 ///
@@ -92,7 +92,7 @@ use thiserror::Error;
 ///
 /// ## Azure API Error Handling
 /// ```no_run
-/// use server::common::errors::HttpError;
+/// use quetty_server::common::errors::HttpError;
 ///
 /// async fn call_azure_api(endpoint: &str) -> Result<String, HttpError> {
 ///     // Simulated Azure API call
@@ -136,8 +136,8 @@ use thiserror::Error;
 /// This error type is designed to be easily converted to higher-level error types:
 ///
 /// ```no_run
-/// use server::common::errors::HttpError;
-/// use server::service_bus_manager::ServiceBusError;
+/// use quetty_server::common::errors::HttpError;
+/// use quetty_server::service_bus_manager::ServiceBusError;
 ///
 /// impl From<HttpError> for ServiceBusError {
 ///     fn from(http_error: HttpError) -> Self {
@@ -152,7 +152,7 @@ use thiserror::Error;
 ///
 /// ## Logging Integration
 /// ```no_run
-/// use server::common::errors::HttpError;
+/// use quetty_server::common::errors::HttpError;
 ///
 /// fn log_http_error(error: &HttpError) {
 ///     match error {
@@ -284,7 +284,7 @@ pub enum HttpError {
 ///
 /// ## Token Cache Error Handling
 /// ```no_run
-/// use server::common::errors::CacheError;
+/// use quetty_server::common::errors::CacheError;
 ///
 /// async fn handle_token_cache_error(error: CacheError, token_key: &str) {
 ///     match error {
@@ -315,7 +315,7 @@ pub enum HttpError {
 ///
 /// ## Cache Management Patterns
 /// ```no_run
-/// use server::common::errors::CacheError;
+/// use quetty_server::common::errors::CacheError;
 ///
 /// async fn get_or_create_cached_item<T>(
 ///     cache_key: &str,
@@ -356,7 +356,7 @@ pub enum HttpError {
 ///
 /// ## Cache Health Monitoring
 /// ```no_run
-/// use server::common::errors::CacheError;
+/// use quetty_server::common::errors::CacheError;
 ///
 /// struct CacheMetrics {
 ///     hits: u64,
@@ -394,8 +394,8 @@ pub enum HttpError {
 ///
 /// ## Integration with Authentication
 /// ```no_run
-/// use server::common::errors::CacheError;
-/// use server::auth::TokenRefreshError;
+/// use quetty_server::common::errors::CacheError;
+/// use quetty_server::auth::TokenRefreshError;
 ///
 /// async fn get_valid_token(user_id: &str) -> Result<String, TokenRefreshError> {
 ///     match get_cached_token(user_id).await {

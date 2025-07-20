@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::QueueType;
+/// use quetty_server::service_bus_manager::QueueType;
 ///
 /// let queue_type = QueueType::from_queue_name("my-queue");
 /// assert_eq!(queue_type, QueueType::Main);
@@ -56,7 +56,7 @@ impl QueueType {
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::{QueueInfo, QueueType};
+/// use quetty_server::service_bus_manager::{QueueInfo, QueueType};
 ///
 /// // Create a main queue
 /// let main_queue = QueueInfo::main_queue("orders".to_string());
@@ -175,7 +175,7 @@ impl QueueInfo {
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::MessageData;
+/// use quetty_server::service_bus_manager::MessageData;
 /// use std::collections::HashMap;
 ///
 /// // Simple message with just content
@@ -246,7 +246,7 @@ impl MessageData {
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::OperationStats;
+/// use quetty_server::service_bus_manager::OperationStats;
 ///
 /// let mut stats = OperationStats::new();
 /// stats.add_success();

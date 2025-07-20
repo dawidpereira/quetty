@@ -50,7 +50,7 @@ const ERROR_BULK_OPERATIONS: &str = "Bulk operations require message to be recei
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::command_handlers::QueueCommandHandler;
+/// use quetty_server::service_bus_manager::command_handlers::QueueCommandHandler;
 ///
 /// let handler = QueueCommandHandler::new(consumer_manager, statistics_service);
 ///
@@ -134,7 +134,7 @@ impl QueueCommandHandler {
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::command_handlers::MessageCommandHandler;
+/// use quetty_server::service_bus_manager::command_handlers::MessageCommandHandler;
 ///
 /// let handler = MessageCommandHandler::new(consumer_manager);
 ///
@@ -218,7 +218,7 @@ impl MessageCommandHandler {
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::command_handlers::BulkCommandHandler;
+/// use quetty_server::service_bus_manager::command_handlers::BulkCommandHandler;
 ///
 /// let handler = BulkCommandHandler::new(
 ///     bulk_handler,
@@ -701,7 +701,7 @@ impl BulkCommandHandler {
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::command_handlers::SendCommandHandler;
+/// use quetty_server::service_bus_manager::command_handlers::SendCommandHandler;
 ///
 /// let handler = SendCommandHandler::new(producer_manager);
 ///
@@ -769,7 +769,7 @@ impl SendCommandHandler {
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::command_handlers::StatusCommandHandler;
+/// use quetty_server::service_bus_manager::command_handlers::StatusCommandHandler;
 ///
 /// let handler = StatusCommandHandler::new(consumer_manager, producer_manager);
 ///
@@ -833,7 +833,7 @@ impl StatusCommandHandler {
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::command_handlers::ResourceCommandHandler;
+/// use quetty_server::service_bus_manager::command_handlers::ResourceCommandHandler;
 ///
 /// let handler = ResourceCommandHandler::new(consumer_manager, producer_manager);
 ///

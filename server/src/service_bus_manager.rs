@@ -22,7 +22,7 @@
 //! ## Usage
 //!
 //! ```no_run
-//! use server::service_bus_manager::{ServiceBusManager, AzureAdConfig};
+//! use quetty_server::service_bus_manager::{ServiceBusManager, AzureAdConfig};
 //!
 //! async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //!     let config = AzureAdConfig::default();
@@ -86,7 +86,7 @@ use crate::utils::env::EnvUtils;
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::AzureAdConfig;
+/// use quetty_server::service_bus_manager::AzureAdConfig;
 ///
 /// let config = AzureAdConfig {
 ///     auth_method: "device_code".to_string(),

@@ -20,7 +20,7 @@ use crate::model::MessageModel;
 /// # Examples
 ///
 /// ```no_run
-/// use server::consumer::Consumer;
+/// use quetty_server::consumer::Consumer;
 /// use azservicebus::{ServiceBusReceiver, ServiceBusReceiverOptions};
 ///
 /// async fn example(receiver: ServiceBusReceiver) {

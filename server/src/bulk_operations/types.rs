@@ -21,7 +21,7 @@ use tokio_util::sync::CancellationToken;
 /// # Examples
 ///
 /// ```no_run
-/// use server::bulk_operations::BulkOperationResult;
+/// use quetty_server::bulk_operations::BulkOperationResult;
 ///
 /// let mut result = BulkOperationResult::new(100);
 /// result.add_success();
@@ -113,7 +113,7 @@ impl BulkOperationResult {
 /// # Examples
 ///
 /// ```no_run
-/// use server::bulk_operations::MessageIdentifier;
+/// use quetty_server::bulk_operations::MessageIdentifier;
 ///
 /// let msg_id = MessageIdentifier::new("msg-123".to_string(), 4567);
 /// println!("Message: {} at sequence {}", msg_id.id, msg_id.sequence);
@@ -214,7 +214,7 @@ impl PartialEq<MessageIdentifier> for String {
 /// # Examples
 ///
 /// ```no_run
-/// use server::bulk_operations::BatchConfig;
+/// use quetty_server::bulk_operations::BatchConfig;
 ///
 /// // Use default configuration
 /// let config = BatchConfig::default();

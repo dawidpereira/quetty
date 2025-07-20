@@ -17,7 +17,7 @@ use tokio::sync::RwLock;
 /// # Examples
 ///
 /// ```no_run
-/// use server::auth::{TokenCache, CachedToken};
+/// use quetty_server::auth::{TokenCache, CachedToken};
 /// use std::time::{Duration, Instant};
 ///
 /// let cache = TokenCache::new();

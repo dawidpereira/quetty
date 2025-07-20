@@ -36,7 +36,7 @@ impl ConnectionStringProvider {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::{ConnectionStringProvider, ConnectionStringConfig};
+    /// use quetty_server::auth::{ConnectionStringProvider, ConnectionStringConfig};
     ///
     /// let config = ConnectionStringConfig {
     ///     value: "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=abc123".to_string(),

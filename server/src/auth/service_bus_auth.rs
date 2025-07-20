@@ -38,8 +38,8 @@ use std::sync::Arc;
 /// # Examples
 ///
 /// ```no_run
-/// use server::auth::service_bus_auth::create_auth_provider;
-/// use server::service_bus_manager::AzureAdConfig;
+/// use quetty_server::auth::service_bus_auth::create_auth_provider;
+/// use quetty_server::service_bus_manager::AzureAdConfig;
 ///
 /// // Create Azure AD provider
 /// let azure_config = AzureAdConfig {
@@ -159,7 +159,7 @@ fn create_provider_for_type(
 /// # Examples
 ///
 /// ```no_run
-/// use server::auth::service_bus_auth::{create_auth_provider, get_azure_ad_token_with_auth};
+/// use quetty_server::auth::service_bus_auth::{create_auth_provider, get_azure_ad_token_with_auth};
 ///
 /// let provider = create_auth_provider(/* config */).await?;
 /// let token = get_azure_ad_token_with_auth(&provider).await?;

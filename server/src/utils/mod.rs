@@ -12,7 +12,7 @@
 //! The [`env`] module provides safe and validated access to environment variables:
 //!
 //! ```no_run
-//! use server::utils::env::EnvUtils;
+//! use quetty_server::utils::env::EnvUtils;
 //!
 //! // Check if a variable exists and has a value
 //! if EnvUtils::has_non_empty_var("DATABASE_URL") {
@@ -48,7 +48,7 @@
 //! Server utilities play a crucial role in authentication configuration:
 //!
 //! ```no_run
-//! use server::utils::env::EnvUtils;
+//! use quetty_server::utils::env::EnvUtils;
 //!
 //! // Load authentication configuration from environment
 //! let tenant_id = EnvUtils::get_validated_var("AZURE_TENANT_ID")?;

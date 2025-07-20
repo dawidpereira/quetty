@@ -89,7 +89,7 @@ impl AuthConfig {
 /// # Examples
 ///
 /// ```no_run
-/// use server::auth::types::ConnectionStringConfig;
+/// use quetty_server::auth::types::ConnectionStringConfig;
 ///
 /// let config = ConnectionStringConfig {
 ///     value: "Endpoint=sb://my-namespace.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=abcd1234...".to_string(),
@@ -190,7 +190,7 @@ impl ConnectionStringConfig {
 ///
 /// ## Device Code Flow Configuration
 /// ```no_run
-/// use server::auth::types::AzureAdAuthConfig;
+/// use quetty_server::auth::types::AzureAdAuthConfig;
 ///
 /// let config = AzureAdAuthConfig {
 ///     auth_method: "device_code".to_string(),
@@ -207,7 +207,7 @@ impl ConnectionStringConfig {
 ///
 /// ## Client Credentials Flow Configuration
 /// ```no_run
-/// use server::auth::types::AzureAdAuthConfig;
+/// use quetty_server::auth::types::AzureAdAuthConfig;
 ///
 /// let config = AzureAdAuthConfig {
 ///     auth_method: "client_secret".to_string(),

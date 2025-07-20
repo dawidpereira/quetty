@@ -34,7 +34,7 @@
 //! The primary message representation containing all essential message data:
 //!
 //! ```no_run
-//! use server::model::{MessageModel, MessageState, BodyData};
+//! use quetty_server::model::{MessageModel, MessageState, BodyData};
 //! use azure_core::date::OffsetDateTime;
 //!
 //! // Create a new message model
@@ -55,7 +55,7 @@
 //! Represents all possible states of a Service Bus message:
 //!
 //! ```no_run
-//! use server::model::MessageState;
+//! use quetty_server::model::MessageState;
 //!
 //! let state = MessageState::Active;
 //! match state {
@@ -72,7 +72,7 @@
 //! Flexible message body representation supporting both JSON and raw text:
 //!
 //! ```no_run
-//! use server::model::BodyData;
+//! use quetty_server::model::BodyData;
 //! use serde_json::json;
 //!
 //! // JSON message body
@@ -95,7 +95,7 @@
 //! Automatic conversion from Azure SDK message types:
 //!
 //! ```no_run
-//! use server::model::MessageModel;
+//! use quetty_server::model::MessageModel;
 //! use azservicebus::prelude::ServiceBusPeekedMessage;
 //! use std::convert::TryFrom;
 //!
@@ -113,7 +113,7 @@
 //! Robust error handling for message conversion:
 //!
 //! ```no_run
-//! use server::model::{MessageModel, MessageModelError};
+//! use quetty_server::model::{MessageModel, MessageModelError};
 //! use std::convert::TryFrom;
 //!
 //! match MessageModel::try_from(azure_message) {
@@ -186,7 +186,7 @@ use std::convert::TryFrom;
 ///
 /// ## Creating a New Message Model
 /// ```no_run
-/// use server::model::{MessageModel, MessageState, BodyData};
+/// use quetty_server::model::{MessageModel, MessageState, BodyData};
 /// use azure_core::date::OffsetDateTime;
 ///
 /// let message = MessageModel::new(
@@ -205,7 +205,7 @@ use std::convert::TryFrom;
 ///
 /// ## Converting from Azure Messages
 /// ```no_run
-/// use server::model::MessageModel;
+/// use quetty_server::model::MessageModel;
 /// use azservicebus::prelude::ServiceBusPeekedMessage;
 /// use std::convert::TryFrom;
 ///
@@ -222,7 +222,7 @@ use std::convert::TryFrom;
 ///
 /// ## Batch Conversion
 /// ```no_run
-/// use server::model::MessageModel;
+/// use quetty_server::model::MessageModel;
 /// use azservicebus::prelude::ServiceBusPeekedMessage;
 ///
 /// let azure_messages: Vec<ServiceBusPeekedMessage> = get_azure_messages();
@@ -236,7 +236,7 @@ use std::convert::TryFrom;
 ///
 /// ## JSON Serialization
 /// ```no_run
-/// use server::model::{MessageModel, MessageState, BodyData};
+/// use quetty_server::model::{MessageModel, MessageState, BodyData};
 /// use serde_json::json;
 ///
 /// let message = MessageModel {
@@ -326,7 +326,7 @@ pub struct MessageModel {
 ///
 /// ## Checking Message State
 /// ```no_run
-/// use server::model::MessageState;
+/// use quetty_server::model::MessageState;
 ///
 /// let state = MessageState::Active;
 ///
@@ -354,7 +354,7 @@ pub struct MessageModel {
 ///
 /// ## State-Based Operations
 /// ```no_run
-/// use server::model::{MessageModel, MessageState};
+/// use quetty_server::model::{MessageModel, MessageState};
 ///
 /// fn can_process_message(message: &MessageModel) -> bool {
 ///     matches!(message.state, MessageState::Active | MessageState::Deferred)
@@ -379,7 +379,7 @@ pub struct MessageModel {
 ///
 /// ## UI Display Logic
 /// ```no_run
-/// use server::model::MessageState;
+/// use quetty_server::model::MessageState;
 ///
 /// fn get_state_color(state: &MessageState) -> &'static str {
 ///     match state {
@@ -514,7 +514,7 @@ impl MessageModel {
 ///
 /// ## Working with JSON Messages
 /// ```no_run
-/// use server::model::BodyData;
+/// use quetty_server::model::BodyData;
 /// use serde_json::{json, Value};
 ///
 /// // Create JSON message body
@@ -542,7 +542,7 @@ impl MessageModel {
 ///
 /// ## Working with Text Messages
 /// ```no_run
-/// use server::model::BodyData;
+/// use quetty_server::model::BodyData;
 ///
 /// // Create text message body
 /// let text_body = BodyData::RawString("Hello, Service Bus!".to_string());
@@ -559,7 +559,7 @@ impl MessageModel {
 ///
 /// ## Pattern Matching for Different Content Types
 /// ```no_run
-/// use server::model::{BodyData, MessageModel};
+/// use quetty_server::model::{BodyData, MessageModel};
 /// use serde_json::Value;
 ///
 /// fn process_message(message: &MessageModel) {
@@ -593,7 +593,7 @@ impl MessageModel {
 ///
 /// ## Serialization Behavior
 /// ```no_run
-/// use server::model::BodyData;
+/// use quetty_server::model::BodyData;
 /// use serde_json::{json, to_string};
 ///
 /// // JSON bodies serialize as their JSON content
@@ -609,7 +609,7 @@ impl MessageModel {
 ///
 /// ## Content Type Detection
 /// ```no_run
-/// use server::model::BodyData;
+/// use quetty_server::model::BodyData;
 ///
 /// fn analyze_message_content(body: &BodyData) -> String {
 ///     match body {
@@ -628,7 +628,7 @@ impl MessageModel {
 ///
 /// ## Creating from Raw Data
 /// ```no_run
-/// use server::model::BodyData;
+/// use quetty_server::model::BodyData;
 /// use serde_json::{from_str, Value};
 ///
 /// fn create_body_from_bytes(data: &[u8]) -> BodyData {
