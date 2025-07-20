@@ -39,17 +39,12 @@ jobs:
         with:
           fetch-depth: 0  # Fetch all history for version generation
 
-      - name: Generate nightly version
-        id: version
-        shell: bash
+      - name: Generate version
         run: |
-          DATE=$(date +%Y%m%d)
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          VERSION="${DATE}-${SHORT_SHA}"
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "date=${DATE}" >> $GITHUB_OUTPUT
-          echo "sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "Generated nightly version: ${VERSION}"
+          echo "VERSION=$(date +%Y%m%d)-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
+          echo "SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "Generated nightly version: $(date +%Y%m%d)-$(git rev-parse --short HEAD)"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -77,18 +72,9 @@ jobs:
       - name: Update version in Cargo.toml
         shell: bash
         run: |
-          # Get current version from Cargo.toml with fallback
-          CURRENT_VERSION=$(grep '^version = ' ui/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/' | tr -d '\n')
-          if [ -z "$CURRENT_VERSION" ]; then
-            CURRENT_VERSION="0.1.0"
-            echo "Warning: Could not find version in Cargo.toml, using fallback: $CURRENT_VERSION"
-          else
-            echo "Current version: $CURRENT_VERSION"
-          fi
-
-          # Update version in ui/Cargo.toml to include nightly identifier
-          sed -i.bak "s/version = \"$CURRENT_VERSION\"/version = \"$CURRENT_VERSION-nightly.${{ steps.version.outputs.version }}\"/" ui/Cargo.toml
-          echo "Updated version in ui/Cargo.toml:"
+          # Update version in ui/Cargo.toml to nightly version
+          sed -i.bak 's/version = ".*"/version = "${{ env.VERSION }}"/' ui/Cargo.toml
+          echo "Updated version in ui/Cargo.toml to: ${{ env.VERSION }}"
           grep "version =" ui/Cargo.toml
 
       - name: Build release binary
@@ -103,18 +89,12 @@ jobs:
           cp target/${{ matrix.target }}/release/quetty dist/${{ matrix.artifact_name }}
           chmod +x dist/${{ matrix.artifact_name }}
 
-          # Get current version from Cargo.toml with fallback
-          CURRENT_VERSION=$(grep '^version = ' ui/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/' | tr -d '\n')
-          if [ -z "$CURRENT_VERSION" ]; then
-            CURRENT_VERSION="0.1.0-nightly.${{ steps.version.outputs.version }}"
-          fi
-
           # Create a build info file
           cat > dist/build-info.txt << EOF
           Quetty Nightly Build
-          Version: $CURRENT_VERSION
-          Date: ${{ steps.version.outputs.date }}
-          Commit: ${{ steps.version.outputs.sha }}
+          Version: ${{ env.VERSION }}
+          Date: ${{ env.DATE }}
+          Commit: ${{ env.SHA }}
           Target: ${{ matrix.target }}
           Built on: $(date -u)
           EOF
@@ -125,22 +105,17 @@ jobs:
           mkdir dist
           copy "target\${{ matrix.target }}\release\quetty.exe" "dist\${{ matrix.artifact_name }}"
 
-          # Get current version from Cargo.toml with fallback
-          for /f "tokens=3 delims= " %%i in ('findstr /r "^version" ui\Cargo.toml') do set CURRENT_VERSION=%%i
-          set CURRENT_VERSION=%CURRENT_VERSION:"=%
-          if "%CURRENT_VERSION%"=="" set CURRENT_VERSION=0.1.0-nightly.${{ steps.version.outputs.version }}
-
           # Create a build info file
           echo "Quetty Nightly Build" > dist\build-info.txt
-          echo "Version: %CURRENT_VERSION%" >> dist\build-info.txt
-          echo "Date: ${{ steps.version.outputs.date }}" >> dist\build-info.txt
-          echo "Commit: ${{ steps.version.outputs.sha }}" >> dist\build-info.txt
+          echo "Version: ${{ env.VERSION }}" >> dist\build-info.txt
+          echo "Date: ${{ env.DATE }}" >> dist\build-info.txt
+          echo "Commit: ${{ env.SHA }}" >> dist\build-info.txt
           echo "Target: ${{ matrix.target }}" >> dist\build-info.txt
 
       - name: Upload nightly artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}-${{ steps.version.outputs.version }}
+          name: ${{ matrix.artifact_name }}-${{ env.VERSION }}
           path: |
             dist/${{ matrix.artifact_name }}*
             dist/build-info.txt
@@ -157,15 +132,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Generate version info
-        id: version
+      - name: Generate version
         run: |
-          DATE=$(date +%Y%m%d)
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          VERSION="${DATE}-${SHORT_SHA}"
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "date=${DATE}" >> $GITHUB_OUTPUT
-          echo "sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "VERSION=$(date +%Y%m%d)-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
+          echo "SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -197,9 +168,9 @@ jobs:
 
       - name: Generate changelog for nightly
         run: |
-          echo "# Nightly Build ${{ steps.version.outputs.version }}" > NIGHTLY_CHANGELOG.md
+          echo "# Nightly Build ${{ env.VERSION }}" > NIGHTLY_CHANGELOG.md
           echo "" >> NIGHTLY_CHANGELOG.md
-          echo "**Built from commit:** \`${{ steps.version.outputs.sha }}\`" >> NIGHTLY_CHANGELOG.md
+          echo "**Built from commit:** \`${{ env.SHA }}\`" >> NIGHTLY_CHANGELOG.md
           echo "**Build date:** $(date -u)" >> NIGHTLY_CHANGELOG.md
           echo "" >> NIGHTLY_CHANGELOG.md
           echo "## Recent Changes" >> NIGHTLY_CHANGELOG.md
@@ -221,10 +192,10 @@ jobs:
           echo "## Installation" >> NIGHTLY_CHANGELOG.md
           echo "" >> NIGHTLY_CHANGELOG.md
           echo "Download the appropriate binary for your platform:" >> NIGHTLY_CHANGELOG.md
-          echo "- **Linux x64**: \`quetty-nightly-linux-x64-${{ steps.version.outputs.version }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
-          echo "- **Windows x64**: \`quetty-nightly-windows-x64-${{ steps.version.outputs.version }}.zip\`" >> NIGHTLY_CHANGELOG.md
-          echo "- **macOS x64**: \`quetty-nightly-macos-x64-${{ steps.version.outputs.version }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
-          echo "- **macOS ARM64**: \`quetty-nightly-macos-arm64-${{ steps.version.outputs.version }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
+          echo "- **Linux x64**: \`quetty-nightly-linux-x64-${{ env.VERSION }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
+          echo "- **Windows x64**: \`quetty-nightly-windows-x64-${{ env.VERSION }}.zip\`" >> NIGHTLY_CHANGELOG.md
+          echo "- **macOS x64**: \`quetty-nightly-macos-x64-${{ env.VERSION }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
+          echo "- **macOS ARM64**: \`quetty-nightly-macos-arm64-${{ env.VERSION }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
           echo "" >> NIGHTLY_CHANGELOG.md
           echo "⚠️ **Warning**: Nightly builds may be unstable and are not recommended for production use." >> NIGHTLY_CHANGELOG.md
 
@@ -247,7 +218,7 @@ jobs:
 
           # Create GitHub release
           gh release create nightly-latest \
-            --title "Nightly Build ${{ steps.version.outputs.version }}" \
+            --title "Nightly Build ${{ env.VERSION }}" \
             --notes-file NIGHTLY_CHANGELOG.md \
             --prerelease \
             --latest=false \
