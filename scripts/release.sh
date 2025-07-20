@@ -66,9 +66,9 @@ else
   echo -e "${YELLOW}cargo-edit not found, using sed (less portable)${NC}"
   # Fallback to awk for better cross-platform compatibility
   tmp=$(mktemp)
-  awk -v version="$VERSION" 'NR==3{sub(/^version = ".*"/, "version = \"" version "\"")} 1' ui/Cargo.toml > "$tmp" && mv "$tmp" ui/Cargo.toml
+  awk -v version="$VERSION" 'NR==3{sub(/^version = ".*"/, "version = \"" version "\"")} 1' ui/Cargo.toml >"$tmp" && mv "$tmp" ui/Cargo.toml
   tmp=$(mktemp)
-  awk -v version="$VERSION" 'NR==3{sub(/^version = ".*"/, "version = \"" version "\"")} 1' server/Cargo.toml > "$tmp" && mv "$tmp" server/Cargo.toml
+  awk -v version="$VERSION" 'NR==3{sub(/^version = ".*"/, "version = \"" version "\"")} 1' server/Cargo.toml >"$tmp" && mv "$tmp" server/Cargo.toml
 fi
 
 # Verify changes
@@ -122,8 +122,14 @@ echo "  git push origin main v$VERSION"
 echo ""
 echo -e "${BLUE}After pushing:${NC}"
 echo "  • GitHub Actions will build release artifacts"
+echo "  • Crates will be automatically published to crates.io (stable releases only)"
 echo "  • Check the release at: https://github.com/dawidpereira/quetty/releases"
 echo "  • Monitor the build: https://github.com/dawidpereira/quetty/actions"
+echo ""
+echo -e "${BLUE}📦 Crates.io Publishing:${NC}"
+echo "  • Stable releases (no -alpha, -beta, -rc) will be auto-published"
+echo "  • Pre-releases will only build artifacts (no crates.io publishing)"
+echo "  • To manually test crates publishing: ./scripts/prepare_crates_release.sh $VERSION true"
 echo ""
 echo -e "${BLUE}To create the next development version:${NC}"
 echo "  git checkout main"
