@@ -1,6 +1,6 @@
 use crate::password::get_password_from_env_or_prompt;
 use serde::{Deserialize, Serialize};
-use server::encryption::ConnectionStringEncryption;
+use quetty_server::encryption::ConnectionStringEncryption;
 use std::env;
 
 #[derive(Debug, Deserialize, Serialize)]
