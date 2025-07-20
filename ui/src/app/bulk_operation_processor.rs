@@ -1,6 +1,6 @@
 use crate::components::common::{MessageActivityMsg, Msg, PopupActivityMsg};
 use crate::error::AppError;
-use server::bulk_operations::BulkOperationResult;
+use quetty_server::bulk_operations::BulkOperationResult;
 use std::sync::mpsc::Sender;
 
 /// Context for bulk operation completion handling

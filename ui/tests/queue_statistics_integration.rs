@@ -1,8 +1,8 @@
 use quetty::app::managers::queue_stats_manager::QueueStatsManager;
 use quetty::app::updates::messages::pagination::QueueStatsCache;
-use server::service_bus_manager::azure_management_client::StatisticsConfig;
-use server::service_bus_manager::queue_statistics_service::QueueStatisticsService;
-use server::service_bus_manager::{AzureAdConfig, QueueType, ServiceBusError};
+use quetty_server::service_bus_manager::azure_management_client::StatisticsConfig;
+use quetty_server::service_bus_manager::queue_statistics_service::QueueStatisticsService;
+use quetty_server::service_bus_manager::{AzureAdConfig, QueueType, ServiceBusError};
 
 // Helper functions for queue statistics integration tests
 fn create_mock_azure_ad_config() -> AzureAdConfig {

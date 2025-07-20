@@ -1,50 +1,65 @@
 [package]
 name = "quetty"
-version = "0.1.0-alpha.1"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+description = "Terminal-based Azure Service Bus queue manager with intuitive TUI interface"
+readme = "../README.md"
+categories = ["command-line-utilities", "development-tools"]
+keywords = ["azure", "servicebus", "terminal", "tui", "queue"]
+
+[[bin]]
+name = "quetty"
+path = "src/main.rs"
 
 [lib]
 doctest = false
 
 [dependencies]
-server = { path = "../server" }
-tokio = { version = "1.45.0", features = ["rt-multi-thread", "macros"] }
-tokio-util = "0.7"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+quetty_server = { path = "../server", package = "quetty-server", version = "0.1.0-alpha.1" }
+
+# Workspace dependencies
+tokio.workspace = true
+tokio-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+azservicebus.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+reqwest.workspace = true
+log.workspace = true
+aes-gcm.workspace = true
+pbkdf2.workspace = true
+base64.workspace = true
+rand.workspace = true
+zeroize.workspace = true
+sha2.workspace = true
+dirs.workspace = true
+once_cell.workspace = true
+
+# UI-specific dependencies
 time = { version = "0.3", features = ["serde"] }
 tuirealm = "3.0.1"
 tui-realm-stdlib = "3.0.0"
 tui-realm-textarea = { version = "2.1.0", features = ["clipboard", "search"] }
 copypasta = "0.10.2"
 open = "5.3"
-uuid = { version = "1", features = ["v4"] }
-chrono = "0.4"
-azservicebus = "0.20.4"
 config = "0.15.11"
 dotenv = "0.15.0"
-anyhow = "1.0"
-thiserror = "2.0"
 toml = "0.8"
-once_cell = "1.19"
-# Logging
-log = "0.4"
 env_logger = "0.11"
 fern = { version = "0.7", features = ["colored"] }
 tracing-appender = "0.2"
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
-# Encryption dependencies
-aes-gcm = "0.10"
-pbkdf2 = "0.12"
-base64 = "0.22"
-rand = "0.8"
-zeroize = { version = "1.7", features = ["derive"] }
-sha2 = "0.10"
-dirs = "5"
 clap = { version = "4.0", features = ["derive"] }
 
 [dev-dependencies]
 claims = "0.8"
 tempfile = "3.8"
 futures = "0.3"
-azure_core = "0.25.0"
+azure_core.workspace = true

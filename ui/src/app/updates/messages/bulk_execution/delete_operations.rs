@@ -3,8 +3,8 @@ use crate::app::bulk_operation_processor::BulkOperationPostProcessor;
 use crate::app::model::Model;
 use crate::app::task_manager::ProgressReporter;
 use crate::error::AppError;
-use server::bulk_operations::MessageIdentifier;
-use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
+use quetty_server::bulk_operations::MessageIdentifier;
+use quetty_server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 use tuirealm::terminal::TerminalAdapter;
 
 /// Execute bulk delete operation using simplified setup pattern

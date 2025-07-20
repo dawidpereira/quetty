@@ -1,7 +1,7 @@
 use crate::app::model::Model;
 use crate::components::common::{AzureDiscoveryMsg, Msg};
 use crate::error::AppError;
-use server::service_bus_manager::ServiceBusManager;
+use quetty_server::service_bus_manager::ServiceBusManager;
 use std::sync::Arc;
 use tuirealm::terminal::TerminalAdapter;
 
@@ -47,7 +47,7 @@ impl ServiceBusHandler {
         }
 
         let statistics_config =
-            server::service_bus_manager::azure_management_client::StatisticsConfig::new(
+            quetty_server::service_bus_manager::azure_management_client::StatisticsConfig::new(
                 config.queue_stats_display_enabled(),
                 config.queue_stats_cache_ttl_seconds(),
                 config.queue_stats_use_management_api(),

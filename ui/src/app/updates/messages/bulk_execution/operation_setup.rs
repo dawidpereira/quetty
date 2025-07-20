@@ -5,9 +5,9 @@
 
 use crate::app::model::Model;
 use crate::error::AppError;
-use server::bulk_operations::MessageIdentifier;
+use quetty_server::bulk_operations::MessageIdentifier;
 
-use server::service_bus_manager::QueueType;
+use quetty_server::service_bus_manager::QueueType;
 use tuirealm::terminal::TerminalAdapter;
 
 /// Common bulk operation configuration

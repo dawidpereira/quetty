@@ -6,8 +6,8 @@ use crate::components::messages::rendering::{
 };
 use crate::components::messages::selection::{format_pagination_status, format_queue_display};
 use crate::theme::ThemeManager;
-use server::bulk_operations::MessageIdentifier;
-use server::model::MessageModel;
+use quetty_server::bulk_operations::MessageIdentifier;
+use quetty_server::model::MessageModel;
 use tui_realm_stdlib::Table;
 use tuirealm::command::{Cmd, CmdResult};
 use tuirealm::event::{Key, KeyEvent};

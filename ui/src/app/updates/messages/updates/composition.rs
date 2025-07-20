@@ -125,10 +125,10 @@ where
     async fn execute_fresh_message_load(
         tx_to_main: Sender<Msg>,
         service_bus_manager: std::sync::Arc<
-            tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>,
+            tokio::sync::Mutex<quetty_server::service_bus_manager::ServiceBusManager>,
         >,
     ) -> Result<(), AppError> {
-        use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
+        use quetty_server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 
         let command = ServiceBusCommand::PeekMessages {
             max_count: config::get_current_page_size(),

@@ -6,15 +6,15 @@ mod azure_discovery_handler_tests {
 
     /// Helper function to create test subscription data
     fn create_test_subscription_data()
-    -> Vec<server::service_bus_manager::azure_management_client::Subscription> {
+    -> Vec<quetty_server::service_bus_manager::azure_management_client::Subscription> {
         vec![
-            server::service_bus_manager::azure_management_client::Subscription {
+            quetty_server::service_bus_manager::azure_management_client::Subscription {
                 id: "/subscriptions/test-sub-1".to_string(),
                 subscription_id: "test-sub-1".to_string(),
                 display_name: "Test Subscription 1".to_string(),
                 state: "Enabled".to_string(),
             },
-            server::service_bus_manager::azure_management_client::Subscription {
+            quetty_server::service_bus_manager::azure_management_client::Subscription {
                 id: "/subscriptions/test-sub-2".to_string(),
                 subscription_id: "test-sub-2".to_string(),
                 display_name: "Test Subscription 2".to_string(),
@@ -25,15 +25,15 @@ mod azure_discovery_handler_tests {
 
     /// Helper function to create test resource group data
     fn create_test_resource_group_data()
-    -> Vec<server::service_bus_manager::azure_management_client::ResourceGroup> {
+    -> Vec<quetty_server::service_bus_manager::azure_management_client::ResourceGroup> {
         vec![
-            server::service_bus_manager::azure_management_client::ResourceGroup {
+            quetty_server::service_bus_manager::azure_management_client::ResourceGroup {
                 id: "/subscriptions/test-sub/resourceGroups/test-rg-1".to_string(),
                 name: "test-rg-1".to_string(),
                 location: "eastus".to_string(),
                 tags: HashMap::new(),
             },
-            server::service_bus_manager::azure_management_client::ResourceGroup {
+            quetty_server::service_bus_manager::azure_management_client::ResourceGroup {
                 id: "/subscriptions/test-sub/resourceGroups/test-rg-2".to_string(),
                 name: "test-rg-2".to_string(),
                 location: "westus".to_string(),
@@ -44,8 +44,8 @@ mod azure_discovery_handler_tests {
 
     /// Helper function to create test namespace data
     fn create_test_namespace_data()
-    -> Vec<server::service_bus_manager::azure_management_client::ServiceBusNamespace> {
-        use server::service_bus_manager::azure_management_client::{
+    -> Vec<quetty_server::service_bus_manager::azure_management_client::ServiceBusNamespace> {
+        use quetty_server::service_bus_manager::azure_management_client::{
             NamespaceProperties, ServiceBusNamespace,
         };
 

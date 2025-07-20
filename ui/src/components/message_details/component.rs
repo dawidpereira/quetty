@@ -1,7 +1,7 @@
 use crate::components::common::Msg;
 use crate::components::state::ComponentState;
 use crate::error::AppError;
-use server::model::{BodyData, MessageModel};
+use quetty_server::model::{BodyData, MessageModel};
 use tuirealm::{
     AttrValue, Attribute, Component, Frame, MockComponent, NoUserEvent, State, StateValue,
     command::{Cmd, CmdResult},

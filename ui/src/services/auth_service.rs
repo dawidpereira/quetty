@@ -1,8 +1,8 @@
 use crate::components::common::{AuthActivityMsg, Msg};
 use crate::constants::env_vars::*;
 use crate::error::{AppError, AppResult};
-use server::auth::auth_state::AuthStateManager;
-use server::auth::{AuthProvider, AzureAdProvider};
+use quetty_server::auth::auth_state::AuthStateManager;
+use quetty_server::auth::{AuthProvider, AzureAdProvider};
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
 use std::time::Duration;
@@ -18,7 +18,9 @@ trait ConfigStringExt {
     fn to_option_string(self) -> Option<String>;
 }
 
-impl<T: AsRef<str>> ConfigStringExt for Result<T, server::service_bus_manager::ServiceBusError> {
+impl<T: AsRef<str>> ConfigStringExt
+    for Result<T, quetty_server::service_bus_manager::ServiceBusError>
+{
     fn to_option_string(self) -> Option<String> {
         self.ok().map(|s| s.as_ref().to_string())
     }
@@ -40,7 +42,7 @@ impl AuthService {
     /// * `Ok(AuthService)` - Successfully initialized authentication service
     /// * `Err(AppError)` - Configuration or initialization error
     pub fn new(
-        config: &server::service_bus_manager::AzureAdConfig,
+        config: &quetty_server::service_bus_manager::AzureAdConfig,
         tx: Sender<Msg>,
         http_client: reqwest::Client,
     ) -> AppResult<Self> {
@@ -69,7 +71,7 @@ impl AuthService {
             config.client_secret().to_option_string()
         };
 
-        let auth_config = server::auth::types::AzureAdAuthConfig {
+        let auth_config = quetty_server::auth::types::AzureAdAuthConfig {
             auth_method: config.auth_method.clone(),
             tenant_id: config.tenant_id().to_option_string(),
             client_id: config.client_id().to_option_string(),
@@ -188,7 +190,7 @@ impl AuthService {
                     .map_err(|e| AppError::Channel(e.to_string()))?;
 
                 // Update auth state with device code info
-                let device_code = server::auth::DeviceCodeInfo {
+                let device_code = quetty_server::auth::DeviceCodeInfo {
                     user_code: device_code_info.user_code.clone(),
                     verification_uri: device_code_info.verification_uri.clone(),
                     message: device_code_info.message.clone(),
@@ -245,7 +247,7 @@ impl AuthService {
     }
 
     /// Get device code info if in device code flow
-    pub async fn get_device_code_info(&self) -> Option<server::auth::DeviceCodeInfo> {
+    pub async fn get_device_code_info(&self) -> Option<quetty_server::auth::DeviceCodeInfo> {
         self.auth_state.get_device_code_info().await
     }
 

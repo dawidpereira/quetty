@@ -1,7 +1,7 @@
 use crate::app::model::{AppState, Model};
 use crate::components::common::{AzureDiscoveryMsg, ComponentId, Msg};
 use crate::error::AppError;
-use server::service_bus_manager::azure_management_client::AzureManagementClient;
+use quetty_server::service_bus_manager::azure_management_client::AzureManagementClient;
 use tuirealm::terminal::TerminalAdapter;
 
 pub struct ConnectionHandler;

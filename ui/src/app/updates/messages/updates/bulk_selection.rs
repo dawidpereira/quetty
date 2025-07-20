@@ -2,7 +2,7 @@ use crate::app::model::Model;
 use crate::components::common::{Msg, PopupActivityMsg};
 use crate::config;
 use crate::error::AppError;
-use server::bulk_operations::MessageIdentifier;
+use quetty_server::bulk_operations::MessageIdentifier;
 use tuirealm::terminal::TerminalAdapter;
 
 impl<T> Model<T>

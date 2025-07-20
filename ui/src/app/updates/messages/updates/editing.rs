@@ -3,8 +3,8 @@ use crate::app::model::Model;
 use crate::app::updates::messages::async_operations;
 use crate::components::common::{ComponentId, MessageActivityMsg, Msg, PopupActivityMsg};
 use crate::error::AppError;
-use server::bulk_operations::MessageIdentifier;
-use server::service_bus_manager::{MessageData, ServiceBusCommand, ServiceBusResponse};
+use quetty_server::bulk_operations::MessageIdentifier;
+use quetty_server::service_bus_manager::{MessageData, ServiceBusCommand, ServiceBusResponse};
 use std::sync::Arc;
 
 use tuirealm::terminal::TerminalAdapter;
@@ -329,7 +329,7 @@ where
     /// Send a single message to a queue using the service bus manager
     async fn send_single_message(
         service_bus_manager: std::sync::Arc<
-            tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>,
+            tokio::sync::Mutex<quetty_server::service_bus_manager::ServiceBusManager>,
         >,
         queue_name: String,
         content: String,
@@ -370,7 +370,7 @@ where
     /// Send multiple messages to a queue using the service bus manager
     async fn send_multiple_messages(
         service_bus_manager: std::sync::Arc<
-            tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>,
+            tokio::sync::Mutex<quetty_server::service_bus_manager::ServiceBusManager>,
         >,
         queue_name: String,
         content: String,

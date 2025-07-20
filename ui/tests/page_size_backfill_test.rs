@@ -1,5 +1,5 @@
 use quetty::app::updates::messages::MessagePaginationState;
-use server::model::{BodyData, MessageModel, MessageState};
+use quetty_server::model::{BodyData, MessageModel, MessageState};
 use std::time::{Duration, SystemTime};
 
 /// Helper to create a test message

@@ -1,7 +1,7 @@
 use crate::app::model::Model;
 use crate::components::common::{ComponentId, MessageActivityMsg, Msg, PopupActivityMsg};
-use server::bulk_operations::MessageIdentifier;
-use server::model::MessageModel;
+use quetty_server::bulk_operations::MessageIdentifier;
+use quetty_server::model::MessageModel;
 use tuirealm::terminal::TerminalAdapter;
 
 impl<T> Model<T>

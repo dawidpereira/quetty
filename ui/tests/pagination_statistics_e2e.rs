@@ -1,7 +1,7 @@
 use quetty::app::managers::queue_stats_manager::QueueStatsManager;
 use quetty::app::updates::messages::pagination::{MessagePaginationState, QueueStatsCache};
-use server::model::{BodyData, MessageModel, MessageState};
-use server::service_bus_manager::QueueType;
+use quetty_server::model::{BodyData, MessageModel, MessageState};
+use quetty_server::service_bus_manager::QueueType;
 
 /// Create a test message
 fn create_test_message(id: &str, sequence: i64, body: &str) -> MessageModel {

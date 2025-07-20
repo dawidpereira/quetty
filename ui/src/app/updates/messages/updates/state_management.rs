@@ -3,9 +3,9 @@ use crate::app::model::Model;
 use crate::components::common::{ComponentId, Msg};
 use crate::config;
 use crate::error::AppError;
-use server::bulk_operations::MessageIdentifier;
-use server::model::MessageModel;
-use server::service_bus_manager::QueueInfo;
+use quetty_server::bulk_operations::MessageIdentifier;
+use quetty_server::model::MessageModel;
+use quetty_server::service_bus_manager::QueueInfo;
 use tuirealm::terminal::TerminalAdapter;
 
 impl<T> Model<T>
@@ -850,8 +850,8 @@ where
 
         // Show success/status popup
         let queue_name = match &self.queue_manager.queue_state.current_queue_type {
-            server::service_bus_manager::QueueType::Main => "main queue",
-            server::service_bus_manager::QueueType::DeadLetter => "dead letter queue",
+            quetty_server::service_bus_manager::QueueType::Main => "main queue",
+            quetty_server::service_bus_manager::QueueType::DeadLetter => "dead letter queue",
         };
 
         let not_found_count = total_count.saturating_sub(successful_count + failed_count);
@@ -906,11 +906,11 @@ where
         log::info!("Loading statistics from API for queue: {queue_name}");
 
         self.task_manager.execute_background(async move {
-            use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
+            use quetty_server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 
             let stats_command = ServiceBusCommand::GetQueueStatistics {
                 queue_name: queue_name.clone(),
-                queue_type: server::service_bus_manager::QueueType::Main, // We get both counts regardless
+                queue_type: quetty_server::service_bus_manager::QueueType::Main, // We get both counts regardless
             };
 
             match service_bus_manager

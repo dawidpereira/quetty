@@ -450,7 +450,7 @@ where
 
                         self.task_manager.execute_background(async move {
                         use azservicebus::{ServiceBusClient as AzureServiceBusClient, ServiceBusClientOptions};
-                        use server::service_bus_manager::ServiceBusManager;
+                        use quetty_server::service_bus_manager::ServiceBusManager;
                         use std::sync::Arc;
                         use tokio::sync::Mutex;
 
@@ -464,7 +464,7 @@ where
                                 // Create ServiceBusManager
                                 let config = crate::config::get_config_or_panic();
                                 let azure_ad_config = config.azure_ad();
-                                let statistics_config = server::service_bus_manager::azure_management_client::StatisticsConfig::new(
+                                let statistics_config = quetty_server::service_bus_manager::azure_management_client::StatisticsConfig::new(
                                     config.queue_stats_display_enabled(),
                                     config.queue_stats_cache_ttl_seconds(),
                                     config.queue_stats_use_management_api(),

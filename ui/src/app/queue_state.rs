@@ -1,8 +1,8 @@
 use crate::app::managers::queue_stats_manager::QueueStatsManager;
 use crate::app::updates::messages::MessagePaginationState;
-use server::bulk_operations::MessageIdentifier;
-use server::model::MessageModel;
-use server::service_bus_manager::QueueType;
+use quetty_server::bulk_operations::MessageIdentifier;
+use quetty_server::model::MessageModel;
+use quetty_server::service_bus_manager::QueueType;
 use std::collections::HashSet;
 
 /// Unique identifier for a message combining ID and sequence

@@ -7,9 +7,9 @@ use crate::theme::types::ThemeConfig;
 use crate::utils::auth::{
     AUTH_METHOD_CLIENT_SECRET, AUTH_METHOD_CONNECTION_STRING, AUTH_METHOD_DEVICE_CODE, AuthUtils,
 };
+use quetty_server::bulk_operations::BatchConfig;
+use quetty_server::service_bus_manager::AzureAdConfig;
 use serde::Deserialize;
-use server::bulk_operations::BatchConfig;
-use server::service_bus_manager::AzureAdConfig;
 use std::time::Duration;
 
 /// Main application configuration
