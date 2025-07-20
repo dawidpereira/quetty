@@ -1,0 +1,288 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.2.0, v1.2.0-beta.1
+
+env:
+  CARGO_TERM_COLOR: always
+  OPENSSL_STATIC: 1
+  OPENSSL_VENDOR: 1
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: quetty-linux-x64
+            archive_ext: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: quetty-windows-x64.exe
+            archive_ext: zip
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            artifact_name: quetty-windows-arm64.exe
+            archive_ext: zip
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: quetty-macos-x64
+            archive_ext: tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: quetty-macos-arm64
+            archive_ext: tar.gz
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for version generation
+
+      - name: Extract version from tag
+        shell: bash
+        run: |
+          # Extract version from tag (v1.2.0 → 1.2.0)
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Building release version: $VERSION"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Setup build environment (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Update version in Cargo.toml files
+        shell: bash
+        run: |
+          # Update version in both workspace packages using tag version
+          sed -i '3s/^version = ".*"/version = "${{ env.VERSION }}"/' ui/Cargo.toml
+          sed -i '3s/^version = ".*"/version = "${{ env.VERSION }}"/' server/Cargo.toml
+
+          echo "Updated versions to: ${{ env.VERSION }}"
+          echo "UI version: $(grep '^version' ui/Cargo.toml)"
+          echo "Server version: $(grep '^version' server/Cargo.toml)"
+
+      - name: Build release binary
+        run: |
+          cargo build --release --target ${{ matrix.target }} --bin quetty
+        working-directory: .
+
+      - name: Prepare artifacts (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/quetty dist/${{ matrix.artifact_name }}
+          chmod +x dist/${{ matrix.artifact_name }}
+
+          # Create a build info file
+          cat > dist/build-info.txt << EOF
+          Quetty Release Build
+          Version: ${{ env.VERSION }}
+          Target: ${{ matrix.target }}
+          Built on: $(date -u)
+          Git Commit: $(git rev-parse HEAD)
+          Git Tag: ${{ github.ref_name }}
+          EOF
+
+      - name: Prepare artifacts (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          mkdir dist
+          copy "target\\${{ matrix.target }}\\release\\quetty.exe" "dist\\${{ matrix.artifact_name }}"
+
+          # Create a build info file
+          echo "Quetty Release Build" > dist\\build-info.txt
+          echo "Version: ${{ env.VERSION }}" >> dist\\build-info.txt
+          echo "Target: ${{ matrix.target }}" >> dist\\build-info.txt
+          echo "Git Tag: ${{ github.ref_name }}" >> dist\\build-info.txt
+
+      - name: Create archive (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd dist
+          tar -czf "${{ matrix.artifact_name }}-${{ env.VERSION }}.tar.gz" "${{ matrix.artifact_name }}" build-info.txt
+
+          # Generate checksum
+          sha256sum "${{ matrix.artifact_name }}-${{ env.VERSION }}.tar.gz" > "${{ matrix.artifact_name }}-${{ env.VERSION }}.tar.gz.sha256"
+
+      - name: Create archive (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cd dist
+          Compress-Archive -Path "${{ matrix.artifact_name }}", "build-info.txt" -DestinationPath "${{ matrix.artifact_name }}-${{ env.VERSION }}.zip"
+
+          # Generate checksum
+          Get-FileHash -Algorithm SHA256 "${{ matrix.artifact_name }}-${{ env.VERSION }}.zip" | Select-Object Hash | Out-File -FilePath "${{ matrix.artifact_name }}-${{ env.VERSION }}.zip.sha256" -Encoding ASCII
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-${{ env.VERSION }}
+          path: dist/*.${{ matrix.archive_ext }}*
+          retention-days: 90
+
+  create-release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Check if pre-release
+        id: check_pre
+        run: |
+          if [[ "${{ env.VERSION }}" =~ -beta\.|rc\.|alpha\. ]]; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+            echo "This is a pre-release: ${{ env.VERSION }}"
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+            echo "This is a stable release: ${{ env.VERSION }}"
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          cd release-artifacts
+
+          # Move all archives to release-assets
+          find . -name "*.tar.gz" -o -name "*.zip" | while read file; do
+            cp "$file" "../release-assets/"
+          done
+
+          # Move all checksums to release-assets
+          find . -name "*.sha256" | while read file; do
+            cp "$file" "../release-assets/"
+          done
+
+          cd ../release-assets
+          ls -la
+
+      - name: Generate consolidated checksums
+        run: |
+          cd release-assets
+
+          # Create consolidated checksums file
+          echo "# SHA256 Checksums for Quetty ${{ env.VERSION }}" > checksums.txt
+          echo "# Generated on $(date -u)" >> checksums.txt
+          echo "" >> checksums.txt
+
+          for file in *.tar.gz *.zip; do
+            if [ -f "$file" ]; then
+              sha256sum "$file" >> checksums.txt
+            fi
+          done
+
+      - name: Generate changelog
+        run: |
+          echo "# Release ${{ env.VERSION }}" > RELEASE_CHANGELOG.md
+          echo "" >> RELEASE_CHANGELOG.md
+          echo "**Release Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> RELEASE_CHANGELOG.md
+          echo "**Git Tag:** \`${{ github.ref_name }}\`" >> RELEASE_CHANGELOG.md
+          echo "" >> RELEASE_CHANGELOG.md
+
+          # Get commits since last release tag
+          if git describe --tags --abbrev=0 HEAD^ 2>/dev/null; then
+            LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+            if [ -n "$LAST_TAG" ]; then
+              echo "## Changes since $LAST_TAG" >> RELEASE_CHANGELOG.md
+              echo "" >> RELEASE_CHANGELOG.md
+              git log --pretty=format:"- %s (%h)" ${LAST_TAG}..HEAD >> RELEASE_CHANGELOG.md
+            else
+              echo "## Changes" >> RELEASE_CHANGELOG.md
+              echo "" >> RELEASE_CHANGELOG.md
+              git log --pretty=format:"- %s (%h)" -10 >> RELEASE_CHANGELOG.md
+            fi
+          else
+            echo "## Changes" >> RELEASE_CHANGELOG.md
+            echo "" >> RELEASE_CHANGELOG.md
+            git log --pretty=format:"- %s (%h)" -10 >> RELEASE_CHANGELOG.md
+          fi
+
+          echo "" >> RELEASE_CHANGELOG.md
+          echo "" >> RELEASE_CHANGELOG.md
+          echo "## Installation" >> RELEASE_CHANGELOG.md
+          echo "" >> RELEASE_CHANGELOG.md
+          echo "Download the appropriate binary for your platform:" >> RELEASE_CHANGELOG.md
+          echo "" >> RELEASE_CHANGELOG.md
+          echo "### Linux x64" >> RELEASE_CHANGELOG.md
+          echo "\`\`\`bash" >> RELEASE_CHANGELOG.md
+          echo "wget https://github.com/dawidpereira/quetty/releases/download/${{ github.ref_name }}/quetty-linux-x64-${{ env.VERSION }}.tar.gz" >> RELEASE_CHANGELOG.md
+          echo "tar -xzf quetty-linux-x64-${{ env.VERSION }}.tar.gz" >> RELEASE_CHANGELOG.md
+          echo "chmod +x quetty-linux-x64" >> RELEASE_CHANGELOG.md
+          echo "./quetty-linux-x64" >> RELEASE_CHANGELOG.md
+          echo "\`\`\`" >> RELEASE_CHANGELOG.md
+          echo "" >> RELEASE_CHANGELOG.md
+          echo "### macOS" >> RELEASE_CHANGELOG.md
+          echo "\`\`\`bash" >> RELEASE_CHANGELOG.md
+          echo "# For Apple Silicon (M1/M2)" >> RELEASE_CHANGELOG.md
+          echo "wget https://github.com/dawidpereira/quetty/releases/download/${{ github.ref_name }}/quetty-macos-arm64-${{ env.VERSION }}.tar.gz" >> RELEASE_CHANGELOG.md
+          echo "tar -xzf quetty-macos-arm64-${{ env.VERSION }}.tar.gz" >> RELEASE_CHANGELOG.md
+          echo "xattr -d com.apple.quarantine quetty-macos-arm64  # Remove quarantine" >> RELEASE_CHANGELOG.md
+          echo "./quetty-macos-arm64" >> RELEASE_CHANGELOG.md
+          echo "" >> RELEASE_CHANGELOG.md
+          echo "# For Intel Macs" >> RELEASE_CHANGELOG.md
+          echo "wget https://github.com/dawidpereira/quetty/releases/download/${{ github.ref_name }}/quetty-macos-x64-${{ env.VERSION }}.tar.gz" >> RELEASE_CHANGELOG.md
+          echo "\`\`\`" >> RELEASE_CHANGELOG.md
+          echo "" >> RELEASE_CHANGELOG.md
+          echo "### Windows" >> RELEASE_CHANGELOG.md
+          echo "Download and extract the appropriate ZIP file, then run the executable." >> RELEASE_CHANGELOG.md
+          echo "" >> RELEASE_CHANGELOG.md
+          echo "## Verification" >> RELEASE_CHANGELOG.md
+          echo "" >> RELEASE_CHANGELOG.md
+          echo "Verify downloads using SHA256 checksums from \`checksums.txt\`:" >> RELEASE_CHANGELOG.md
+          echo "\`\`\`bash" >> RELEASE_CHANGELOG.md
+          echo "sha256sum -c checksums.txt" >> RELEASE_CHANGELOG.md
+          echo "\`\`\`" >> RELEASE_CHANGELOG.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ steps.check_pre.outputs.prerelease }}
+          files: |
+            release-assets/*
+          body_path: RELEASE_CHANGELOG.md
+          generate_release_notes: false
+          make_latest: ${{ steps.check_pre.outputs.prerelease == 'false' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
