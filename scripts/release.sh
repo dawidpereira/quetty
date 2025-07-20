@@ -96,9 +96,9 @@ cargo check --workspace
 if git diff-index --quiet HEAD --; then
   echo -e "${YELLOW}⚠️  No changes to commit (versions already match)${NC}"
 else
-  # Commit version bump
+  # Commit version bump (including Cargo.lock for reproducible builds)
   echo -e "${BLUE}📝 Committing version bump...${NC}"
-  git add ui/Cargo.toml server/Cargo.toml
+  git add ui/Cargo.toml server/Cargo.toml Cargo.lock
   git commit -m "chore: bump version to $VERSION"
 fi
 
