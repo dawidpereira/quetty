@@ -40,10 +40,10 @@ jobs:
 
       - name: Generate version
         run: |
-          echo "VERSION=$(date +%Y%m%d)-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "VERSION=$(date +%Y%m%d).0.$(git rev-parse --short HEAD)" >> $GITHUB_ENV
           echo "DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
           echo "SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "Generated nightly version: $(date +%Y%m%d)-$(git rev-parse --short HEAD)"
+          echo "Generated nightly version: $(date +%Y%m%d).0.$(git rev-parse --short HEAD)"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -71,8 +71,8 @@ jobs:
       - name: Update version in Cargo.toml
         shell: bash
         run: |
-          # Update version in ui/Cargo.toml to nightly version
-          sed -i.bak 's/version = ".*"/version = "${{ env.VERSION }}"/' ui/Cargo.toml
+          # Update version in ui/Cargo.toml to nightly version (only package version, not dependencies)
+          sed -i.bak '3s/^version = ".*"/version = "${{ env.VERSION }}"/' ui/Cargo.toml
           echo "Updated version in ui/Cargo.toml to: ${{ env.VERSION }}"
           grep "version =" ui/Cargo.toml
 
@@ -133,7 +133,7 @@ jobs:
 
       - name: Generate version
         run: |
-          echo "VERSION=$(date +%Y%m%d)-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "VERSION=$(date +%Y%m%d).0.$(git rev-parse --short HEAD)" >> $GITHUB_ENV
           echo "DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
           echo "SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
