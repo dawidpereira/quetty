@@ -116,100 +116,79 @@ https://github.com/user-attachments/assets/cd714f56-6b90-4c01-ae30-d915cd959bd4
 
 ### Installation
 
-#### Option 1: Stable Releases 🎯 (Recommended for Production)
-Download the latest stable version for production use:
+#### Option 1: One-Line Installation 🚀 (Recommended)
+The fastest way to get Quetty running on any platform:
 
-**Download:** https://github.com/dawidpereira/quetty/releases/latest
-
-- **Linux x64**: `quetty-linux-x64-{version}.tar.gz`
-- **Windows x64**: `quetty-windows-x64-{version}.zip`
-- **Windows ARM64**: `quetty-windows-arm64-{version}.zip`
-- **macOS x64**: `quetty-macos-x64-{version}.tar.gz`
-- **macOS ARM64**: `quetty-macos-arm64-{version}.tar.gz`
-
-**Linux/macOS:**
+**Unix/Linux/macOS:**
 ```bash
-# Download and extract (replace {version} with actual version like v1.0.0)
-wget https://github.com/dawidpereira/quetty/releases/download/{version}/quetty-linux-x64-{version}.tar.gz
-tar -xzf quetty-linux-x64-{version}.tar.gz
-chmod +x quetty-linux-x64
-./quetty-linux-x64
+curl -fsSL https://raw.githubusercontent.com/dawidpereira/quetty/main/install.sh | sh
 ```
 
-**macOS Security (first run only):**
-```bash
-# Remove quarantine attribute to bypass Gatekeeper
-xattr -d com.apple.quarantine quetty-linux-x64
+**Windows PowerShell:**
+```powershell
+Invoke-RestMethod -Uri "https://raw.githubusercontent.com/dawidpereira/quetty/main/install.ps1" | Invoke-Expression
 ```
 
-**Windows:**
-```cmd
-# Extract ZIP file, then run
-quetty-windows-x64.exe
+**What the installer does:**
+- ✅ Auto-detects your platform and architecture
+- ✅ Downloads the correct pre-built binary
+- ✅ Verifies SHA256 checksum for security
+- ✅ Installs to your PATH (`~/.local/bin` or system directory)
+- ✅ Ready to use immediately
+
+**Advanced options:**
+```bash
+# Install specific version
+curl -fsSL https://raw.githubusercontent.com/dawidpereira/quetty/main/install.sh | sh -s -- --version v0.1.0-alpha.1
+
+# Install to custom directory
+curl -fsSL https://raw.githubusercontent.com/dawidpereira/quetty/main/install.sh | sh -s -- --install-dir /opt/bin
+
+# System-wide installation (requires sudo)
+curl -fsSL https://raw.githubusercontent.com/dawidpereira/quetty/main/install.sh | sh -s -- --system
+
+# Install nightly build
+curl -fsSL https://raw.githubusercontent.com/dawidpereira/quetty/main/install.sh | sh -s -- --channel nightly
+
+# Preview what will be installed (dry run)
+curl -fsSL https://raw.githubusercontent.com/dawidpereira/quetty/main/install.sh | sh -s -- --dry-run
 ```
 
-**Verify Download:**
+**Supported platforms:**
+- Linux x64, macOS Intel/Apple Silicon, Windows x64/ARM64
+
+#### Option 2: Manual Download 📦
+Download pre-built binaries from [GitHub Releases](https://github.com/dawidpereira/quetty/releases):
+
+**Stable Releases** 🎯 (Production):
+- **Download:** https://github.com/dawidpereira/quetty/releases/latest
+- Available for: Linux x64, Windows x64/ARM64, macOS x64/ARM64
+
+**Nightly Builds** 🌙 (Latest features):
+- **Download:** https://github.com/dawidpereira/quetty/releases/tag/nightly-latest
+- ⚠️ Warning: May be unstable, not recommended for production
+
+**Manual installation:**
 ```bash
-# Verify using SHA256 checksums
+# Linux/macOS
+tar -xzf quetty-*-*.tar.gz
+chmod +x quetty-*
+mv quetty-* ~/.local/bin/quetty
+
+# Windows
+# Extract ZIP and move to PATH directory
+
+# Verify checksums
 sha256sum -c checksums.txt
 ```
 
-#### Option 2: Nightly Builds 🌙 (Development/Testing)
-For the latest development features and fastest access:
-
-**Download:** https://github.com/dawidpereira/quetty/releases/tag/nightly-latest
-
-- **Linux x64**: `quetty-nightly-linux-x64-{version}.tar.gz`
-- **Windows x64**: `quetty-nightly-windows-x64-{version}.zip`
-- **Windows ARM64**: `quetty-nightly-windows-arm64-{version}.zip`
-- **macOS x64**: `quetty-nightly-macos-x64-{version}.tar.gz`
-- **macOS ARM64**: `quetty-nightly-macos-arm64-{version}.tar.gz`
-
-**Linux/macOS:**
-```bash
-# Download and extract
-wget https://github.com/dawidpereira/quetty/releases/download/nightly-latest/quetty-nightly-linux-x64-{version}.tar.gz
-tar -xzf quetty-nightly-linux-x64-{version}.tar.gz
-chmod +x quetty-nightly-linux-x64
-./quetty-nightly-linux-x64
-```
-
-**macOS Security (first run only):**
-```bash
-# Remove quarantine attribute to bypass Gatekeeper
-xattr -d com.apple.quarantine quetty-nightly-macos-arm64
-```
-*Or right-click → "Open" → "Open" when prompted*
-
-**Windows:**
-```cmd
-# Extract ZIP file, then run
-quetty-nightly-windows-x64.exe
-```
-
-**Add to PATH (optional):**
-```bash
-# Linux/macOS
-mv quetty-nightly-* ~/.local/bin/quetty
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-```
-
-⚠️ **Warning**: Nightly builds may be unstable and are not recommended for production use.
-
-#### Option 3: Build from Source
+#### Option 3: Build from Source 🔧
+For development or latest unreleased features:
 ```bash
 git clone https://github.com/dawidpereira/quetty.git
 cd quetty
 cargo build --release
-```
-
-#### Option 4: Add to Shell PATH (Recommended)
-After building or downloading, add quetty to your system PATH:
-```bash
-# Copy binary to local bin directory
 cp target/release/quetty ~/.local/bin/
-# Or add to system PATH
-export PATH="$PWD/target/release:$PATH"
 ```
 
 ### First Run

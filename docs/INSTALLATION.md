@@ -17,7 +17,113 @@ This guide covers the complete installation and setup process for Quetty, from s
 
 ## Installation
 
-### Option 1: Build from Source (Current)
+### Option 1: Universal Installation Script (Recommended)
+
+The fastest way to get Quetty up and running on any supported platform.
+
+#### Unix/Linux/macOS One-Line Installation
+```bash
+curl -fsSL https://raw.githubusercontent.com/dawidpereira/quetty/main/install.sh | sh
+```
+
+#### Windows PowerShell One-Line Installation
+```powershell
+Invoke-RestMethod -Uri "https://raw.githubusercontent.com/dawidpereira/quetty/main/install.ps1" | Invoke-Expression
+```
+
+#### Advanced Installation Options
+
+**Install specific version:**
+```bash
+# Unix/Linux/macOS
+curl -fsSL https://raw.githubusercontent.com/dawidpereira/quetty/main/install.sh | sh -s -- --version v0.1.0-alpha.1
+
+# Windows
+Invoke-RestMethod -Uri "https://raw.githubusercontent.com/dawidpereira/quetty/main/install.ps1" -OutFile install.ps1
+.\install.ps1 -Version "v0.1.0-alpha.1"
+```
+
+**Install to custom directory:**
+```bash
+# Unix/Linux/macOS
+curl -fsSL https://raw.githubusercontent.com/dawidpereira/quetty/main/install.sh | sh -s -- --install-dir /opt/bin
+
+# Windows
+.\install.ps1 -InstallDir "C:\Tools\bin"
+```
+
+**System-wide installation:**
+```bash
+# Unix/Linux/macOS (requires sudo)
+curl -fsSL https://raw.githubusercontent.com/dawidpereira/quetty/main/install.sh | sh -s -- --system
+
+# Windows (requires admin PowerShell)
+.\install.ps1 -System
+```
+
+**Install nightly build:**
+```bash
+# Unix/Linux/macOS
+curl -fsSL https://raw.githubusercontent.com/dawidpereira/quetty/main/install.sh | sh -s -- --channel nightly
+
+# Windows
+.\install.ps1 -Channel "nightly"
+```
+
+**Preview installation (dry run):**
+```bash
+# Unix/Linux/macOS
+curl -fsSL https://raw.githubusercontent.com/dawidpereira/quetty/main/install.sh | sh -s -- --dry-run
+
+# Windows
+.\install.ps1 -DryRun
+```
+
+#### Supported Platforms
+- **Linux x64** - `quetty-linux-x64`
+- **macOS Intel** - `quetty-macos-x64`
+- **macOS Apple Silicon** - `quetty-macos-arm64`
+- **Windows x64** - `quetty-windows-x64.exe`
+- **Windows ARM64** - `quetty-windows-arm64.exe`
+
+#### What the Script Does
+1. **Auto-detects** your platform and architecture
+2. **Downloads** the correct pre-built binary from GitHub releases
+3. **Verifies** SHA256 checksum for security
+4. **Installs** to `~/.local/bin` (user) or system directory
+5. **Updates PATH** if needed
+6. **Ready to use** - just run `quetty`
+
+### Option 2: Manual Binary Download
+
+Download pre-built binaries directly from [GitHub Releases](https://github.com/dawidpereira/quetty/releases):
+
+1. **Download the correct binary** for your platform
+2. **Extract the archive**:
+   ```bash
+   # Linux/macOS
+   tar -xzf quetty-*-*.tar.gz
+   chmod +x quetty-*
+
+   # Windows
+   # Extract the ZIP file and run the .exe
+   ```
+3. **Verify checksum** (recommended):
+   ```bash
+   # Download checksums.txt and verify
+   sha256sum -c checksums.txt
+   ```
+4. **Move to PATH**:
+   ```bash
+   # Unix/Linux/macOS
+   mv quetty-* ~/.local/bin/quetty
+
+   # Windows - move to a directory in your PATH
+   ```
+
+### Option 3: Build from Source
+
+For development or if you need the latest unreleased features:
 
 > **📁 Directory Context**: All commands in this guide should be run from the project root directory (`quetty/`) unless otherwise specified.
 
@@ -29,7 +135,7 @@ This guide covers the complete installation and setup process for Quetty, from s
 
 2. **Clone the repository**:
    ```bash
-   git clone https://github.com/yourusername/quetty.git
+   git clone https://github.com/dawidpereira/quetty.git
    cd quetty
    ```
 
@@ -58,15 +164,6 @@ This guide covers the complete installation and setup process for Quetty, from s
    # Make permanent (add to ~/.bashrc, ~/.zshrc, etc.)
    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
    ```
-
-### Option 2: Binary Releases (Coming Soon)
-
-Pre-built binaries will be available for:
-- Linux (x86_64, ARM64)
-- macOS (Intel, Apple Silicon)
-- Windows (x86_64)
-
-> 📦 **Note**: Binary releases are planned for the next version. Currently, building from source is the only option.
 
 ## First-Time Setup
 
