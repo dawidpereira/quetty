@@ -39,6 +39,7 @@ jobs:
           fetch-depth: 0  # Fetch all history for version generation
 
       - name: Generate version
+        shell: bash
         run: |
           # Get the base version from Cargo.toml
           BASE_VERSION=$(grep '^version' ui/Cargo.toml | sed 's/.*"\(.*\)".*/\1/' | cut -d'-' -f1)
@@ -138,6 +139,7 @@ jobs:
           fetch-depth: 0
 
       - name: Generate version
+        shell: bash
         run: |
           # Get the base version from Cargo.toml
           BASE_VERSION=$(grep '^version' ui/Cargo.toml | sed 's/.*"\(.*\)".*/\1/' | cut -d'-' -f1)
