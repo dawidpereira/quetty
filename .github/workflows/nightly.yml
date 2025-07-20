@@ -1,0 +1,234 @@
+name: Nightly Build
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 2 * * *'  # Run at 2 AM UTC daily
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+  releases: write
+  actions: write
+
+jobs:
+  nightly:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: quetty-nightly-linux-x64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: quetty-nightly-windows-x64.exe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: quetty-nightly-macos-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: quetty-nightly-macos-arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for version generation
+
+      - name: Generate nightly version
+        id: version
+        shell: bash
+        run: |
+          DATE=$(date +%Y%m%d)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION="${DATE}-${SHORT_SHA}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "date=${DATE}" >> $GITHUB_OUTPUT
+          echo "sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "Generated nightly version: ${VERSION}"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Setup build environment (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Update version in Cargo.toml
+        shell: bash
+        run: |
+          # Update version in ui/Cargo.toml to include nightly identifier
+          sed -i.bak 's/version = "0.1.0"/version = "0.1.0-nightly.${{ steps.version.outputs.version }}"/' ui/Cargo.toml
+          echo "Updated version in ui/Cargo.toml:"
+          grep "version =" ui/Cargo.toml
+
+      - name: Build release binary
+        run: |
+          cargo build --release --target ${{ matrix.target }} --bin quetty
+        working-directory: .
+
+      - name: Prepare artifacts (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/quetty dist/${{ matrix.artifact_name }}
+          chmod +x dist/${{ matrix.artifact_name }}
+
+          # Create a build info file
+          cat > dist/build-info.txt << EOF
+          Quetty Nightly Build
+          Version: 0.1.0-nightly.${{ steps.version.outputs.version }}
+          Date: ${{ steps.version.outputs.date }}
+          Commit: ${{ steps.version.outputs.sha }}
+          Target: ${{ matrix.target }}
+          Built on: $(date -u)
+          EOF
+
+      - name: Prepare artifacts (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          mkdir dist
+          copy "target\${{ matrix.target }}\release\quetty.exe" "dist\${{ matrix.artifact_name }}"
+
+          # Create a build info file
+          echo "Quetty Nightly Build" > dist\build-info.txt
+          echo "Version: 0.1.0-nightly.${{ steps.version.outputs.version }}" >> dist\build-info.txt
+          echo "Date: ${{ steps.version.outputs.date }}" >> dist\build-info.txt
+          echo "Commit: ${{ steps.version.outputs.sha }}" >> dist\build-info.txt
+          echo "Target: ${{ matrix.target }}" >> dist\build-info.txt
+
+      - name: Upload nightly artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-${{ steps.version.outputs.version }}
+          path: |
+            dist/${{ matrix.artifact_name }}*
+            dist/build-info.txt
+          retention-days: 30
+
+  create-nightly-release:
+    needs: nightly
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate version info
+        id: version
+        run: |
+          DATE=$(date +%Y%m%d)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION="${DATE}-${SHORT_SHA}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "date=${DATE}" >> $GITHUB_OUTPUT
+          echo "sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: nightly-artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          cd nightly-artifacts
+
+          # Compress each platform's artifacts
+          for dir in */; do
+            if [ -d "$dir" ]; then
+              cd "$dir"
+              if ls *.exe 1> /dev/null 2>&1; then
+                # Windows executable
+                zip -r "../../release-assets/${dir%/}.zip" .
+              else
+                # Unix executable
+                tar -czf "../../release-assets/${dir%/}.tar.gz" .
+              fi
+              cd ..
+            fi
+          done
+
+          cd ../release-assets
+          ls -la
+
+      - name: Generate changelog for nightly
+        run: |
+          echo "# Nightly Build ${{ steps.version.outputs.version }}" > NIGHTLY_CHANGELOG.md
+          echo "" >> NIGHTLY_CHANGELOG.md
+          echo "**Built from commit:** \`${{ steps.version.outputs.sha }}\`" >> NIGHTLY_CHANGELOG.md
+          echo "**Build date:** $(date -u)" >> NIGHTLY_CHANGELOG.md
+          echo "" >> NIGHTLY_CHANGELOG.md
+          echo "## Recent Changes" >> NIGHTLY_CHANGELOG.md
+
+          # Get commits since last nightly tag (or last 10 commits if no previous nightly)
+          if git describe --tags --match="nightly-*" --abbrev=0 HEAD^ 2>/dev/null; then
+            LAST_NIGHTLY=$(git describe --tags --match="nightly-*" --abbrev=0 HEAD^ 2>/dev/null || echo "")
+            if [ -n "$LAST_NIGHTLY" ]; then
+              git log --pretty=format:"- %s (%h)" ${LAST_NIGHTLY}..HEAD >> NIGHTLY_CHANGELOG.md
+            else
+              git log --pretty=format:"- %s (%h)" -10 >> NIGHTLY_CHANGELOG.md
+            fi
+          else
+            git log --pretty=format:"- %s (%h)" -10 >> NIGHTLY_CHANGELOG.md
+          fi
+
+          echo "" >> NIGHTLY_CHANGELOG.md
+          echo "" >> NIGHTLY_CHANGELOG.md
+          echo "## Installation" >> NIGHTLY_CHANGELOG.md
+          echo "" >> NIGHTLY_CHANGELOG.md
+          echo "Download the appropriate binary for your platform:" >> NIGHTLY_CHANGELOG.md
+          echo "- **Linux x64**: \`quetty-nightly-linux-x64-${{ steps.version.outputs.version }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
+          echo "- **Windows x64**: \`quetty-nightly-windows-x64-${{ steps.version.outputs.version }}.zip\`" >> NIGHTLY_CHANGELOG.md
+          echo "- **macOS x64**: \`quetty-nightly-macos-x64-${{ steps.version.outputs.version }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
+          echo "- **macOS ARM64**: \`quetty-nightly-macos-arm64-${{ steps.version.outputs.version }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
+          echo "" >> NIGHTLY_CHANGELOG.md
+          echo "⚠️ **Warning**: Nightly builds may be unstable and are not recommended for production use." >> NIGHTLY_CHANGELOG.md
+
+      - name: Delete previous nightly release
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Delete previous nightly release and tag
+          gh release delete nightly-latest --yes || true
+          git push --delete origin nightly-latest || true
+
+      - name: Create nightly release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Create new nightly tag
+          git tag nightly-latest
+          git push origin nightly-latest
+
+          # Create GitHub release
+          gh release create nightly-latest \
+            --title "Nightly Build ${{ steps.version.outputs.version }}" \
+            --notes-file NIGHTLY_CHANGELOG.md \
+            --prerelease \
+            --latest=false \
+            release-assets/*
