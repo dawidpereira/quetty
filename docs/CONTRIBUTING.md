@@ -605,18 +605,69 @@ We use [Semantic Versioning](https://semver.org/):
 
 ### Release Workflow
 
-1. **Release branch**: Create from main
+Quetty uses an automated release process with version management scripts:
+
+#### For Maintainers: Creating a Release
+
+1. **Ensure main branch is stable**
    ```bash
-   git checkout -b release/v1.2.0
+   git checkout main
+   git pull origin main
+   # Verify all tests pass
+   cargo test
    ```
 
-2. **Update versions**: Update `Cargo.toml` files
+2. **Use the release script**
+   ```bash
+   # For stable release
+   ./scripts/release.sh 1.2.0
 
-3. **Update changelog**: Document all changes
+   # For pre-release
+   ./scripts/release.sh 1.2.0-beta.1
+   ./scripts/release.sh 1.2.0-rc.1
+   ```
 
-4. **Test release**: Thorough testing of release candidate
+   The script will:
+   - Validate version format
+   - Update `ui/Cargo.toml` and `server/Cargo.toml`
+   - Test the build
+   - Commit version changes
+   - Create and push git tag
+   - Trigger automated release workflow
 
-5. **Create release**: Tag and create GitHub release
+3. **Monitor the release**
+   - GitHub Actions will build cross-platform binaries
+   - Artifacts will be uploaded to GitHub Releases
+   - Release notes will be auto-generated
+
+4. **Post-release: Bump to development version**
+   ```bash
+   # Update to next development version
+   # Edit ui/Cargo.toml and server/Cargo.toml
+   # Example: 1.2.0 → 1.3.0-dev
+   git add ui/Cargo.toml server/Cargo.toml
+   git commit -m "chore: bump to 1.3.0-dev"
+   git push origin main
+   ```
+
+#### Release Channels
+
+- **Stable releases**: `v1.2.0` - Production ready
+- **Pre-releases**: `v1.2.0-beta.1`, `v1.2.0-rc.1` - Testing versions
+- **Nightly builds**: Automated daily builds from main branch
+
+#### Supported Platforms
+
+Releases are automatically built for:
+- Linux x64
+- Windows x64 & ARM64
+- macOS x64 & ARM64 (Intel and Apple Silicon)
+
+Each release includes:
+- Cross-platform binaries
+- SHA256 checksums for verification
+- Installation instructions
+- Auto-generated changelog
 
 6. **Merge back**: Merge release branch to main
 

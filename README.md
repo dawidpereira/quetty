@@ -116,7 +116,45 @@ https://github.com/user-attachments/assets/cd714f56-6b90-4c01-ae30-d915cd959bd4
 
 ### Installation
 
-#### Option 1: Nightly Builds 🌙 (Recommended for Testing)
+#### Option 1: Stable Releases 🎯 (Recommended for Production)
+Download the latest stable version for production use:
+
+**Download:** https://github.com/dawidpereira/quetty/releases/latest
+
+- **Linux x64**: `quetty-linux-x64-{version}.tar.gz`
+- **Windows x64**: `quetty-windows-x64-{version}.zip`
+- **Windows ARM64**: `quetty-windows-arm64-{version}.zip`
+- **macOS x64**: `quetty-macos-x64-{version}.tar.gz`
+- **macOS ARM64**: `quetty-macos-arm64-{version}.tar.gz`
+
+**Linux/macOS:**
+```bash
+# Download and extract (replace {version} with actual version like v1.0.0)
+wget https://github.com/dawidpereira/quetty/releases/download/{version}/quetty-linux-x64-{version}.tar.gz
+tar -xzf quetty-linux-x64-{version}.tar.gz
+chmod +x quetty-linux-x64
+./quetty-linux-x64
+```
+
+**macOS Security (first run only):**
+```bash
+# Remove quarantine attribute to bypass Gatekeeper
+xattr -d com.apple.quarantine quetty-linux-x64
+```
+
+**Windows:**
+```cmd
+# Extract ZIP file, then run
+quetty-windows-x64.exe
+```
+
+**Verify Download:**
+```bash
+# Verify using SHA256 checksums
+sha256sum -c checksums.txt
+```
+
+#### Option 2: Nightly Builds 🌙 (Development/Testing)
 For the latest development features and fastest access:
 
 **Download:** https://github.com/dawidpereira/quetty/releases/tag/nightly-latest
@@ -158,14 +196,14 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 
 ⚠️ **Warning**: Nightly builds may be unstable and are not recommended for production use.
 
-#### Option 2: Build from Source
+#### Option 3: Build from Source
 ```bash
 git clone https://github.com/dawidpereira/quetty.git
 cd quetty
 cargo build --release
 ```
 
-#### Option 3: Add to Shell PATH (Recommended)
+#### Option 4: Add to Shell PATH (Recommended)
 After building or downloading, add quetty to your system PATH:
 ```bash
 # Copy binary to local bin directory
