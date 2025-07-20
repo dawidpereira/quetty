@@ -1,8 +1,8 @@
 use quetty::app::queue_state::QueueState;
 use quetty::app::updates::messages::MessagePaginationState;
 use quetty::config;
-use server::model::{BodyData, MessageModel, MessageState};
-use server::service_bus_manager::QueueType;
+use quetty_server::model::{BodyData, MessageModel, MessageState};
+use quetty_server::service_bus_manager::QueueType;
 use std::collections::HashSet;
 
 // Helper modules for backfill integration tests

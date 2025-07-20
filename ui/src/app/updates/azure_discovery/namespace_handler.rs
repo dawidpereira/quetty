@@ -2,7 +2,7 @@ use crate::app::model::{AppState, Model};
 use crate::components::common::{AzureDiscoveryMsg, ComponentId, Msg};
 use crate::components::namespace_picker::NamespacePicker;
 use crate::error::AppError;
-use server::service_bus_manager::azure_management_client::{
+use quetty_server::service_bus_manager::azure_management_client::{
     AzureManagementClient, ServiceBusNamespace,
 };
 use tuirealm::terminal::TerminalAdapter;

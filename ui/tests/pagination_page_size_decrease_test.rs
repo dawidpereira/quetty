@@ -6,7 +6,7 @@
 /// The system should use the first 100 messages from the loaded 1998 messages,
 /// NOT reload from the API starting at sequence 2000+.
 use quetty::app::updates::messages::MessagePaginationState;
-use server::model::{BodyData, MessageModel, MessageState};
+use quetty_server::model::{BodyData, MessageModel, MessageState};
 use std::time::{Duration, SystemTime};
 
 /// Helper to create a test message

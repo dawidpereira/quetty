@@ -1,7 +1,7 @@
 use crate::components::messages::PaginationInfo;
 use crate::theme::ThemeManager;
-use server::bulk_operations::MessageIdentifier;
-use server::model::{MessageModel, MessageState};
+use quetty_server::bulk_operations::MessageIdentifier;
+use quetty_server::model::{MessageModel, MessageState};
 use tuirealm::props::{TableBuilder, TextSpan};
 use tuirealm::ratatui::style::Color;
 

@@ -1,4 +1,4 @@
-use server::auth::auth_state::AuthStateManager;
+use quetty_server::auth::auth_state::AuthStateManager;
 use std::sync::{Arc, OnceLock};
 
 static SHARED_AUTH_STATE: OnceLock<Arc<AuthStateManager>> = OnceLock::new();

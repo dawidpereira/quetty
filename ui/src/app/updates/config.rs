@@ -5,7 +5,7 @@ use crate::config::azure::{clear_master_password, set_master_password};
 use crate::constants::env_vars::*;
 use crate::error::AppResult;
 use crate::utils::encryption::ConnectionStringEncryption;
-use server::encryption::ClientSecretEncryption;
+use quetty_server::encryption::ClientSecretEncryption;
 use std::env;
 use std::fs;
 use std::sync::Mutex;
@@ -176,7 +176,7 @@ where
                 {
                     // New client secret provided - encrypt it
                     log::info!("New client secret provided, encrypting with master password");
-                    let encryption = server::encryption::ClientSecretEncryption::new();
+                    let encryption = quetty_server::encryption::ClientSecretEncryption::new();
                     match encryption.encrypt_client_secret(client_secret, master_password) {
                         Ok(encrypted) => {
                             safe_set_env_var(AZURE_AD_ENCRYPTED_CLIENT_SECRET, &encrypted)?;
@@ -538,7 +538,7 @@ where
                     && !master_password.trim().is_empty()
                 {
                     log::info!("Encrypting client secret with master password");
-                    let encryption = server::encryption::ClientSecretEncryption::new();
+                    let encryption = quetty_server::encryption::ClientSecretEncryption::new();
                     match encryption.encrypt_client_secret(client_secret, master_password) {
                         Ok(encrypted) => {
                             safe_set_env_var(AZURE_AD_ENCRYPTED_CLIENT_SECRET, &encrypted)?;
@@ -1422,13 +1422,13 @@ where
 
             // Set the global auth state for server components to use
             let auth_state = auth_service.auth_state_manager();
-            server::auth::set_global_auth_state(auth_state.clone());
+            quetty_server::auth::set_global_auth_state(auth_state.clone());
 
             // Start the token refresh service with failure callback
             let tx_clone = self.state_manager.tx_to_main.clone();
             tokio::spawn(async move {
                 let failure_callback =
-                    std::sync::Arc::new(move |error: server::auth::TokenRefreshError| {
+                    std::sync::Arc::new(move |error: quetty_server::auth::TokenRefreshError| {
                         log::error!("Token refresh failed: {error}");
 
                         // Send notification to UI

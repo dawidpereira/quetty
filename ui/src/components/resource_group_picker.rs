@@ -1,7 +1,7 @@
 use crate::components::base_popup::PopupBuilder;
 use crate::components::common::{Msg, ResourceGroupSelectionMsg};
 use crate::theme::ThemeManager;
-use server::service_bus_manager::azure_management_client::ResourceGroup;
+use quetty_server::service_bus_manager::azure_management_client::ResourceGroup;
 use tuirealm::command::{Cmd, CmdResult};
 use tuirealm::event::{Event, Key, KeyEvent, NoUserEvent};
 use tuirealm::props::TextModifiers;

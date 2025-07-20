@@ -4,7 +4,7 @@ use super::component::{
 use super::selection::create_toggle_message_selection;
 use crate::components::common::{MessageActivityMsg, Msg, QueueActivityMsg};
 use crate::config;
-use server::service_bus_manager::QueueType;
+use quetty_server::service_bus_manager::QueueType;
 use tuirealm::command::CmdResult;
 use tuirealm::event::{Key, KeyEvent, KeyModifiers};
 use tuirealm::{Event, MockComponent, NoUserEvent, State, StateValue};

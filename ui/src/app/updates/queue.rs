@@ -2,7 +2,7 @@ use crate::app::model::{AppState, Model};
 use crate::components::common::{Msg, QueueActivityMsg};
 use crate::constants::env_vars::*;
 use crate::error::AppError;
-use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
+use quetty_server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 use std::env;
 use std::sync::Mutex;
 use tuirealm::terminal::TerminalAdapter;
@@ -291,7 +291,7 @@ where
                     task_manager.execute("Loading queues...", async move {
                         log::debug!("Requesting queues from Azure AD after cancellation");
 
-                        let queues = server::service_bus_manager::ServiceBusManager::list_queues_azure_ad(
+                        let queues = quetty_server::service_bus_manager::ServiceBusManager::list_queues_azure_ad(
                             crate::config::get_config_or_panic().azure_ad(),
                         )
                         .await

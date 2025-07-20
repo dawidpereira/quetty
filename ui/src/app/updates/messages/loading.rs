@@ -1,7 +1,7 @@
 use crate::app::model::Model;
 use crate::components::common::{MessageActivityMsg, Msg};
 use crate::error::{AppError, AppResult};
-use server::model::MessageModel;
+use quetty_server::model::MessageModel;
 use std::sync::mpsc::Sender;
 use tuirealm::terminal::TerminalAdapter;
 
@@ -95,20 +95,21 @@ where
 
     pub(crate) fn get_service_bus_manager(
         &self,
-    ) -> Option<std::sync::Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>>>
-    {
+    ) -> Option<
+        std::sync::Arc<tokio::sync::Mutex<quetty_server::service_bus_manager::ServiceBusManager>>,
+    > {
         self.service_bus_manager.clone()
     }
 
     async fn execute_loading_task(
         tx_to_main: Sender<Msg>,
         service_bus_manager: std::sync::Arc<
-            tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>,
+            tokio::sync::Mutex<quetty_server::service_bus_manager::ServiceBusManager>,
         >,
         from_sequence: Option<i64>,
         message_count: u32,
     ) -> Result<(), AppError> {
-        use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
+        use quetty_server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 
         let command = ServiceBusCommand::PeekMessages {
             max_count: message_count,

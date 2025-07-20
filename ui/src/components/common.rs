@@ -1,14 +1,14 @@
 use crate::app::updates::messages::pagination::QueueStatsCache;
 use crate::error::AppError;
-use server::bulk_operations::MessageIdentifier;
-use server::model::MessageModel;
-use server::service_bus_manager::QueueInfo;
+use quetty_server::bulk_operations::MessageIdentifier;
+use quetty_server::model::MessageModel;
+use quetty_server::service_bus_manager::QueueInfo;
 use std::fmt;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 // Re-export QueueType from service bus instead of defining locally
-pub use server::service_bus_manager::QueueType;
+pub use quetty_server::service_bus_manager::QueueType;
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum ComponentId {
@@ -84,7 +84,7 @@ pub enum Msg {
     SubscriptionSelection(SubscriptionSelectionMsg),
     ResourceGroupSelection(ResourceGroupSelectionMsg),
     AzureDiscovery(AzureDiscoveryMsg),
-    SetServiceBusManager(Arc<Mutex<server::service_bus_manager::ServiceBusManager>>),
+    SetServiceBusManager(Arc<Mutex<quetty_server::service_bus_manager::ServiceBusManager>>),
 }
 
 impl std::fmt::Debug for Msg {
@@ -238,15 +238,15 @@ pub enum AzureDiscoveryMsg {
     StartInteractiveDiscovery,
     DiscoveringSubscriptions,
     SubscriptionsDiscovered(
-        Vec<server::service_bus_manager::azure_management_client::Subscription>,
+        Vec<quetty_server::service_bus_manager::azure_management_client::Subscription>,
     ),
     DiscoveringResourceGroups(String), // subscription_id
     ResourceGroupsDiscovered(
-        Vec<server::service_bus_manager::azure_management_client::ResourceGroup>,
+        Vec<quetty_server::service_bus_manager::azure_management_client::ResourceGroup>,
     ),
     DiscoveringNamespaces(String), // subscription_id
     NamespacesDiscovered(
-        Vec<server::service_bus_manager::azure_management_client::ServiceBusNamespace>,
+        Vec<quetty_server::service_bus_manager::azure_management_client::ServiceBusNamespace>,
     ),
     FetchingConnectionString {
         subscription_id: String,
@@ -255,7 +255,9 @@ pub enum AzureDiscoveryMsg {
     },
     ConnectionStringFetched(String),
     ServiceBusManagerCreated,
-    ServiceBusManagerReady(Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>>),
+    ServiceBusManagerReady(
+        Arc<tokio::sync::Mutex<quetty_server::service_bus_manager::ServiceBusManager>>,
+    ),
     DiscoveryError(String),
     DiscoveryComplete,
 }

@@ -2,8 +2,8 @@ use crate::app::model::Model;
 use crate::components::common::Msg;
 use crate::config;
 use crate::error::AppResult;
-use server::model::MessageModel;
-use server::service_bus_manager::QueueType;
+use quetty_server::model::MessageModel;
+use quetty_server::service_bus_manager::QueueType;
 
 use tuirealm::terminal::TerminalAdapter;
 
@@ -591,12 +591,12 @@ where
     async fn execute_backfill_task(
         tx_to_main: std::sync::mpsc::Sender<crate::components::common::Msg>,
         service_bus_manager: std::sync::Arc<
-            tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>,
+            tokio::sync::Mutex<quetty_server::service_bus_manager::ServiceBusManager>,
         >,
         from_sequence: Option<i64>,
         message_count: u32,
     ) -> Result<(), crate::error::AppError> {
-        use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
+        use quetty_server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 
         // Azure Service Bus may have internal limits on peek operations (typically ~250-300 messages)
         // So we implement batching to ensure we get the full requested amount

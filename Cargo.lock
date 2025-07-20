@@ -2830,11 +2830,11 @@ dependencies = [
  "once_cell",
  "open",
  "pbkdf2",
+ "quetty-server",
  "rand 0.8.5",
  "reqwest",
  "serde",
  "serde_json",
- "server",
  "sha2",
  "tempfile",
  "thiserror 2.0.12",
@@ -2846,6 +2846,41 @@ dependencies = [
  "tui-realm-stdlib",
  "tui-realm-textarea",
  "tuirealm 3.0.1",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "quetty-server"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "aes-gcm",
+ "async-trait",
+ "azservicebus",
+ "azure_core 0.25.0",
+ "base64 0.22.1",
+ "chrono",
+ "claims",
+ "dirs",
+ "flume",
+ "futures",
+ "futures-util",
+ "governor",
+ "hmac",
+ "log",
+ "once_cell",
+ "pbkdf2",
+ "proptest",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.12",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "urlencoding",
  "uuid",
  "zeroize",
 ]
@@ -3486,41 +3521,6 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
-]
-
-[[package]]
-name = "server"
-version = "0.1.0-alpha.1"
-dependencies = [
- "aes-gcm",
- "async-trait",
- "azservicebus",
- "azure_core 0.25.0",
- "base64 0.22.1",
- "chrono",
- "claims",
- "dirs",
- "flume",
- "futures",
- "futures-util",
- "governor",
- "hmac",
- "log",
- "once_cell",
- "pbkdf2",
- "proptest",
- "rand 0.8.5",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 1.0.69",
- "tokio",
- "tokio-util",
- "tracing",
- "urlencoding",
- "uuid",
- "zeroize",
 ]
 
 [[package]]

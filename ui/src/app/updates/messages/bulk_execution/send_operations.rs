@@ -5,9 +5,9 @@ use crate::app::model::Model;
 use crate::app::task_manager::ProgressReporter;
 use crate::components::common::Msg;
 use crate::error::AppError;
-use server::bulk_operations::MessageIdentifier;
-use server::model::BodyData;
-use server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
+use quetty_server::bulk_operations::MessageIdentifier;
+use quetty_server::model::BodyData;
+use quetty_server::service_bus_manager::{ServiceBusCommand, ServiceBusResponse};
 use std::sync::Arc;
 use tuirealm::terminal::TerminalAdapter;
 
@@ -219,12 +219,14 @@ fn extract_message_data_from_current_state<T: TerminalAdapter>(
 
 /// Execute bulk send operation with message data (peeked messages)
 async fn execute_bulk_send_with_data(
-    service_bus_manager: Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>>,
+    service_bus_manager: Arc<
+        tokio::sync::Mutex<quetty_server::service_bus_manager::ServiceBusManager>,
+    >,
     messages_data: &[(MessageIdentifier, Vec<u8>)],
     target_queue: String,
     repeat_count: usize,
     progress: &ProgressReporter,
-) -> Result<server::bulk_operations::BulkOperationResult, AppError> {
+) -> Result<quetty_server::bulk_operations::BulkOperationResult, AppError> {
     progress.report_progress("Preparing message data...");
     let messages_data_converted: Vec<(MessageIdentifier, Vec<u8>)> = messages_data
         .iter()
@@ -251,7 +253,8 @@ async fn execute_bulk_send_with_data(
             log::info!("Bulk send with data completed successfully: {stats:?}");
 
             // Convert OperationStats to BulkOperationResult
-            let mut result = server::bulk_operations::BulkOperationResult::new(messages_data.len());
+            let mut result =
+                quetty_server::bulk_operations::BulkOperationResult::new(messages_data.len());
             result.successful = stats.successful;
             result.failed = stats.failed;
             Ok(result)
@@ -268,14 +271,16 @@ async fn execute_bulk_send_with_data(
 
 /// Execute bulk send operation with message IDs (retrieval-based)
 async fn execute_bulk_send_with_ids(
-    service_bus_manager: Arc<tokio::sync::Mutex<server::service_bus_manager::ServiceBusManager>>,
+    service_bus_manager: Arc<
+        tokio::sync::Mutex<quetty_server::service_bus_manager::ServiceBusManager>,
+    >,
     message_ids: &[MessageIdentifier],
     target_queue: String,
     should_delete_source: bool,
     repeat_count: usize,
     max_position: usize,
     progress: &ProgressReporter,
-) -> Result<server::bulk_operations::BulkOperationResult, AppError> {
+) -> Result<quetty_server::bulk_operations::BulkOperationResult, AppError> {
     progress.report_progress("Preparing message IDs...");
     let message_ids_converted: Vec<MessageIdentifier> = message_ids.to_vec();
     let command = ServiceBusCommand::BulkSend {
@@ -313,7 +318,7 @@ async fn execute_bulk_send_with_ids(
 
 /// Handle successful bulk send operation result
 fn handle_bulk_send_success(
-    operation_result: server::bulk_operations::BulkOperationResult,
+    operation_result: quetty_server::bulk_operations::BulkOperationResult,
     bulk_data: &BulkSendData,
     operation_params: &BulkSendParams,
     context: &BulkOperationContext,

@@ -94,12 +94,12 @@ use std::sync::mpsc::Sender;
 /// ## Error Propagation and Conversion
 /// ```ignore
 /// use quetty::error::{AppError, AppResult};
-/// use server::service_bus_manager::ServiceBusError;
+/// use quetty_server::service_bus_manager::ServiceBusError;
 ///
 /// // Automatic conversion from server errors
 /// async fn send_message(content: &str) -> AppResult<String> {
 ///     // This automatically converts ServiceBusError to AppError
-///     let message_id = server::send_message(content).await?;
+///     let message_id = quetty_server::send_message(content).await?;
 ///     Ok(message_id)
 /// }
 ///
@@ -305,8 +305,8 @@ impl Display for AppError {
 
 impl std::error::Error for AppError {}
 
-impl From<server::service_bus_manager::ServiceBusError> for AppError {
-    fn from(err: server::service_bus_manager::ServiceBusError) -> Self {
+impl From<quetty_server::service_bus_manager::ServiceBusError> for AppError {
+    fn from(err: quetty_server::service_bus_manager::ServiceBusError) -> Self {
         AppError::ServiceBus(err.to_string())
     }
 }

@@ -1,5 +1,5 @@
 use crate::components::common::{ComponentId, Msg};
-use server::service_bus_manager::azure_management_client::{
+use quetty_server::service_bus_manager::azure_management_client::{
     AzureResourceCache, ServiceBusNamespace,
 };
 use std::sync::mpsc::Sender;

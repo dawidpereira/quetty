@@ -2,7 +2,9 @@ use crate::app::model::{AppState, Model};
 use crate::components::common::{AzureDiscoveryMsg, ComponentId, Msg};
 use crate::components::resource_group_picker::ResourceGroupPicker;
 use crate::error::AppError;
-use server::service_bus_manager::azure_management_client::{AzureManagementClient, ResourceGroup};
+use quetty_server::service_bus_manager::azure_management_client::{
+    AzureManagementClient, ResourceGroup,
+};
 use tuirealm::terminal::TerminalAdapter;
 
 pub struct ResourceGroupHandler;

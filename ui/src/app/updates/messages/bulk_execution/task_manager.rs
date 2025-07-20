@@ -1,4 +1,4 @@
-use server::bulk_operations::MessageIdentifier;
+use quetty_server::bulk_operations::MessageIdentifier;
 
 /// Parameters for bulk send operations
 #[derive(Debug, Clone)]

@@ -3,7 +3,7 @@ use quetty::app::task_manager::TaskManager;
 use quetty::components::common::{LoadingActivityMsg, PopupActivityMsg};
 use quetty::error::ErrorReporter;
 use quetty::{AppError, Msg};
-use server::taskpool::TaskPool;
+use quetty_server::taskpool::TaskPool;
 use std::sync::mpsc;
 use std::time::Duration;
 use tokio::time::sleep;

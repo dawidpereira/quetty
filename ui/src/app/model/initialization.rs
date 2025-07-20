@@ -15,8 +15,8 @@ use crate::config;
 use crate::constants::env_vars::*;
 use crate::error::{AppError, AppResult, ErrorReporter};
 use crate::utils::auth::AuthUtils;
-use server::service_bus_manager::ServiceBusManager;
-use server::taskpool::TaskPool;
+use quetty_server::service_bus_manager::ServiceBusManager;
+use quetty_server::taskpool::TaskPool;
 use std::sync::Arc;
 use std::sync::mpsc;
 use tokio::sync::Mutex;
@@ -268,21 +268,22 @@ impl Model<CrosstermTerminalAdapter> {
 
             // Set the global auth state for server components to use
             let auth_state = auth_service.auth_state_manager();
-            server::auth::set_global_auth_state(auth_state.clone());
+            quetty_server::auth::set_global_auth_state(auth_state.clone());
 
             // Start the token refresh service with failure callback
             let tx_clone = tx_to_main.clone();
             tokio::spawn(async move {
-                let failure_callback = Arc::new(move |error: server::auth::TokenRefreshError| {
-                    log::error!("Token refresh failed: {error}");
+                let failure_callback =
+                    Arc::new(move |error: quetty_server::auth::TokenRefreshError| {
+                        log::error!("Token refresh failed: {error}");
 
-                    // Send notification to UI
-                    let _ = tx_clone.send(crate::components::common::Msg::AuthActivity(
-                        crate::components::common::AuthActivityMsg::TokenRefreshFailed(
-                            error.to_string(),
-                        ),
-                    ));
-                });
+                        // Send notification to UI
+                        let _ = tx_clone.send(crate::components::common::Msg::AuthActivity(
+                            crate::components::common::AuthActivityMsg::TokenRefreshFailed(
+                                error.to_string(),
+                            ),
+                        ));
+                    });
 
                 auth_state
                     .start_refresh_service_with_callback(Some(failure_callback))

@@ -1,6 +1,6 @@
 use crate::components::common::{LoadingActivityMsg, Msg};
 use crate::error::{AppError, ErrorReporter};
-use server::taskpool::TaskPool;
+use quetty_server::taskpool::TaskPool;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::future::Future;
@@ -235,7 +235,7 @@ mod tests {
     use super::*;
     use crate::components::common::LoadingActivityMsg;
     use claims::*;
-    use server::taskpool::TaskPool;
+    use quetty_server::taskpool::TaskPool;
     use std::sync::mpsc;
 
     use std::time::Duration;

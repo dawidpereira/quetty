@@ -7,8 +7,8 @@ use crate::constants::env_vars::*;
 use crate::error::AppError;
 use crate::utils::auth::AuthUtils;
 use crate::utils::connection_string::ConnectionStringParser;
-use server::service_bus_manager::ServiceBusManager;
-use server::service_bus_manager::{QueueType, ServiceBusCommand, ServiceBusResponse};
+use quetty_server::service_bus_manager::ServiceBusManager;
+use quetty_server::service_bus_manager::{QueueType, ServiceBusCommand, ServiceBusResponse};
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
 use tokio::sync::Mutex;
@@ -294,7 +294,7 @@ impl QueueManager {
                 "Using Azure AD method with discovered values for queue listing (optimized)"
             );
 
-            match server::service_bus_manager::ServiceBusManager::list_queues_azure_ad(
+            match quetty_server::service_bus_manager::ServiceBusManager::list_queues_azure_ad(
                 &enhanced_config,
             )
             .await
@@ -334,7 +334,7 @@ impl QueueManager {
 
             // Use Azure Management API to list queues
             let client =
-                server::service_bus_manager::azure_management_client::AzureManagementClient::new(
+                quetty_server::service_bus_manager::azure_management_client::AzureManagementClient::new(
                     http_client,
                 );
             let queue_names = client
