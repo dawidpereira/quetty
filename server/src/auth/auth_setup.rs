@@ -29,7 +29,7 @@ static GLOBAL_AUTH_STATE: Mutex<Option<Arc<AuthStateManager>>> = Mutex::new(None
 /// # Examples
 ///
 /// ```no_run
-/// use server::auth::{AuthStateManager, set_global_auth_state};
+/// use quetty_server::auth::{AuthStateManager, set_global_auth_state};
 /// use std::sync::Arc;
 ///
 /// let auth_state = Arc::new(AuthStateManager::new());
@@ -63,7 +63,7 @@ pub fn set_global_auth_state(auth_state: Arc<AuthStateManager>) {
 /// # Examples
 ///
 /// ```no_run
-/// use server::auth::{create_auth_provider, set_global_auth_state, AuthStateManager};
+/// use quetty_server::auth::{create_auth_provider, set_global_auth_state, AuthStateManager};
 /// use std::sync::Arc;
 ///
 /// // First, initialize the global state

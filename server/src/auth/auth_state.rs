@@ -65,7 +65,7 @@ struct AuthState {
 /// # Examples
 ///
 /// ```no_run
-/// use server::auth::AuthStateManager;
+/// use quetty_server::auth::AuthStateManager;
 /// use std::sync::Arc;
 ///
 /// let auth_manager = Arc::new(AuthStateManager::new());
@@ -119,7 +119,7 @@ impl AuthStateManager {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::{AuthStateManager, DeviceCodeInfo};
+    /// use quetty_server::auth::{AuthStateManager, DeviceCodeInfo};
     /// use std::sync::Arc;
     ///
     /// let auth_manager = Arc::new(AuthStateManager::new());
@@ -173,7 +173,7 @@ impl AuthStateManager {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::AuthStateManager;
+    /// use quetty_server::auth::AuthStateManager;
     /// use std::sync::Arc;
     ///
     /// let auth_manager = Arc::new(AuthStateManager::new());
@@ -193,7 +193,7 @@ impl AuthStateManager {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::AuthStateManager;
+    /// use quetty_server::auth::AuthStateManager;
     /// use std::sync::Arc;
     ///
     /// let auth_manager = Arc::new(AuthStateManager::new());
@@ -257,7 +257,7 @@ impl AuthStateManager {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::AuthStateManager;
+    /// use quetty_server::auth::AuthStateManager;
     /// use std::sync::Arc;
     ///
     /// let auth_manager = Arc::new(AuthStateManager::new());
@@ -293,7 +293,7 @@ impl AuthStateManager {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::AuthStateManager;
+    /// use quetty_server::auth::AuthStateManager;
     /// use std::sync::Arc;
     ///
     /// let auth_manager = Arc::new(AuthStateManager::new());
@@ -328,7 +328,7 @@ impl AuthStateManager {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::AuthStateManager;
+    /// use quetty_server::auth::AuthStateManager;
     /// use std::sync::Arc;
     /// use std::time::Duration;
     ///
@@ -356,7 +356,7 @@ impl AuthStateManager {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::AuthStateManager;
+    /// use quetty_server::auth::AuthStateManager;
     /// use std::sync::Arc;
     ///
     /// let auth_manager = Arc::new(AuthStateManager::new());
@@ -389,7 +389,7 @@ impl AuthStateManager {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::AuthStateManager;
+    /// use quetty_server::auth::AuthStateManager;
     /// use std::sync::Arc;
     ///
     /// let auth_manager = Arc::new(AuthStateManager::new());
@@ -421,7 +421,7 @@ impl AuthStateManager {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::{AuthStateManager, AzureAdProvider};
+    /// use quetty_server::auth::{AuthStateManager, AzureAdProvider};
     /// use std::sync::Arc;
     ///
     /// let auth_manager = Arc::new(AuthStateManager::new());
@@ -447,7 +447,7 @@ impl AuthStateManager {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::AuthStateManager;
+    /// use quetty_server::auth::AuthStateManager;
     /// use std::sync::Arc;
     ///
     /// let auth_manager = Arc::new(AuthStateManager::new());
@@ -473,7 +473,7 @@ impl AuthStateManager {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::{AuthStateManager, AzureAdProvider};
+    /// use quetty_server::auth::{AuthStateManager, AzureAdProvider};
     /// use std::sync::Arc;
     ///
     /// let auth_manager = Arc::new(AuthStateManager::new());
@@ -499,7 +499,7 @@ impl AuthStateManager {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::AuthStateManager;
+    /// use quetty_server::auth::AuthStateManager;
     /// use std::sync::Arc;
     ///
     /// let auth_manager = Arc::new(AuthStateManager::new());
@@ -533,7 +533,7 @@ impl AuthStateManager {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::AuthStateManager;
+    /// use quetty_server::auth::AuthStateManager;
     /// use std::sync::Arc;
     ///
     /// let auth_manager = Arc::new(AuthStateManager::new());
@@ -580,7 +580,7 @@ impl AuthStateManager {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::AuthStateManager;
+    /// use quetty_server::auth::AuthStateManager;
     /// use std::sync::Arc;
     ///
     /// let auth_manager = Arc::new(AuthStateManager::new());

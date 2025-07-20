@@ -25,9 +25,9 @@ pub struct AuthToken {
 /// # Examples
 ///
 /// ```no_run
-/// use server::auth::provider::{AuthProvider, AuthToken};
-/// use server::auth::types::AuthType;
-/// use server::service_bus_manager::ServiceBusError;
+/// use quetty_server::auth::provider::{AuthProvider, AuthToken};
+/// use quetty_server::auth::types::AuthType;
+/// use quetty_server::service_bus_manager::ServiceBusError;
 /// use async_trait::async_trait;
 ///
 /// struct MyAuthProvider;

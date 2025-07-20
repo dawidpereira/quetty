@@ -22,7 +22,7 @@ use crate::model::MessageModel;
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::{ServiceBusResponse, ServiceBusManager};
+/// use quetty_server::service_bus_manager::{ServiceBusResponse, ServiceBusManager};
 ///
 /// match manager.execute_command(command).await {
 ///     ServiceBusResponse::MessagesReceived { messages } => {

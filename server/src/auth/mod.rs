@@ -27,7 +27,7 @@
 //!
 //! ### Azure AD Provider
 //! ```no_run
-//! use server::auth::{AzureAdProvider, AzureAdAuthConfig};
+//! use quetty_server::auth::{AzureAdProvider, AzureAdAuthConfig};
 //!
 //! let config = AzureAdAuthConfig {
 //!     auth_method: "device_code".to_string(),
@@ -42,7 +42,7 @@
 //!
 //! ### Connection String Provider
 //! ```no_run
-//! use server::auth::{ConnectionStringProvider, ConnectionStringConfig};
+//! use quetty_server::auth::{ConnectionStringProvider, ConnectionStringConfig};
 //!
 //! let config = ConnectionStringConfig {
 //!     value: "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=...".to_string(),
@@ -57,7 +57,7 @@
 //! The [`AuthStateManager`] provides centralized authentication state:
 //!
 //! ```no_run
-//! use server::auth::AuthStateManager;
+//! use quetty_server::auth::AuthStateManager;
 //! use std::sync::Arc;
 //!
 //! let auth_manager = Arc::new(AuthStateManager::new());
@@ -76,7 +76,7 @@
 //! Automatic token caching with expiration management:
 //!
 //! ```no_run
-//! use server::auth::TokenCache;
+//! use quetty_server::auth::TokenCache;
 //!
 //! let cache = TokenCache::new();
 //!
@@ -91,7 +91,7 @@
 //! The authentication system integrates seamlessly with Service Bus operations:
 //!
 //! ```no_run
-//! use server::auth::{create_service_bus_auth_provider, get_azure_ad_token_with_auth};
+//! use quetty_server::auth::{create_service_bus_auth_provider, get_azure_ad_token_with_auth};
 //!
 //! // Create provider for Service Bus
 //! let provider = create_service_bus_auth_provider(

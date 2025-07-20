@@ -14,7 +14,7 @@
 //! ## Usage
 //!
 //! ```no_run
-//! use server::taskpool::TaskPool;
+//! use quetty_server::taskpool::TaskPool;
 //!
 //! async fn example() {
 //!     let pool = TaskPool::new(10); // Allow up to 10 concurrent tasks
@@ -64,7 +64,7 @@ impl TaskPool {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::taskpool::TaskPool;
+    /// use quetty_server::taskpool::TaskPool;
     ///
     /// let pool = TaskPool::new(5); // Allow up to 5 concurrent tasks
     /// ```
@@ -92,7 +92,7 @@ impl TaskPool {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::taskpool::TaskPool;
+    /// use quetty_server::taskpool::TaskPool;
     ///
     /// async fn example() {
     ///     let pool = TaskPool::new(3);
@@ -138,7 +138,7 @@ impl TaskPool {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::taskpool::TaskPool;
+    /// use quetty_server::taskpool::TaskPool;
     ///
     /// async fn example() {
     ///     let pool = TaskPool::new(3);
@@ -166,7 +166,7 @@ impl TaskPool {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::taskpool::TaskPool;
+    /// use quetty_server::taskpool::TaskPool;
     ///
     /// async fn example() {
     ///     let pool = TaskPool::new(3);

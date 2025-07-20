@@ -39,7 +39,7 @@ pub enum EnvVarError {
 /// # Examples
 ///
 /// ```no_run
-/// use server::utils::EnvUtils;
+/// use quetty_server::utils::EnvUtils;
 ///
 /// // Check if a variable exists and has a value
 /// if EnvUtils::has_non_empty_var("DATABASE_URL") {
@@ -72,7 +72,7 @@ impl EnvUtils {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::utils::EnvUtils;
+    /// use quetty_server::utils::EnvUtils;
     ///
     /// if EnvUtils::has_non_empty_var("API_KEY") {
     ///     println!("API key is configured");
@@ -111,7 +111,7 @@ impl EnvUtils {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::utils::EnvUtils;
+    /// use quetty_server::utils::EnvUtils;
     ///
     /// match EnvUtils::get_validated_var("DATABASE_URL") {
     ///     Ok(url) => println!("Database URL: {}", url),
@@ -156,7 +156,7 @@ impl EnvUtils {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::utils::EnvUtils;
+    /// use quetty_server::utils::EnvUtils;
     ///
     /// let debug_mode = EnvUtils::get_optional_var("DEBUG_MODE")
     ///     .unwrap_or_else(|| "false".to_string());

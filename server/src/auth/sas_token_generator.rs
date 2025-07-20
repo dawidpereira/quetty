@@ -22,7 +22,7 @@ type HmacSha256 = Hmac<Sha256>;
 /// # Examples
 ///
 /// ```no_run
-/// use server::auth::SasTokenGenerator;
+/// use quetty_server::auth::SasTokenGenerator;
 ///
 /// let generator = SasTokenGenerator::new("my-namespace".to_string());
 /// let token = generator.generate_sas_token(
@@ -46,7 +46,7 @@ impl SasTokenGenerator {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::SasTokenGenerator;
+    /// use quetty_server::auth::SasTokenGenerator;
     ///
     /// let generator = SasTokenGenerator::new("my-servicebus-namespace".to_string());
     /// ```
@@ -80,7 +80,7 @@ impl SasTokenGenerator {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::SasTokenGenerator;
+    /// use quetty_server::auth::SasTokenGenerator;
     ///
     /// let generator = SasTokenGenerator::new("namespace".to_string());
     /// let token = generator.generate_sas_token(
@@ -144,7 +144,7 @@ impl SasTokenGenerator {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::SasTokenGenerator;
+    /// use quetty_server::auth::SasTokenGenerator;
     ///
     /// let generator = SasTokenGenerator::new("namespace".to_string());
     /// let token = generator.generate_sas_token("key_name", "key", 24)?;

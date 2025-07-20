@@ -17,7 +17,7 @@ use tokio::sync::Mutex;
 /// # Examples
 ///
 /// ```no_run
-/// use server::producer::Producer;
+/// use quetty_server::producer::Producer;
 /// use azservicebus::{ServiceBusSender, ServiceBusMessage};
 ///
 /// async fn example(sender: ServiceBusSender) -> Result<(), Box<dyn std::error::Error>> {

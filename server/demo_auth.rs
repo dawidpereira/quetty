@@ -1,8 +1,8 @@
 // Demo script showing the simplified authentication system
 // This is not part of the compiled application, just for demonstration
 
-use server::auth::{AuthProvider, create_auth_provider};
-use server::service_bus_manager::AzureAdConfig;
+use quetty_server::auth::{AuthProvider, create_auth_provider};
+use quetty_server::service_bus_manager::AzureAdConfig;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

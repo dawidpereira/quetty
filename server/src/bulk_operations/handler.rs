@@ -25,8 +25,8 @@ use tokio_util::sync::CancellationToken;
 /// # Examples
 ///
 /// ```no_run
-/// use server::bulk_operations::{BulkOperationHandler, BatchConfig, MessageIdentifier};
-/// use server::consumer::Consumer;
+/// use quetty_server::bulk_operations::{BulkOperationHandler, BatchConfig, MessageIdentifier};
+/// use quetty_server::consumer::Consumer;
 /// use std::sync::Arc;
 /// use tokio::sync::Mutex;
 ///
@@ -64,7 +64,7 @@ impl BulkOperationHandler {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::bulk_operations::{BulkOperationHandler, BatchConfig};
+    /// use quetty_server::bulk_operations::{BulkOperationHandler, BatchConfig};
     ///
     /// let config = BatchConfig {
     ///     batch_size: 50,
@@ -107,8 +107,8 @@ impl BulkOperationHandler {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::bulk_operations::{BulkOperationHandler, MessageIdentifier};
-    /// use server::consumer::Consumer;
+    /// use quetty_server::bulk_operations::{BulkOperationHandler, MessageIdentifier};
+    /// use quetty_server::consumer::Consumer;
     /// use std::sync::Arc;
     /// use tokio::sync::Mutex;
     ///
@@ -170,7 +170,7 @@ impl Default for BulkOperationHandler {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::bulk_operations::BulkOperationHandler;
+    /// use quetty_server::bulk_operations::BulkOperationHandler;
     ///
     /// let handler = BulkOperationHandler::default();
     /// ```

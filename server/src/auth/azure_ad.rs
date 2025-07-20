@@ -38,7 +38,7 @@ pub struct DeviceCodeFlowInfo {
 /// # Examples
 ///
 /// ```no_run
-/// use server::auth::{AzureAdProvider, AzureAdAuthConfig};
+/// use quetty_server::auth::{AzureAdProvider, AzureAdAuthConfig};
 ///
 /// let config = AzureAdAuthConfig {
 ///     auth_method: "device_code".to_string(),
@@ -95,7 +95,7 @@ impl AzureAdProvider {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::{AzureAdProvider, AzureAdAuthConfig};
+    /// use quetty_server::auth::{AzureAdProvider, AzureAdAuthConfig};
     ///
     /// let config = AzureAdAuthConfig::default();
     /// let client = reqwest::Client::new();
@@ -261,7 +261,7 @@ impl AzureAdProvider {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::AzureAdProvider;
+    /// use quetty_server::auth::AzureAdProvider;
     ///
     /// let provider = AzureAdProvider::new(config, client)?;
     /// let device_info = provider.start_device_code_flow().await?;
@@ -367,7 +367,7 @@ impl AzureAdProvider {
     /// # Examples
     ///
     /// ```no_run
-    /// use server::auth::AzureAdProvider;
+    /// use quetty_server::auth::AzureAdProvider;
     ///
     /// let provider = AzureAdProvider::new(config, client)?;
     /// let device_info = provider.start_device_code_flow().await?;

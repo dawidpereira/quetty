@@ -26,7 +26,7 @@ use std::fmt;
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::{ServiceBusError, ServiceBusResult};
+/// use quetty_server::service_bus_manager::{ServiceBusError, ServiceBusResult};
 ///
 /// fn handle_error(error: ServiceBusError) {
 ///     match error {
@@ -452,7 +452,7 @@ impl From<CacheError> for ServiceBusError {
 /// # Examples
 ///
 /// ```no_run
-/// use server::service_bus_manager::{ServiceBusResult, ServiceBusError};
+/// use quetty_server::service_bus_manager::{ServiceBusResult, ServiceBusError};
 ///
 /// fn get_queue_info() -> ServiceBusResult<String> {
 ///     // ... operation that might fail

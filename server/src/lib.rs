@@ -37,8 +37,8 @@
 //!
 //! ### Basic Service Bus Operations
 //! ```no_run
-//! use server::service_bus_manager::ServiceBusManager;
-//! use server::auth::ConnectionStringProvider;
+//! use quetty_server::service_bus_manager::ServiceBusManager;
+//! use quetty_server::auth::ConnectionStringProvider;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -62,8 +62,8 @@
 //!
 //! ### Bulk Operations
 //! ```no_run
-//! use server::bulk_operations::BulkOperationHandler;
-//! use server::service_bus_manager::ServiceBusManager;
+//! use quetty_server::bulk_operations::BulkOperationHandler;
+//! use quetty_server::service_bus_manager::ServiceBusManager;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -85,7 +85,7 @@
 //!
 //! ### Authentication with Azure AD
 //! ```no_run
-//! use server::auth::{AzureAdProvider, AuthStateManager};
+//! use quetty_server::auth::{AzureAdProvider, AuthStateManager};
 //! use std::sync::Arc;
 //!
 //! #[tokio::main]

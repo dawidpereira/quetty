@@ -41,7 +41,7 @@ struct BatchIterationParams<'a> {
 /// # Examples
 ///
 /// ```no_run
-/// use server::bulk_operations::{BulkDeleter, BatchConfig, BulkOperationContext, BulkSendParams};
+/// use quetty_server::bulk_operations::{BulkDeleter, BatchConfig, BulkOperationContext, BulkSendParams};
 ///
 /// let config = BatchConfig::default();
 /// let deleter = BulkDeleter::new(config);
