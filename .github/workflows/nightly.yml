@@ -24,9 +24,6 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: quetty-nightly-linux-x64
-          - os: ubuntu-22.04-arm64
-            target: aarch64-unknown-linux-gnu
-            artifact_name: quetty-nightly-linux-arm64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: quetty-nightly-windows-x64.exe
@@ -214,7 +211,6 @@ jobs:
           echo "" >> NIGHTLY_CHANGELOG.md
           echo "Download the appropriate binary for your platform:" >> NIGHTLY_CHANGELOG.md
           echo "- **Linux x64**: \`quetty-nightly-linux-x64-${{ env.VERSION }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
-          echo "- **Linux ARM64**: \`quetty-nightly-linux-arm64-${{ env.VERSION }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
           echo "- **Windows x64**: \`quetty-nightly-windows-x64-${{ env.VERSION }}.zip\`" >> NIGHTLY_CHANGELOG.md
           echo "- **Windows ARM64**: \`quetty-nightly-windows-arm64-${{ env.VERSION }}.zip\`" >> NIGHTLY_CHANGELOG.md
           echo "- **macOS x64**: \`quetty-nightly-macos-x64-${{ env.VERSION }}.tar.gz\`" >> NIGHTLY_CHANGELOG.md
