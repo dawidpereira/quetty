@@ -246,6 +246,12 @@ jobs:
             sleep 30
           done
 
+          # Check if we exceeded the timeout
+          if ! curl -f "https://crates.io/api/v1/crates/quetty-server/${{ env.VERSION }}" > /dev/null 2>&1; then
+            echo "❌ Server crate never became available - aborting."
+            exit 1
+          fi
+
       - name: Update UI crate dependency to use published version
         run: |
           echo "Updating UI crate to use published server crate..."

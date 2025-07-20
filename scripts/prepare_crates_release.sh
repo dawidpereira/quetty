@@ -118,6 +118,12 @@ for i in {1..10}; do
   sleep 30
 done
 
+# Check if we exceeded the timeout
+if ! curl -f "https://crates.io/api/v1/crates/quetty-server/$VERSION" > /dev/null 2>&1; then
+  echo -e "${RED}❌ Server crate never became available - aborting.${NC}"
+  exit 1
+fi
+
 # Update UI crate dependency to use published version
 echo -e "${BLUE}📝 Updating UI crate to use published server crate...${NC}"
 # Create backup
