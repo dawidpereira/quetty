@@ -35,8 +35,10 @@ jobs:
     - name: Build
       run: cargo build --verbose
 
-    - name: Copy example config.toml for tests
-      run: cp config.example.toml config.toml
+    - name: Copy default config files for tests
+      run: |
+        cp config.default.toml config.toml
+        cp keys.default.toml keys.toml
 
     - name: Run tests
       run: cargo test --verbose
