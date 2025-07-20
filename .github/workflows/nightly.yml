@@ -40,10 +40,16 @@ jobs:
 
       - name: Generate version
         run: |
-          echo "VERSION=$(date +%Y%m%d).0.$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          # Get the base version from Cargo.toml
+          BASE_VERSION=$(grep '^version' ui/Cargo.toml | sed 's/.*"\(.*\)".*/\1/' | cut -d'-' -f1)
+
+          # Create nightly version with both pre-release and build metadata
+          NIGHTLY_VERSION="${BASE_VERSION}-nightly+$(date +%Y%m%d).$(git rev-parse --short HEAD)"
+
+          echo "VERSION=$NIGHTLY_VERSION" >> $GITHUB_ENV
           echo "DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
           echo "SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "Generated nightly version: $(date +%Y%m%d).0.$(git rev-parse --short HEAD)"
+          echo "Generated nightly version: $NIGHTLY_VERSION"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -133,7 +139,13 @@ jobs:
 
       - name: Generate version
         run: |
-          echo "VERSION=$(date +%Y%m%d).0.$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          # Get the base version from Cargo.toml
+          BASE_VERSION=$(grep '^version' ui/Cargo.toml | sed 's/.*"\(.*\)".*/\1/' | cut -d'-' -f1)
+
+          # Create nightly version with both pre-release and build metadata
+          NIGHTLY_VERSION="${BASE_VERSION}-nightly+$(date +%Y%m%d).$(git rev-parse --short HEAD)"
+
+          echo "VERSION=$NIGHTLY_VERSION" >> $GITHUB_ENV
           echo "DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
           echo "SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
