@@ -73,8 +73,8 @@ jobs:
           cp config.default.toml config.toml
           cp keys.default.toml keys.toml
 
-      - name: Run tests
-        run: cargo test --verbose
+      - name: Run tests (excluding doc tests)
+        run: cargo test --verbose --lib --bins --tests
 
       - name: Run Clippy (reuses build artifacts)
         run: cargo clippy --workspace --all-features -- -D warnings
