@@ -21,9 +21,9 @@ on:
       - '.github/workflows/ci.yml'
 
 jobs:
-  # Fast checks that don't need compilation
-  lint-format:
-    name: "Format Check"
+  # Fast lint checks
+  lint-checks:
+    name: "Lint & Format"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,8 +32,18 @@ jobs:
         with:
           components: |
             rustfmt
+            clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "lint-cache"
+
       - name: Check formatting
         run: cargo fmt --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-features -- -D warnings
 
   # Build and test together for resource efficiency
   build-and-test:
@@ -77,6 +87,3 @@ jobs:
 
       - name: Run tests (excluding doc tests)
         run: cargo test --verbose --lib --bins --tests
-
-      - name: Run Clippy (reuses build artifacts)
-        run: cargo clippy --workspace --all-features -- -D warnings
