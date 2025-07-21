@@ -30,6 +30,7 @@ uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = [
   "serde",
   "clock",
+  "std",
 ] }
 anyhow = "1.0"
 thiserror = "2.0"
