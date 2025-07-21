@@ -8,7 +8,7 @@ fn create_test_message(id: &str, sequence: i64, body: &str) -> MessageModel {
     MessageModel::new(
         sequence,
         id.to_string(),
-        azure_core::date::OffsetDateTime::now_utc(),
+        azure_core::time::OffsetDateTime::now_utc(),
         1,
         MessageState::Active,
         BodyData::RawString(body.to_string()),
