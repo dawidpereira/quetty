@@ -1,6 +1,8 @@
 # Quetty
 <div align="center">
 
+[![Version](https://img.shields.io/badge/version-0.1.0--alpha.1-orange?style=for-the-badge)](https://github.com/dawidpereira/quetty/releases)
+[![Status](https://img.shields.io/badge/status-alpha-orange?style=for-the-badge)](#-development-phase)
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Azure](https://img.shields.io/badge/azure-%230072C6.svg?style=for-the-badge&logo=microsoftazure&logoColor=white)](https://azure.microsoft.com/en-us/products/service-bus)
 [![Terminal](https://img.shields.io/badge/Terminal-%23054020?style=for-the-badge&logo=gnu-bash&logoColor=white)](#)
@@ -157,7 +159,29 @@ curl -fsSL https://raw.githubusercontent.com/dawidpereira/quetty/main/install.sh
 **Supported platforms:**
 - Linux x64, macOS Intel/Apple Silicon, Windows x64/ARM64
 
-#### Option 2: Manual Download 📦
+#### Option 2: Homebrew 🍺 (macOS/Linux)
+The recommended way for macOS and Linux users:
+
+⚠️ **Alpha Release**: This installs the current alpha version. Expect potential changes and updates.
+
+```bash
+# Add the tap
+brew tap dawidpereira/quetty
+
+# Install quetty
+brew install quetty
+
+# Verify installation
+quetty --version
+```
+
+**What you get:**
+- ✅ Automatic dependency management
+- ✅ Easy updates with `brew upgrade quetty`
+- ✅ Clean uninstall with `brew uninstall quetty`
+- ✅ Integration with system PATH
+
+#### Option 3: Manual Download 📦
 Download pre-built binaries from [GitHub Releases](https://github.com/dawidpereira/quetty/releases):
 
 **Stable Releases** 🎯 (Production):
@@ -182,7 +206,7 @@ mv quetty-* ~/.local/bin/quetty
 sha256sum -c checksums.txt
 ```
 
-#### Option 3: Build from Source 🔧
+#### Option 4: Build from Source 🔧
 For development or latest unreleased features:
 ```bash
 git clone https://github.com/dawidpereira/quetty.git
