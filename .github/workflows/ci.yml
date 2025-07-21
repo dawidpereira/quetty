@@ -1,83 +1,80 @@
-name: Rust
+name: CI
 
 on:
   push:
     branches: [ "main" ]
+    paths:
+      - 'server/**'
+      - 'ui/**'
+      - 'Cargo.*'
+      - 'config.default.toml'
+      - 'keys.default.toml'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [ "main" ]
-
-env:
-  CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: 0
+    paths:
+      - 'server/**'
+      - 'ui/**'
+      - 'Cargo.*'
+      - 'config.default.toml'
+      - 'keys.default.toml'
+      - '.github/workflows/ci.yml'
 
 jobs:
-  build:
+  # Fast checks that don't need compilation
+  lint-format:
+    name: "Format Check"
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
-        components: rustfmt, clippy
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --check
 
-    - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@main
-      with:
-        tool-cache: false
-        android: true
-        dotnet: true
-        haskell: true
-        large-packages: true
-        docker-images: true
-        swap-storage: true
+  # Build and test together for resource efficiency
+  build-and-test:
+    name: "Build & Test"
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
-    - name: Check disk space before build
-      run: df -h
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
 
-    - name: Cache Cargo dependencies
-      uses: Swatinem/rust-cache@v2
-      with:
-        shared-key: "ci-cache"
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "unified-cache"
 
-    - name: Build
-      run: cargo build --verbose
+      # Single build for both test and clippy
+      - name: Build workspace
+        run: cargo build --verbose
 
-    - name: Check disk space after build
-      run: df -h
+      - name: Copy default config files for tests
+        run: |
+          cp config.default.toml config.toml
+          cp keys.default.toml keys.toml
 
-    - name: Copy default config files for tests
-      run: |
-        cp config.default.toml config.toml
-        cp keys.default.toml keys.toml
+      - name: Run tests
+        run: cargo test --verbose
 
-    - name: Run tests
-      run: cargo test --verbose
-
-    - name: Check disk space after tests
-      run: df -h
-
-    - name: Check formatting
-      run: cargo fmt --check
-
-    - name: Clean build artifacts before clippy
-      run: cargo clean
-
-    - name: Run Clippy
-      run: cargo clippy --workspace --all-features -- -D warnings
-
-    - name: Check final disk space
-      run: df -h
-
-  call-notion-notification:
-    needs: build
-    if: failure()
-    uses: ./.github/workflows/notion-notification.yml
-    with:
-      repository: ${{ github.repository }}
-      ref_name: ${{ github.ref_name }}
-      run_id: ${{ github.run_id }}
-    secrets:
-      NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
-      NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+      - name: Run Clippy (reuses build artifacts)
+        run: cargo clippy --workspace --all-features -- -D warnings
