@@ -30,7 +30,8 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          components: |
+            rustfmt
       - name: Check formatting
         run: cargo fmt --check
 
@@ -46,7 +47,8 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: |
+            clippy
 
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
