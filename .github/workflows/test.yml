@@ -1,0 +1,63 @@
+name: Test
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'server/**'
+      - 'ui/**'
+      - 'Cargo.*'
+      - 'config.default.toml'
+      - 'keys.default.toml'
+      - '.github/workflows/test.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'server/**'
+      - 'ui/**'
+      - 'Cargo.*'
+      - 'config.default.toml'
+      - 'keys.default.toml'
+      - '.github/workflows/test.yml'
+  workflow_call:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Free Disk Space (Ubuntu)
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: true
+        docker-images: true
+        swap-storage: true
+
+    - name: Cache Cargo dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "build-cache"
+
+
+    - name: Copy default config files for tests
+      run: |
+        cp config.default.toml config.toml
+        cp keys.default.toml keys.toml
+
+    - name: Run tests
+      run: cargo test --verbose
