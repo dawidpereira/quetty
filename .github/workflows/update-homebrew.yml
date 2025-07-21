@@ -1,0 +1,153 @@
+name: Update Homebrew Formula
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to update formula for'
+        required: true
+        default: 'latest'
+
+env:
+  HOMEBREW_REPO: dawidpereira/homebrew-quetty
+  FORMULA_PATH: Formula/quetty.rb
+
+jobs:
+  update-formula:
+    # Only run for stable releases (not pre-releases like alpha/beta)
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout main repository
+      uses: actions/checkout@v4
+
+    - name: Get release information
+      id: release
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event.inputs.tag }}" = "latest" ]; then
+            TAG=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r .tag_name)
+          else
+            TAG=${{ github.event.inputs.tag }}
+          fi
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/archive/refs/tags/${TAG}.tar.gz"
+        else
+          TAG=${{ github.event.release.tag_name }}
+          DOWNLOAD_URL="${{ github.event.release.tarball_url }}"
+        fi
+
+        VERSION=${TAG#v}  # Remove 'v' prefix if present
+        echo "tag=${TAG}" >> $GITHUB_OUTPUT
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "download_url=${DOWNLOAD_URL}" >> $GITHUB_OUTPUT
+        echo "Release tag: ${TAG}"
+        echo "Version: ${VERSION}"
+        echo "Download URL: ${DOWNLOAD_URL}"
+
+    - name: Download and calculate SHA256
+      id: checksum
+      run: |
+        echo "Downloading tarball..."
+        curl -L -o release.tar.gz "${{ steps.release.outputs.download_url }}"
+
+        echo "Calculating SHA256..."
+        SHA256=$(sha256sum release.tar.gz | awk '{print $1}')
+        echo "sha256=${SHA256}" >> $GITHUB_OUTPUT
+        echo "SHA256: ${SHA256}"
+
+        # Verify download
+        ls -la release.tar.gz
+        file release.tar.gz
+
+    - name: Checkout homebrew tap repository
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ env.HOMEBREW_REPO }}
+        token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        path: homebrew-tap
+
+    - name: Update formula
+      run: |
+        cd homebrew-tap
+
+        # Backup current formula
+        cp ${{ env.FORMULA_PATH }} ${{ env.FORMULA_PATH }}.backup
+
+        # Update version and SHA256 in formula
+        sed -i 's|url ".*"|url "https://github.com/${{ github.repository }}/archive/refs/tags/${{ steps.release.outputs.tag }}.tar.gz"|' ${{ env.FORMULA_PATH }}
+        sed -i 's/sha256 ".*"/sha256 "${{ steps.checksum.outputs.sha256 }}"/' ${{ env.FORMULA_PATH }}
+
+        # Verify changes
+        echo "=== Formula changes ==="
+        diff ${{ env.FORMULA_PATH }}.backup ${{ env.FORMULA_PATH }} || true
+        echo "======================"
+
+        # Show updated formula
+        echo "=== Updated formula ==="
+        cat ${{ env.FORMULA_PATH }}
+        echo "======================"
+
+    - name: Commit and push formula update
+      run: |
+        cd homebrew-tap
+
+        # Configure git
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Check if there are changes
+        if git diff --quiet ${{ env.FORMULA_PATH }}; then
+          echo "No changes to formula, skipping commit"
+          exit 0
+        fi
+
+        # Commit changes
+        git add ${{ env.FORMULA_PATH }}
+        git commit -m "feat: update quetty to ${{ steps.release.outputs.version }}
+
+        - Update formula for release ${{ steps.release.outputs.tag }}
+        - SHA256: ${{ steps.checksum.outputs.sha256 }}
+        - Automated update via GitHub Actions"
+
+        # Push changes
+        git push origin main
+
+        echo "✅ Formula updated successfully!"
+
+    - name: Verify formula syntax
+      run: |
+        cd homebrew-tap
+
+        # Basic Ruby syntax check
+        ruby -c ${{ env.FORMULA_PATH }}
+        echo "✅ Formula syntax is valid"
+
+    - name: Create summary
+      run: |
+        cat >> $GITHUB_STEP_SUMMARY << EOF
+        # 🍺 Homebrew Formula Updated Successfully!
+
+        ## Release Details
+        - **Tag**: \`${{ steps.release.outputs.tag }}\`
+        - **Version**: \`${{ steps.release.outputs.version }}\`
+        - **SHA256**: \`${{ steps.checksum.outputs.sha256 }}\`
+
+        ## Formula Location
+        - **Repository**: [${{ env.HOMEBREW_REPO }}](https://github.com/${{ env.HOMEBREW_REPO }})
+        - **File**: \`${{ env.FORMULA_PATH }}\`
+
+        ## User Instructions
+        Users can now update to the latest version with:
+        \`\`\`bash
+        brew upgrade quetty
+        \`\`\`
+
+        Or fresh install with:
+        \`\`\`bash
+        brew tap ${{ env.HOMEBREW_REPO }}
+        brew install quetty
+        \`\`\`
+        EOF
