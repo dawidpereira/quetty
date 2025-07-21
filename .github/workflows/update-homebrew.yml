@@ -27,6 +27,9 @@ jobs:
     - name: Get release information
       id: release
       run: |
+        set -euo pipefail
+        command -v jq >/dev/null 2>&1 || { echo "❌ jq not found"; exit 1; }
+
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
           if [ "${{ github.event.inputs.tag }}" = "latest" ]; then
             TAG=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r .tag_name)
@@ -76,9 +79,9 @@ jobs:
         # Backup current formula
         cp ${{ env.FORMULA_PATH }} ${{ env.FORMULA_PATH }}.backup
 
-        # Update version and SHA256 in formula
-        sed -i 's|url ".*"|url "https://github.com/${{ github.repository }}/archive/refs/tags/${{ steps.release.outputs.tag }}.tar.gz"|' ${{ env.FORMULA_PATH }}
-        sed -i 's/sha256 ".*"/sha256 "${{ steps.checksum.outputs.sha256 }}"/' ${{ env.FORMULA_PATH }}
+        # Update version and SHA256 in formula with anchored patterns
+        sed -i -E 's|^(\s*)url "[^"]*"|\1url "https://github.com/${{ github.repository }}/archive/refs/tags/${{ steps.release.outputs.tag }}.tar.gz"|' ${{ env.FORMULA_PATH }}
+        sed -i -E 's|^(\s*)sha256 "[0-9a-f]+"|\1sha256 "${{ steps.checksum.outputs.sha256 }}"|' ${{ env.FORMULA_PATH }}
 
         # Verify changes
         echo "=== Formula changes ==="
