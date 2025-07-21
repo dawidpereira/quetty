@@ -35,7 +35,7 @@
 //!
 //! ```no_run
 //! use quetty_server::model::{MessageModel, MessageState, BodyData};
-//! use azure_core::date::OffsetDateTime;
+//! use azure_core::time::OffsetDateTime;
 //!
 //! // Create a new message model
 //! let message = MessageModel::new(
@@ -160,7 +160,7 @@
 
 use azservicebus::prelude::ServiceBusPeekedMessage;
 use azservicebus::primitives::service_bus_message_state::ServiceBusMessageState;
-use azure_core::date::OffsetDateTime;
+use azure_core::time::OffsetDateTime;
 use serde::Serialize;
 use serde::ser::Serializer;
 use serde_json::Value;
@@ -187,7 +187,7 @@ use std::convert::TryFrom;
 /// ## Creating a New Message Model
 /// ```no_run
 /// use quetty_server::model::{MessageModel, MessageState, BodyData};
-/// use azure_core::date::OffsetDateTime;
+/// use azure_core::time::OffsetDateTime;
 ///
 /// let message = MessageModel::new(
 ///     12345,
@@ -271,7 +271,7 @@ pub struct MessageModel {
     /// Message identifier, typically a GUID string
     pub id: String,
     /// UTC timestamp when the message was originally enqueued
-    #[serde(with = "azure_core::date::iso8601")]
+    #[serde(with = "azure_core::time::iso8601")]
     pub enqueued_at: OffsetDateTime,
     /// Number of times delivery has been attempted for this message
     pub delivery_count: usize,

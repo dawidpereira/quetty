@@ -1,12 +1,7 @@
 [workspace]
 resolver = "3"
-members = [
-    "server",
-    "ui"
-]
-exclude = [
-    "traffic-simulator"
-]
+members = ["server", "ui"]
+exclude = ["traffic-simulator"]
 
 [workspace.package]
 version = "0.1.0-alpha.1"
@@ -19,7 +14,7 @@ documentation = "https://github.com/dawidpereira/quetty/tree/main/docs"
 
 [workspace.dependencies]
 # Core async runtime
-tokio = { version = "1.45.0", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.46", features = ["rt-multi-thread", "macros"] }
 tokio-util = "0.7"
 
 # Serialization
@@ -27,15 +22,21 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Azure Service Bus
-azservicebus = "0.20.4"
-azure_core = "0.25.0"
+azservicebus = "0.25.1"
+azure_core = "0.26.0"
 
 # Utilities
 uuid = { version = "1", features = ["v4"] }
-chrono = "0.4"
+chrono = { version = "0.4", default-features = false, features = [
+  "serde",
+  "clock",
+] }
 anyhow = "1.0"
 thiserror = "2.0"
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "rustls-tls",
+] }
 
 # Logging
 log = "0.4"
@@ -50,5 +51,5 @@ zeroize = { version = "1.7", features = ["derive"] }
 sha2 = "0.10"
 
 # Configuration and directories
-dirs = "5"
+dirs = "6"
 once_cell = "1.19"
