@@ -63,13 +63,6 @@ Your testing and feedback help us build a better tool for the entire Azure Servi
 
 ## Interface Preview
 
-Experience Azure Service Bus management through Quetty's intuitive terminal interface.
-
-<div align="center">
-  <img src="assets/quetty-ui-draw.png" alt="Quetty Terminal Interface" width="900">
-  <p><em>Quetty's clean and efficient terminal user interface</em></p>
-</div>
-
 ### 🎥 Live Demo
 
 See Quetty in action with this interactive demo showcasing core features:
