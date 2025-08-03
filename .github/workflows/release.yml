@@ -238,7 +238,7 @@ jobs:
 
           # Poll crates.io API to ensure the crate is available
           for i in {1..10}; do
-            if curl -f "https://crates.io/api/v1/crates/quetty-server/${{ env.VERSION }}" > /dev/null 2>&1; then
+            if curl -s "https://crates.io/api/v1/crates/quetty-server" | jq -r '.crate.max_version' | grep -q "^${{ env.VERSION }}$"; then
               echo "Server crate is now available on crates.io!"
               break
             fi
@@ -247,7 +247,7 @@ jobs:
           done
 
           # Check if we exceeded the timeout
-          if ! curl -f "https://crates.io/api/v1/crates/quetty-server/${{ env.VERSION }}" > /dev/null 2>&1; then
+          if ! curl -s "https://crates.io/api/v1/crates/quetty-server" | jq -r '.crate.max_version' | grep -q "^${{ env.VERSION }}$"; then
             echo "❌ Server crate never became available - aborting."
             exit 1
           fi

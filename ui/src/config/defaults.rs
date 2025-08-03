@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 /// Default base configuration file embedded in the binary
-pub const DEFAULT_CONFIG: &str = include_str!("../../../config.default.toml");
+pub const DEFAULT_CONFIG: &str = include_str!("../../config.default.toml");
 
 /// Default key bindings configuration file embedded in the binary
-pub const DEFAULT_KEYS: &str = include_str!("../../../keys.default.toml");
+pub const DEFAULT_KEYS: &str = include_str!("../../keys.default.toml");
 
 /// Default theme files embedded in the binary
 pub fn default_themes() -> HashMap<&'static str, &'static str> {
