@@ -11,54 +11,54 @@ pub fn default_themes() -> HashMap<&'static str, &'static str> {
     let mut themes = HashMap::new();
     themes.insert(
         "quetty/dark.toml",
-        include_str!("../../../themes/quetty/dark.toml"),
+        include_str!("../../themes/quetty/dark.toml"),
     );
     themes.insert(
         "quetty/light.toml",
-        include_str!("../../../themes/quetty/light.toml"),
+        include_str!("../../themes/quetty/light.toml"),
     );
 
     // Add other theme directories
     themes.insert(
         "catppuccin/frappe.toml",
-        include_str!("../../../themes/catppuccin/frappe.toml"),
+        include_str!("../../themes/catppuccin/frappe.toml"),
     );
     themes.insert(
         "catppuccin/latte.toml",
-        include_str!("../../../themes/catppuccin/latte.toml"),
+        include_str!("../../themes/catppuccin/latte.toml"),
     );
     themes.insert(
         "catppuccin/macchiato.toml",
-        include_str!("../../../themes/catppuccin/macchiato.toml"),
+        include_str!("../../themes/catppuccin/macchiato.toml"),
     );
     themes.insert(
         "catppuccin/mocha.toml",
-        include_str!("../../../themes/catppuccin/mocha.toml"),
+        include_str!("../../themes/catppuccin/mocha.toml"),
     );
 
     themes.insert(
         "nightfox/carbonfox.toml",
-        include_str!("../../../themes/nightfox/carbonfox.toml"),
+        include_str!("../../themes/nightfox/carbonfox.toml"),
     );
     themes.insert(
         "nightfox/dawnfox.toml",
-        include_str!("../../../themes/nightfox/dawnfox.toml"),
+        include_str!("../../themes/nightfox/dawnfox.toml"),
     );
     themes.insert(
         "nightfox/duskfox.toml",
-        include_str!("../../../themes/nightfox/duskfox.toml"),
+        include_str!("../../themes/nightfox/duskfox.toml"),
     );
     themes.insert(
         "nightfox/nightfox.toml",
-        include_str!("../../../themes/nightfox/nightfox.toml"),
+        include_str!("../../themes/nightfox/nightfox.toml"),
     );
     themes.insert(
         "nightfox/nordfox.toml",
-        include_str!("../../../themes/nightfox/nordfox.toml"),
+        include_str!("../../themes/nightfox/nordfox.toml"),
     );
     themes.insert(
         "nightfox/terafox.toml",
-        include_str!("../../../themes/nightfox/terafox.toml"),
+        include_str!("../../themes/nightfox/terafox.toml"),
     );
 
     themes
