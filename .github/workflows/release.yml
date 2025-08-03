@@ -233,30 +233,30 @@ jobs:
 
       - name: Wait for server crate to be available
         run: |
-          echo "Waiting for server crate version $VERSION to be available on crates.io..."
+          echo "Waiting for server crate to become available on crates.io..."
           sleep 30
 
-          # Poll crates.io API using version-specific endpoint
+          # Poll crates.io API to ensure the crate is available
           for i in {1..10}; do
-            if curl -s -f -I "https://crates.io/api/v1/crates/quetty-server/$VERSION" >/dev/null 2>&1; then
-              echo "✓ Version $VERSION is available on crates.io!"
+            if curl -s "https://crates.io/api/v1/crates/quetty-server" | grep -q '"max_version":"${{ env.VERSION }}"'; then
+              echo "Server crate is now available on crates.io!"
               break
             fi
-            echo "Attempt $i: Version $VERSION not yet available, waiting..."
+            echo "Attempt $i: Server crate not yet available, waiting..."
             sleep 30
           done
 
-          # Final check - will exit with error if version is not available
-          curl -s -f -I "https://crates.io/api/v1/crates/quetty-server/$VERSION" || {
-            echo "❌ Version $VERSION never became available on crates.io"
+          # Check if we exceeded the timeout
+          if ! curl -s "https://crates.io/api/v1/crates/quetty-server" | grep -q '"max_version":"${{ env.VERSION }}"'; then
+            echo "❌ Server crate never became available - aborting."
             exit 1
-          }
+          fi
 
       - name: Update UI crate dependency to use published version
         run: |
           echo "Updating UI crate to use published server crate..."
           # Replace path dependency with published version (robust pattern)
-          sed -Ei 's#^quetty_server[[:space:]]*=.*#quetty_server = { package = "quetty-server", version = "'"$VERSION"'" }#' ui/Cargo.toml
+          sed -Ei 's#^quetty_server[[:space:]]*=.*#quetty_server = { package = "quetty-server", version = "${{ env.VERSION }}" }#' ui/Cargo.toml
 
           echo "Updated UI Cargo.toml:"
           grep "quetty_server" ui/Cargo.toml
