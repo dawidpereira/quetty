@@ -491,7 +491,7 @@ fn start_bulk_send_operation<T: TerminalAdapter>(
     let max_position = if let Some(highest_index) = model
         .queue_state()
         .bulk_selection
-        .get_highest_selected_index()
+        .get_highest_selected_position()
     {
         highest_index
     } else if message_ids.len() == 1 {
@@ -534,9 +534,8 @@ fn start_bulk_send_with_data_operation<T: TerminalAdapter>(
     let max_position = if let Some(highest_index) = model
         .queue_state()
         .bulk_selection
-        .get_highest_selected_index()
+        .get_highest_selected_position()
     {
-        // get_highest_selected_index now returns 1-based position
         highest_index
     } else if messages_data.len() == 1 {
         // Single message operation - get current message index from UI state
