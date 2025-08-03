@@ -238,7 +238,8 @@ jobs:
 
           # Poll crates.io API to ensure the crate is available
           for i in {1..10}; do
-            if curl -s "https://crates.io/api/v1/crates/quetty-server" | grep -q '"max_version":"${{ env.VERSION }}"'; then
+            CURRENT_VERSION=$(curl -s "https://crates.io/api/v1/crates/quetty-server" | grep -o '"max_version":"[^"]*"' | cut -d'"' -f4 || echo "none")
+            if [ "$CURRENT_VERSION" = "$VERSION" ]; then
               echo "Server crate is now available on crates.io!"
               break
             fi
@@ -247,7 +248,8 @@ jobs:
           done
 
           # Check if we exceeded the timeout
-          if ! curl -s "https://crates.io/api/v1/crates/quetty-server" | grep -q '"max_version":"${{ env.VERSION }}"'; then
+          CURRENT_VERSION=$(curl -s "https://crates.io/api/v1/crates/quetty-server" | grep -o '"max_version":"[^"]*"' | cut -d'"' -f4 || echo "none")
+          if [ "$CURRENT_VERSION" != "$VERSION" ]; then
             echo "❌ Server crate never became available - aborting."
             exit 1
           fi
@@ -256,7 +258,7 @@ jobs:
         run: |
           echo "Updating UI crate to use published server crate..."
           # Replace path dependency with published version (robust pattern)
-          sed -Ei 's#^quetty_server[[:space:]]*=.*#quetty_server = { package = "quetty-server", version = "${{ env.VERSION }}" }#' ui/Cargo.toml
+          sed -Ei 's#^quetty_server[[:space:]]*=.*#quetty_server = { package = "quetty-server", version = "'"$VERSION"'" }#' ui/Cargo.toml
 
           echo "Updated UI Cargo.toml:"
           grep "quetty_server" ui/Cargo.toml
