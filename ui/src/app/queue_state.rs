@@ -84,7 +84,7 @@ impl BulkSelectionState {
 
     /// Get the highest selected index for max_position calculation
     pub fn get_highest_selected_index(&self) -> Option<usize> {
-        self.last_selected_index.map(|index| index + 1)
+        self.selected_indices.iter().max().map(|&index| index + 1)
     }
 
     /// Check if selected messages are contiguous from the beginning (index 0)
@@ -142,6 +142,39 @@ impl BulkSelectionState {
         if !messages.is_empty() {
             self.selection_mode = true;
         }
+    }
+
+    /// Calculate the sum of gaps between selected message indices.
+    /// This is used to validate against Azure Service Bus link credit limit.
+    /// Returns the total number of non-selected messages between the first and last selected messages.
+    pub fn calculate_gap_sum(&self) -> usize {
+        if self.selected_indices.len() <= 1 {
+            return 0;
+        }
+
+        // Get sorted indices
+        let mut sorted_indices: Vec<usize> = self.selected_indices.iter().copied().collect();
+        sorted_indices.sort_unstable();
+
+        // Calculate the total range span
+        let min_index = sorted_indices.first().copied().unwrap_or(0);
+        let max_index = sorted_indices.last().copied().unwrap_or(0);
+
+        // Total gap = (max - min + 1) - number of selected messages
+        // This gives us the count of non-selected messages within the range
+        let total_span = max_index - min_index + 1;
+        let gap_sum = total_span.saturating_sub(sorted_indices.len());
+
+        log::debug!(
+            "Gap calculation: min_index={}, max_index={}, total_span={}, selected_count={}, gap_sum={}",
+            min_index,
+            max_index,
+            total_span,
+            sorted_indices.len(),
+            gap_sum
+        );
+
+        gap_sum
     }
 }
 

@@ -67,6 +67,14 @@ pub enum BulkOperationType {
 }
 
 impl<T: TerminalAdapter> BulkOperationSetup<T> {
+    /// Calculate global position from local page index
+    fn calculate_global_position(
+        page_size: usize,
+        current_page: usize,
+        local_index: usize,
+    ) -> usize {
+        current_page * page_size + local_index + 1
+    }
     /// Create a new bulk operation setup
     pub fn new(model: &Model<T>, message_ids: Vec<MessageIdentifier>) -> Self {
         Self {
@@ -189,42 +197,49 @@ impl<T: TerminalAdapter> BulkOperationSetup<T> {
 
     /// Ensure the operation will not exceed Service Bus link credit (2048)
     fn validate_link_credit_limit(&self, model: &Model<T>) -> Result<(), AppError> {
-        // Get the highest position index of selected messages (1-based)
-        let max_position = model
-            .queue_state()
-            .bulk_selection
-            .get_highest_selected_index()
-            .unwrap_or(0);
-
-        if max_position == 0 {
-            // Should not happen, but skip check if we can't determine
-            return Ok(());
-        }
-
-        // Calculate non-target messages that will remain locked during the scan
-        // This is: max_position - selected_count
-        let locked_non_targets = max_position.saturating_sub(self.message_ids.len());
-
-        // Use exact Azure Service Bus link credit limit
+        /// Azure Service Bus link credit limit - maximum number of messages
+        /// that can be locked by a receiver at once
         const LINK_CREDIT_LIMIT: usize = 2048;
 
-        if locked_non_targets > LINK_CREDIT_LIMIT {
-            return Err(AppError::State(format!(
-                "Operation would lock {} non-target messages (max position: {}, selected: {}), which exceeds the Azure Service Bus link-credit limit of {}. This would cause the bulk operation to get stuck.\n\nTo fix this:\n• Select messages in a smaller range (closer together)\n• Split into multiple smaller operations\n• Select messages from earlier pages",
-                locked_non_targets,
-                max_position,
+        // For single message operations, check if the position itself exceeds the limit
+        if self.message_ids.len() == 1 {
+            // Get the current UI index to calculate global position
+            if let Ok(tuirealm::State::One(tuirealm::StateValue::Usize(selected_index))) = model
+                .app
+                .state(&crate::components::common::ComponentId::Messages)
+            {
+                let page_size = crate::config::get_config_or_panic().max_messages() as usize;
+                let current_page = model.queue_state().message_pagination.current_page;
+                let global_position =
+                    Self::calculate_global_position(page_size, current_page, selected_index);
+
+                if global_position > LINK_CREDIT_LIMIT {
+                    return Err(AppError::State(format!(
+                        "Cannot process message at position {global_position}, which exceeds the Azure Service Bus link-credit limit of {LINK_CREDIT_LIMIT}.\n\nTo fix this:\n• Process messages from earlier pages\n• Use filtering to reduce the message set"
+                    )));
+                }
+
+                log::debug!(
+                    "Link credit validation passed: single_message_position={global_position}, limit={LINK_CREDIT_LIMIT}"
+                );
+            }
+        } else {
+            // For multiple selections, use the gap calculation method
+            let gap_sum = model.queue_state().bulk_selection.calculate_gap_sum();
+
+            if gap_sum > LINK_CREDIT_LIMIT {
+                return Err(AppError::State(format!(
+                    "Operation would require processing {gap_sum} non-selected messages between your selections, which exceeds the Azure Service Bus link-credit limit of {LINK_CREDIT_LIMIT}. This would cause the bulk operation to get stuck.\n\nTo fix this:\n• Select messages that are closer together (reduce gaps between selections)\n• Split into multiple smaller operations\n• Select contiguous ranges of messages"
+                )));
+            }
+
+            log::debug!(
+                "Link credit validation passed: gap_sum={}, selected_count={}, limit={}",
+                gap_sum,
                 self.message_ids.len(),
                 LINK_CREDIT_LIMIT
-            )));
+            );
         }
-
-        log::debug!(
-            "Link credit validation passed: max_position={}, selected={}, locked_non_targets={}, limit={}",
-            max_position,
-            self.message_ids.len(),
-            locked_non_targets,
-            LINK_CREDIT_LIMIT
-        );
 
         Ok(())
     }
@@ -369,12 +384,19 @@ impl<T: TerminalAdapter> ValidatedBulkOperation<T> {
             // get_highest_selected_index now returns 1-based position
             highest_index
         } else if self.message_ids.len() == 1 {
-            // Single message operation - get current message index from UI state
+            // Single message operation - calculate global index properly
             if let Ok(tuirealm::State::One(tuirealm::StateValue::Usize(selected_index))) = model
                 .app
                 .state(&crate::components::common::ComponentId::Messages)
             {
-                selected_index + 1 // Convert to 1-based position
+                // Calculate global index
+                let page_size = crate::config::get_config_or_panic().max_messages() as usize;
+                let current_page = model.queue_state().message_pagination.current_page;
+                BulkOperationSetup::<T>::calculate_global_position(
+                    page_size,
+                    current_page,
+                    selected_index,
+                )
             } else {
                 // Fallback to page-based estimation
                 let page_size = crate::config::get_config_or_panic().max_messages() as usize;
