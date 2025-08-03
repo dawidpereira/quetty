@@ -82,8 +82,8 @@ impl BulkSelectionState {
         self.selected_messages.iter().cloned().collect()
     }
 
-    /// Get the highest selected index for max_position calculation
-    pub fn get_highest_selected_index(&self) -> Option<usize> {
+    /// Get the highest selected position (1-based) for max_position calculation
+    pub fn get_highest_selected_position(&self) -> Option<usize> {
         self.selected_indices.iter().max().map(|&index| index + 1)
     }
 

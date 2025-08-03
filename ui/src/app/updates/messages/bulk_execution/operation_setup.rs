@@ -379,9 +379,9 @@ impl<T: TerminalAdapter> ValidatedBulkOperation<T> {
         let max_position = if let Some(highest_index) = model
             .queue_state()
             .bulk_selection
-            .get_highest_selected_index()
+            .get_highest_selected_position()
         {
-            // get_highest_selected_index now returns 1-based position
+            // get_highest_selected_position returns 1-based position
             highest_index
         } else if self.message_ids.len() == 1 {
             // Single message operation - calculate global index properly
