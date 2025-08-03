@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/dawidpereira/quetty/blob/main/docs/USER_GUIDE.md
+    about: Please check the documentation first for usage questions
+  - name: Configuration Guide
+    url: https://github.com/dawidpereira/quetty/blob/main/docs/CONFIGURATION.md
+    about: Learn how to configure Quetty for your environment
+  - name: Discussions
+    url: https://github.com/dawidpereira/quetty/discussions
+    about: For general discussions, ideas, and community support
