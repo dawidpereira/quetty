@@ -20,7 +20,7 @@ path = "src/main.rs"
 doctest = false
 
 [dependencies]
-quetty_server = { path = "../server", package = "quetty-server", version = "0.1.6" }
+quetty_server = { path = "../server", package = "quetty-server", version = "0.1.7" }
 
 # Workspace dependencies
 tokio.workspace = true
