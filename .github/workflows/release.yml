@@ -233,24 +233,24 @@ jobs:
 
       - name: Wait for server crate to be available
         run: |
-          echo "Waiting for server crate to become available on crates.io..."
+          echo "Waiting for server crate version ${{ env.VERSION }} to be available on crates.io..."
           sleep 30
 
-          # Poll crates.io API to ensure the crate is available
+          # Poll crates.io API using version-specific endpoint
           for i in {1..10}; do
-            if curl -s "https://crates.io/api/v1/crates/quetty-server" | grep -q '"max_version":"${{ env.VERSION }}"'; then
-              echo "Server crate is now available on crates.io!"
+            if curl -s -f -I "https://crates.io/api/v1/crates/quetty-server/${{ env.VERSION }}" >/dev/null 2>&1; then
+              echo "✓ Version ${{ env.VERSION }} is available on crates.io!"
               break
             fi
-            echo "Attempt $i: Server crate not yet available, waiting..."
+            echo "Attempt $i: Version ${{ env.VERSION }} not yet available, waiting..."
             sleep 30
           done
 
-          # Check if we exceeded the timeout
-          if ! curl -s "https://crates.io/api/v1/crates/quetty-server" | grep -q '"max_version":"${{ env.VERSION }}"'; then
-            echo "❌ Server crate never became available - aborting."
+          # Final check - will exit with error if version is not available
+          curl -s -f -I "https://crates.io/api/v1/crates/quetty-server/${{ env.VERSION }}" || {
+            echo "❌ Version ${{ env.VERSION }} never became available on crates.io"
             exit 1
-          fi
+          }
 
       - name: Update UI crate dependency to use published version
         run: |
