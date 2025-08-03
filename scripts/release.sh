@@ -63,30 +63,28 @@ if command -v cargo-set-version >/dev/null 2>&1; then
   echo -e "${BLUE}Using cargo set-version for cross-platform compatibility${NC}"
   cargo set-version --workspace "$VERSION"
 else
-  echo -e "${YELLOW}cargo-edit not found, using sed (less portable)${NC}"
-  # Fallback to awk for better cross-platform compatibility
+  echo -e "${YELLOW}cargo-edit not found, using awk for workspace update${NC}"
+  # Update workspace version in root Cargo.toml
   tmp=$(mktemp)
-  awk -v version="$VERSION" 'NR==3{sub(/^version = ".*"/, "version = \"" version "\"")} 1' ui/Cargo.toml >"$tmp" && mv "$tmp" ui/Cargo.toml
-  tmp=$(mktemp)
-  awk -v version="$VERSION" 'NR==3{sub(/^version = ".*"/, "version = \"" version "\"")} 1' server/Cargo.toml >"$tmp" && mv "$tmp" server/Cargo.toml
+  awk -v version="$VERSION" '/^\[workspace\.package\]/{flag=1; print; next} flag && /^version = /{sub(/version = ".*"/, "version = \"" version "\""); flag=0} 1' Cargo.toml >"$tmp" && mv "$tmp" Cargo.toml
 fi
 
 # Verify changes
 echo -e "${BLUE}🔍 Verifying version updates...${NC}"
-UI_VERSION=$(grep "^version" ui/Cargo.toml | cut -d'"' -f2)
-SERVER_VERSION=$(grep "^version" server/Cargo.toml | cut -d'"' -f2)
 
-if [ "$UI_VERSION" != "$VERSION" ] || [ "$SERVER_VERSION" != "$VERSION" ]; then
+# For workspace projects, check the version in the root Cargo.toml
+WORKSPACE_VERSION=$(grep -A 10 '^\[workspace\.package\]' Cargo.toml | grep '^version' | cut -d'"' -f2)
+
+if [ "$WORKSPACE_VERSION" != "$VERSION" ]; then
   echo -e "${RED}❌ Version update failed${NC}"
   echo "Expected: $VERSION"
-  echo "UI: $UI_VERSION"
-  echo "Server: $SERVER_VERSION"
+  echo "Workspace: $WORKSPACE_VERSION"
   exit 1
 fi
 
 echo -e "${GREEN}✅ Updated versions:${NC}"
-echo "  ui/Cargo.toml: $UI_VERSION"
-echo "  server/Cargo.toml: $SERVER_VERSION"
+echo "  Workspace version: $WORKSPACE_VERSION"
+echo "  This version is inherited by all workspace members"
 
 # Test build to ensure version works
 echo -e "${BLUE}🔨 Testing build...${NC}"
@@ -98,7 +96,7 @@ if git diff-index --quiet HEAD --; then
 else
   # Commit version bump (including Cargo.lock for reproducible builds)
   echo -e "${BLUE}📝 Committing version bump...${NC}"
-  git add ui/Cargo.toml server/Cargo.toml Cargo.lock
+  git add Cargo.toml ui/Cargo.toml server/Cargo.toml Cargo.lock
   git commit -m "chore: bump version to $VERSION"
 fi
 
