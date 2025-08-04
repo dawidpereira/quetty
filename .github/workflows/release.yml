@@ -249,14 +249,14 @@ jobs:
         run: |
           echo "Dry-run publishing UI crate..."
           cargo check -p quetty
-          cargo publish --dry-run -p quetty
+          cargo publish --dry-run -p quetty --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Publish UI crate to crates.io
         run: |
           echo "Publishing UI crate to crates.io..."
-          cargo publish -p quetty
+          cargo publish -p quetty --allow-dirty
           echo "UI crate published successfully!"
           echo ""
           echo "🎉 Both crates published to crates.io!"
